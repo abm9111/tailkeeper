@@ -1,0 +1,253 @@
+# Builds, signs and attests a release when a v* tag is pushed (spec §20).
+#   verify:    refuses a private repository; the tag must be an annotated tag signed
+#              by an SSH signing key registered to the owner's GitHub account, named
+#              in its own signed header as the tag that was pushed, and reaching the
+#              commit this run is for; then `make verify`.
+#   release:   GoReleaser builds archives for darwin and linux (amd64, arm64) and
+#              windows (amd64), checksums.txt, a CycloneDX SBOM per archive and a
+#              keyless cosign bundle over checksums.txt, into a DRAFT release;
+#              build provenance is attested for every file checksums.txt lists, and
+#              for checksums.txt itself.
+#   reproduce: a runner of another architecture rebuilds every binary from the
+#              tag and must get the same bytes as the binary inside the archive
+#              that will be published.
+#   publish:   only then is the draft published, and only if its assets are
+#              exactly the files checksums.txt lists plus checksums.txt and its
+#              bundle, with the hashes it lists. It needs verify, release and
+#              reproduce, so an unsigned tag never reaches it.
+#
+# There are two ways in and no others:
+#   - a v* tag push: the release above. It refuses to run while the repository is
+#     private (keyless signing writes to public transparency logs and build
+#     provenance needs a public repository), so nothing is signed or published
+#     from a private repository.
+#   - workflow_dispatch: builds a snapshot to test the pipeline (archives,
+#     checksums, SBOMs), uploaded as a 7-day workflow artifact. Its `snapshot` input
+#     defaults to true and false is refused. It cannot sign, attest, create a
+#     release or publish, on any ref (a tag included).
+name: release
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+    inputs:
+      snapshot:
+        description: "Build a snapshot to test the pipeline. A manual run does nothing else: it signs, attests and publishes nothing."
+        type: boolean
+        default: true
+
+permissions:
+  contents: read
+
+env:
+  OWNER: abm9111 # the account whose registered SSH signing keys may sign release tags
+
+jobs:
+  verify:
+    runs-on: ubuntu-24.04 # pinned: ubuntu-latest moves to each new Ubuntu release on GitHub's schedule
+    timeout-minutes: 20
+    steps:
+      - name: A release needs a public repository
+        if: github.event_name == 'push'
+        env:
+          PRIVATE: ${{ github.event.repository.private }}
+        run: |
+          # Fails closed: anything but an explicit false (private, or unknown) stops here.
+          if [ "$PRIVATE" != false ]; then
+            echo "::error::refusing to release from a private repository: keyless signing writes to public transparency logs, and build provenance needs a public repository. Make the repository public first, or run this workflow by hand for a snapshot."
+            exit 1
+          fi
+      - name: A manual run builds a snapshot, nothing else
+        if: github.event_name == 'workflow_dispatch'
+        env:
+          SNAPSHOT: ${{ inputs.snapshot }}
+        run: |
+          test "$SNAPSHOT" != false || { echo "::error::a manual run only builds a snapshot; it signs, attests and publishes nothing"; exit 1; }
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+          cache: false # no cache in any job of this workflow, so none feeds the release
+      - name: The tag is signed by the owner
+        if: github.event_name == 'push'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+          git fetch --force origin "refs/tags/$TAG:refs/tags/$TAG"
+          test "$(git cat-file -t "refs/tags/$TAG")" = tag || { echo "::error::$TAG is not an annotated tag"; exit 1; }
+          keys="$(gh api --paginate "users/$OWNER/ssh_signing_keys" --jq '.[].key')"
+          test -n "$keys" || { echo "::error::$OWNER has no SSH signing key registered on GitHub"; exit 1; }
+          printf '%s\n' "$keys" | sed "s|^|$OWNER@users.noreply.github.com namespaces=\"git\" |" > "$RUNNER_TEMP/allowed_signers"
+          git -c gpg.ssh.allowedSignersFile="$RUNNER_TEMP/allowed_signers" verify-tag "refs/tags/$TAG"
+          # A good signature proves only that the owner signed this tag object. The object
+          # can be pointed at by another name, or name another commit than this run's, so
+          # both are checked: the name inside the signed object, and the commit it reaches.
+          name="$(git cat-file tag "refs/tags/$TAG" | awk '/^$/ { exit } /^tag / { print substr($0, 5); exit }')"
+          test "$name" = "$TAG" || { echo "::error::the signed tag object is named '$name', not '$TAG': a signed tag replayed under another name"; exit 1; }
+          tagged="$(git rev-parse "refs/tags/$TAG^{commit}")"
+          built="$(git rev-parse "$GITHUB_SHA^{commit}")"
+          test "$tagged" = "$built" || { echo "::error::$TAG points at $tagged, but this run is for $built"; exit 1; }
+      - run: make verify
+
+  release:
+    needs: verify
+    runs-on: ubuntu-24.04 # pinned: ubuntu-latest moves to each new Ubuntu release on GitHub's schedule
+    timeout-minutes: 30
+    permissions:
+      contents: write      # create the draft release and upload its assets
+      id-token: write      # keyless cosign signing and provenance
+      attestations: write  # build provenance
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0 # GoReleaser reads the tag and the commit time
+          persist-credentials: false
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+          cache: false # nothing restored from a cache goes into what is signed
+      - uses: anchore/sbom-action/download-syft@66cbf4bc1f1c0d2edc94016e65bc221b6bb0ad6c # v0.24.3
+        with:
+          syft-version: v1.54.0
+      - uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6 # v4.1.2
+        with:
+          cosign-release: v3.1.3
+      - name: Release notes from CHANGELOG.md
+        if: github.event_name == 'push'
+        env:
+          TAG: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+          # Any heading, of any level, that says unreleased in any case or form.
+          if grep -qiE '^ {0,3}#{1,6}[[:space:]].*unreleased' CHANGELOG.md; then echo "::error::CHANGELOG.md still has an unreleased heading"; exit 1; fi
+          awk -v h="## ${TAG#v} " 'index($0, h) == 1 { f = 1; next } /^## / { f = 0 } f' CHANGELOG.md > "$RUNNER_TEMP/notes.md"
+          if ! grep -q '[^[:space:]]' "$RUNNER_TEMP/notes.md"; then echo "::error::CHANGELOG.md has no section for $TAG"; exit 1; fi
+      - name: Release (draft)
+        if: github.event_name == 'push'
+        uses: goreleaser/goreleaser-action@f06c13b6b1a9625abc9e6e439d9c05a8f2190e94 # v7.2.3
+        with:
+          distribution: goreleaser
+          version: v2.18.2
+          args: release --clean --release-notes ${{ runner.temp }}/notes.md
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # The tag the verify job checked, not whichever tag git finds at HEAD: a second
+          # tag on this commit would otherwise be what gets built, signed and attested.
+          GORELEASER_CURRENT_TAG: ${{ github.ref_name }}
+      - name: Snapshot
+        if: github.event_name == 'workflow_dispatch'
+        uses: goreleaser/goreleaser-action@f06c13b6b1a9625abc9e6e439d9c05a8f2190e94 # v7.2.3
+        with:
+          distribution: goreleaser
+          version: v2.18.2
+          args: release --snapshot --clean --skip=sign,publish
+      - name: Attest build provenance
+        if: github.event_name == 'push'
+        uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
+        with:
+          subject-checksums: ./dist/checksums.txt
+      # checksums.txt cannot list its own hash, so the step above does not cover it
+      # (the cosign bundle does); this one does.
+      - name: Attest build provenance for checksums.txt
+        if: github.event_name == 'push'
+        uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
+        with:
+          subject-path: ./dist/checksums.txt
+      - name: Keep the build for the reproduction check, or the snapshot
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: ${{ github.event_name == 'push' && 'dist' || 'snapshot' }}
+          path: dist/
+          retention-days: 7
+
+  reproduce:
+    needs: release
+    if: github.event_name == 'push'
+    runs-on: ubuntu-24.04-arm # another architecture than the build: the bytes must not depend on the host
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+          cache: false # the rebuild must not depend on a cache
+      - name: Rebuild every binary from the tag
+        uses: goreleaser/goreleaser-action@f06c13b6b1a9625abc9e6e439d9c05a8f2190e94 # v7.2.3
+        with:
+          distribution: goreleaser
+          version: v2.18.2
+          args: build --clean
+        env:
+          GORELEASER_CURRENT_TAG: ${{ github.ref_name }} # this job runs for a tag push only
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: dist
+          path: released
+      - name: The rebuilt binaries are byte-identical to the ones in the released archives
+        run: |
+          set -euo pipefail
+          shopt -s nullglob
+          # The archives are what gets published: they must be the bytes checksums.txt
+          # lists, and the binaries inside them are what the rebuild is compared with.
+          (cd released && sha256sum -c checksums.txt)
+          work="$RUNNER_TEMP/extracted"
+          rm -rf "$work"
+          n=0
+          while IFS= read -r f; do
+            target="$(basename "$(dirname "$f")" | cut -d_ -f2,3)" # dist/tailkeeper_linux_amd64_v1/tailkeeper -> linux_amd64
+            archives=(released/tailkeeper_*_"$target".tar.gz released/tailkeeper_*_"$target".zip)
+            test "${#archives[@]}" = 1 || { echo "::error::$target: expected one archive, found ${#archives[@]}"; exit 1; }
+            mkdir -p "$work/$target"
+            case "${archives[0]}" in
+              *.tar.gz) tar -xzf "${archives[0]}" -C "$work/$target" "$(basename "$f")" ;;
+              *.zip) unzip -q "${archives[0]}" "$(basename "$f")" -d "$work/$target" ;;
+            esac
+            cmp "$f" "$work/$target/$(basename "$f")" || { echo "::error::$target: the rebuilt binary differs from the one in ${archives[0]}"; exit 1; }
+            n=$((n + 1))
+          done < <(find dist -type f \( -name tailkeeper -o -name tailkeeper.exe \) | sort)
+          want="$(find released -maxdepth 1 -type f \( -name '*.tar.gz' -o -name '*.zip' \) | wc -l | tr -d ' ')"
+          if [ "$n" -eq 0 ] || [ "$n" != "$want" ]; then echo "::error::compared $n binaries, the release has $want archives"; exit 1; fi
+          echo "all $n binaries reproduce"
+
+  publish:
+    needs: [verify, release, reproduce]
+    if: github.event_name == 'push'
+    runs-on: ubuntu-24.04 # pinned: ubuntu-latest moves to each new Ubuntu release on GitHub's schedule
+    timeout-minutes: 5
+    permissions:
+      contents: write # read and publish the draft
+    steps:
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: dist
+          path: released
+      - name: Check the draft's assets against checksums.txt, then publish it
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+          # checksums.txt as the release job produced it, from the dist artifact.
+          sums="$PWD/released/checksums.txt"
+          test -s "$sums" || { echo "::error::no checksums.txt in the dist artifact"; exit 1; }
+          if grep -qvE '^[0-9a-f]{64}  [A-Za-z0-9._+-]+$' "$sums"; then echo "::error::checksums.txt has a line that is not '<sha256>  <file name>'"; exit 1; fi
+          # The draft's assets as GitHub holds them.
+          draft="$RUNNER_TEMP/draft"
+          rm -rf "$draft"
+          gh release download "$TAG" --repo "$GITHUB_REPOSITORY" --dir "$draft"
+          # Exactly the files checksums.txt lists, plus checksums.txt and its signature bundle.
+          { awk '{ print $2 }' "$sums"; echo checksums.txt; echo checksums.txt.sigstore.json; } | LC_ALL=C sort > "$RUNNER_TEMP/want.txt"
+          (cd "$draft" && find . -mindepth 1 | sed 's|^\./||' | LC_ALL=C sort) > "$RUNNER_TEMP/have.txt"
+          diff -u "$RUNNER_TEMP/want.txt" "$RUNNER_TEMP/have.txt" || { echo "::error::the draft's assets are not the files checksums.txt lists plus checksums.txt and checksums.txt.sigstore.json"; exit 1; }
+          # The draft carries the same checksums.txt, and every file in it has that hash.
+          cmp "$sums" "$draft/checksums.txt" || { echo "::error::the draft's checksums.txt is not the one the release job produced"; exit 1; }
+          (cd "$draft" && sha256sum -c "$sums")
+          gh release edit "$TAG" --repo "$GITHUB_REPOSITORY" --draft=false

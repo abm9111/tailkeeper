@@ -1,0 +1,102 @@
+# golangci-lint v2 configuration. staticcheck runs separately (`make lint`, under
+# go1.27.1; see the Makefile), so it is not enabled here.
+version: "2"
+
+run:
+  timeout: 5m
+  tests: true
+
+linters:
+  default: none
+  enable:
+    - errcheck   # unchecked errors (an explicit `_ =` is a decision and passes)
+    - gosec      # security checks (spec §20)
+    - errorlint  # errors compared or asserted without errors.Is / errors.As
+    - bodyclose  # HTTP response bodies left open
+    - misspell
+    - ineffassign
+    - unused
+  exclusions:
+    # A rule below that matches nothing is logged, so a stale one shows up.
+    warn-unused: true
+    rules:
+      # Tests write fixtures with fixed permissions and run the binary they built.
+      - path: _test\.go
+        linters: [gosec]
+
+      # Every other rule names the file, the rule and the shape of the line it
+      # excuses, so the same rule on any other line or in any other file is still
+      # reported. Each says why that line is not a defect.
+
+      # G304 (file path from a variable): the paths come from the owner's
+      # configuration or fixed directories, and strict mode verifies ownership
+      # (spec §15).
+      - path: internal/audit/audit\.go
+        linters: [gosec]
+        text: G304
+        source: 'os\.(Open|OpenFile)\(path[,)]'
+      - path: internal/audit/rotate\.go
+        linters: [gosec]
+        text: G304
+        source: 'os\.Open\((path|dir)\)'
+      # The archive's name is read from a rotation entry in the log, but continues
+      # accepts only a bare name that starts with "audit-", so it stays in the log's
+      # directory.
+      - path: internal/audit/rotate\.go
+        linters: [gosec]
+        text: G304
+        source: 'os\.Open\(filepath\.Join\(dir, name\)\)'
+      - path: internal/config/read\.go
+        linters: [gosec]
+        text: G304
+        source: 'os\.OpenFile\(path, os\.O_RDONLY\|openFlags, 0\)'
+
+      # G204 (subprocess with variable arguments): the exec provider's command is
+      # the owner's configuration (spec §7.3), and the process replaces itself with
+      # it, with no shell.
+      - path: internal/creds/reexec_unix\.go
+        linters: [gosec]
+        text: G204
+        source: 'syscall\.Exec\(wrapper\[0\], argv, env\)'
+      # The Tailscale CLI is the owner's configured or located binary (an absolute
+      # path), run without a shell and with a fixed environment. The subcommand and
+      # its flags are literals (spec §18.3); the one value a caller supplies, a ping
+      # target, is checked by tailnetAddress first.
+      - path: internal/local/runner\.go
+        linters: [gosec]
+        text: G204
+        source: 'exec\.CommandContext\(ctx, r\.Bin\.Path, argv\.\.\.\)'
+
+      # G101 (hardcoded credentials): the name of an environment variable and an
+      # error code, not secrets.
+      - path: internal/creds/read\.go
+        linters: [gosec]
+        text: G101
+        source: 'EnvOIDCToken\s+= "TAILKEEPER_OIDC_TOKEN"'
+      - path: internal/tkerr/tkerr\.go
+        linters: [gosec]
+        text: G101
+        source: 'CredentialUnavailable\s+Code = "credential_unavailable"'
+
+      # G404 (math/rand): up to 250 ms of jitter on a retry's backoff, so clients
+      # do not retry in step. Nothing depends on it being unpredictable.
+      - path: internal/api/client\.go
+        linters: [gosec]
+        text: G404
+        source: 'rand\.Int64N\(int64\(250 \* time\.Millisecond\)\)'
+
+      # G705 (XSS via taint analysis): the fake API's 404 body names the unrouted
+      # request to the test that made it, over a loopback server only tests start.
+      - path: internal/api/apitest/fake\.go
+        linters: [gosec]
+        text: G705
+        source: 'no fake route for'
+
+      # G302 (permissions above 0600): this is the log's directory, which needs the
+      # owner's execute bit to be entered. The log file itself is created with 0600
+      # and tightened to 0600 two lines later (TestAppendChainsAndVerifies checks
+      # both modes).
+      - path: internal/audit/audit\.go
+        linters: [gosec]
+        text: G302
+        source: 'os\.Chmod\(dir, 0o700\)'

@@ -1,0 +1,22 @@
+name: Feature
+description: Something tailkeeper should do.
+labels: [enhancement]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Security problem? Do not describe it here. [Report it privately](https://github.com/abm9111/tailkeeper/security/advisories/new); see `SECURITY.md`.
+
+        Describe the shape of what you need, not your tailnet's data: replace names, email addresses, IP addresses, tailnet IDs, keys and tokens with placeholders, and do not paste device lists, logs, policy files or your configuration.
+  - type: textarea
+    id: problem
+    attributes:
+      label: The problem
+      description: What you are trying to do, and why the current tools do not do it
+    validations:
+      required: true
+  - type: textarea
+    id: idea
+    attributes:
+      label: What you would like
+      description: Write tools wait for the approval gate (M2); say if your idea needs one

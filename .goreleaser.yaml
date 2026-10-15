@@ -1,0 +1,80 @@
+# Release builds (spec §20). Runs in .github/workflows/release.yml on a v* tag;
+# `make release-check` validates it and builds a snapshot locally.
+version: 2
+
+project_name: tailkeeper
+
+before:
+  hooks:
+    - go mod verify
+
+builds:
+  - id: tailkeeper
+    main: ./cmd/tailkeeper
+    binary: tailkeeper
+    env:
+      - CGO_ENABLED=0
+    flags:
+      - -trimpath
+      - -mod=readonly
+    ldflags:
+      # The release version, with its v: on a tag build it is the tag (v0.5.0), the same
+      # value `make build` sets. A snapshot names itself (v0.4.0-SNAPSHOT-<commit>);
+      # {{ .Tag }} would give a snapshot the previous release's version.
+      - -s -w -X github.com/abm9111/tailkeeper/internal/version.Version=v{{ .Version }}
+    mod_timestamp: "{{ .CommitTimestamp }}"
+    goos: [darwin, linux, windows]
+    goarch: [amd64, arm64]
+    ignore:
+      - goos: windows
+        goarch: arm64
+
+archives:
+  - id: default
+    formats: [tar.gz]
+    format_overrides:
+      - goos: windows
+        formats: [zip]
+    name_template: "{{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
+    files:
+      - LICENSE
+      - NOTICE
+      - THIRD_PARTY_LICENSES
+      - README.md
+      - CHANGELOG.md
+      - SECURITY.md
+
+checksum:
+  name_template: checksums.txt
+  algorithm: sha256
+
+# One CycloneDX SBOM per archive, written by syft.
+sboms:
+  - id: archives
+    artifacts: archive
+    documents:
+      - "{{ .ArtifactName }}.sbom.cdx.json"
+    args: ["$artifact", "--output", "cyclonedx-json=$document"]
+
+# A keyless cosign bundle over the checksums file: it covers every archive and
+# SBOM, because each is listed in checksums.txt with its SHA-256.
+signs:
+  - id: cosign
+    cmd: cosign
+    artifacts: checksum
+    signature: "${artifact}.sigstore.json"
+    args: ["sign-blob", "--yes", "--bundle=${signature}", "${artifact}"]
+    output: true
+
+# A draft: the workflow publishes it only after the provenance attestation
+# succeeds. With immutable releases on, assets cannot be added to a published
+# release, so everything is uploaded while it is a draft.
+release:
+  draft: true
+  prerelease: auto
+  mode: replace
+  footer: |
+    Verify a download before you run it: see "Verify a release" in README.md.
+
+changelog:
+  disable: true

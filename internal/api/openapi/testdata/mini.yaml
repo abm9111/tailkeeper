@@ -1,0 +1,114 @@
+# A small hand-made OpenAPI 3.1 document for the fingerprint tests. It is not
+# Tailscale's: it holds one of each shape the fingerprint must walk (a $ref'd
+# response, a $ref'd schema, allOf, nested objects, an array of objects, maps, a
+# type list, a cycle)
+# and nothing that looks like a credential.
+openapi: 3.1.0
+info:
+  title: Mini
+  version: v0
+paths:
+  /widgets:
+    get:
+      operationId: listWidgets
+      responses:
+        '200':
+          $ref: '#/components/responses/Widgets'
+        '404':
+          description: Not found.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  errorOnly:
+                    type: string
+  /widgets/{id}:
+    get:
+      operationId: getWidget
+      responses:
+        '200':
+          description: One widget.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Widget'
+            text/plain:
+              schema:
+                type: object
+                properties:
+                  plainOnly:
+                    type: string
+    delete:
+      operationId: deleteWidget
+      responses:
+        '200':
+          description: Deleted.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  writeOnly:
+                    type: string
+components:
+  responses:
+    Widgets:
+      description: A list of widgets.
+      content:
+        application/json:
+          schema:
+            type: object
+            properties:
+              widgets:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Widget'
+  schemas:
+    Base:
+      type: object
+      properties:
+        id:
+          type: string
+        createdAt:
+          type: string
+    Widget:
+      allOf:
+        - $ref: '#/components/schemas/Base'
+        - type: object
+          properties:
+            owner:
+              type: object
+              properties:
+                name:
+                  type: string
+                contact:
+                  type: object
+                  properties:
+                    kind:
+                      type: string
+            parts:
+              type: array
+              items:
+                type: object
+                properties:
+                  partId:
+                    type: integer
+                  weight:
+                    type: number
+            labels:
+              type: object
+              additionalProperties:
+                type: object
+                properties:
+                  note:
+                    type: string
+            flags:
+              type: object
+              additionalProperties: true
+            nickname:
+              type:
+                - string
+                - 'null'
+            parent:
+              $ref: '#/components/schemas/Widget'

@@ -1,0 +1,28 @@
+# Weekly update pull requests; `make verify` in CI gates each one. Dependabot moves the
+# SHA-pinned Actions to new commit SHAs and updates their version comments. The tools
+# that are pinned by version are not covered: bump those by hand. They are the Makefile's
+# (staticcheck, golangci-lint, govulncheck, actionlint and GoReleaser), GoReleaser again in
+# release.yml and the README's rebuild line (a test fails if the five disagree), and the
+# cosign release and syft version that release.yml passes to its installer Actions (the
+# README says which cosign signed the release, and a test checks it). Commit prefixes keep
+# the repo's `type: description` format. A release must be a week old before it is
+# proposed, so a malicious one has time to be found and pulled.
+version: 2
+updates:
+  - package-ecosystem: gomod
+    directory: /
+    schedule:
+      interval: weekly
+    cooldown:
+      default-days: 7
+    open-pull-requests-limit: 5
+    commit-message:
+      prefix: build
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+    cooldown:
+      default-days: 7
+    commit-message:
+      prefix: ci

@@ -1,0 +1,45 @@
+# Weekly: compare the pinned copy of Tailscale's OpenAPI document (operations.txt
+# and fingerprint.txt in internal/api/openapi; the document itself is not in the
+# repository) with the live one (spec §20). A failure means an operation or a
+# response field changed. Review it, then move the pins in one reviewed commit:
+# the failing test's log says how. The job holds no credential but the default
+# GITHUB_TOKEN, which `permissions` below limits to reading the repository; the
+# live document is public and fetched without authentication.
+name: api-drift
+
+on:
+  schedule:
+    - cron: "41 5 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  drift:
+    runs-on: ubuntu-24.04 # pinned: ubuntu-latest moves to each new Ubuntu release on GitHub's schedule
+    timeout-minutes: 10
+    # The go test line below runs outside the Makefile, which sets the same: no step
+    # may change go.mod or go.sum.
+    env:
+      GOFLAGS: -mod=readonly
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod # uses its toolchain line
+      - name: Fetch the live document
+        run: curl -sS --fail --max-time 60 -o "$RUNNER_TEMP/live.yaml" 'https://api.tailscale.com/api/v2?outputOpenapiSchema=true'
+      - name: Compare with the pins
+        env:
+          TAILKEEPER_OPENAPI_LIVE: ${{ runner.temp }}/live.yaml
+        # Both tests skip when the variable is unset, and a skip reads as a pass:
+        # so the step also demands that exactly the two tests ran and passed.
+        run: |
+          set -euo pipefail
+          log="$RUNNER_TEMP/drift.log"
+          go test -count=1 -v -run '^(TestOperationsMatchTheDocument|TestLiveDocumentMatchesThePin)$' ./internal/api/openapi | tee "$log"
+          if grep -q -e '--- SKIP' "$log"; then echo "::error::a drift test skipped, so it compared nothing"; exit 1; fi
+          if [ "$(grep -c -e '^--- PASS' "$log")" != 2 ]; then echo "::error::expected exactly two passing drift tests"; exit 1; fi

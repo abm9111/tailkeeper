@@ -1,0 +1,29 @@
+name: Bug
+description: Something tailkeeper does wrong. Not for security problems (see SECURITY.md).
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Security problem? Do not describe it here. [Report it privately](https://github.com/abm9111/tailkeeper/security/advisories/new); see `SECURITY.md`.
+
+        Replace names, email addresses, IP addresses, tailnet IDs, keys and tokens with placeholders before you submit. Do not paste device lists, logs or your configuration. If you include `tailkeeper doctor` output, read it first: it shows the start of IDs and the paths of your configuration and audit log, which usually hold your user name, so replace those too.
+  - type: input
+    id: version
+    attributes:
+      label: tailkeeper version
+      description: Output of `tailkeeper version`
+    validations:
+      required: true
+  - type: input
+    id: platform
+    attributes:
+      label: Platform
+      description: OS and architecture, and the `tailscale version` of the local client if a local tool is involved
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened, and what you expected
+      description: The command or MCP tool call, and the error code and message it gave, with names, email addresses, IP addresses, tailnet IDs and keys replaced by placeholders
+    validations:
+      required: true

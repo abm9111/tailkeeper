@@ -1,0 +1,13 @@
+# Every text file is checked out with LF on every platform. Without this, a Windows
+# checkout with core.autocrlf=true (the Git for Windows default) writes CRLF into the
+# POSIX shell scripts under scripts/, which then fail under Git Bash, and into the
+# generated docs and fixtures that tests compare byte for byte.
+* text=auto eol=lf
+
+# Test inputs that must stay byte for byte as committed: the fuzz corpus and the
+# pinned OpenAPI fixture are never converted, whatever a contributor's git config says.
+**/testdata/** -text
+
+# Licence texts copied from the module cache, byte for byte: `make deps-check` compares them
+# with a fresh copy, and a checkout must not change a line end in either.
+THIRD_PARTY_LICENSES -text

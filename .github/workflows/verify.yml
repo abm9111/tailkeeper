@@ -1,0 +1,87 @@
+# The gate every commit passes locally, run on GitHub too: `make verify` (gofmt, vet
+# including the Windows build, staticcheck, golangci-lint (gosec, errcheck, errorlint,
+# bodyclose, misspell, ineffassign, unused), race tests, docs freshness, the dependency
+# manifest and licence texts (docs/dependencies.md, THIRD_PARTY_LICENSES), govulncheck,
+# go mod verify), `make actionlint` (the workflow files and scripts/; CI only, not part
+# of verify), then `make cover`.
+# Actions are pinned to commit SHAs; the token can only read.
+name: verify
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  # Weekly, so a vulnerability published after the last push is found (govulncheck
+  # runs inside make verify) without waiting for the next one.
+  schedule:
+    - cron: "17 5 * * 1"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: verify-${{ github.ref }}
+  # A newer push to a pull request supersedes its run; a run on main always finishes.
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  verify:
+    runs-on: ubuntu-24.04 # pinned: ubuntu-latest moves to each new Ubuntu release on GitHub's schedule
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod # uses its toolchain line (go1.27.2)
+      - run: make verify
+      - run: make actionlint # the workflow files (syntax, expressions, permissions, shell) and scripts/
+      - run: make cover # fails below 90% statement coverage, end-to-end runs included
+
+  # The suite on Windows and macOS. `make verify` stays on Linux (gofmt, lint,
+  # govulncheck and the docs checks do not depend on the OS); this job runs the
+  # tests themselves where the Windows- and macOS-specific code executes. The
+  # race detector runs on macOS; on Windows it needs cgo and a C compiler, which
+  # the release build does not use, so the tests run without it there.
+  test-os:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-2025, macos-26] # pinned: the -latest labels move on GitHub's schedule
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
+    # These go test lines run outside the Makefile, which sets the same: no step may
+    # change go.mod or go.sum.
+    env:
+      GOFLAGS: -mod=readonly
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+      - name: Test
+        shell: bash
+        run: |
+          set -o pipefail
+          race=""; if [ "$RUNNER_OS" = macOS ]; then race="-race"; fi
+          # Windows gets the longer limit: its monotonic clock steps in ticks, which makes the
+          # growth guard in internal/sanitize run for minutes (it fails itself at 100 s).
+          timeout=300s; if [ "$RUNNER_OS" = Windows ]; then timeout=900s; fi
+          go test $race -count=1 -timeout "$timeout" -v ./... 2>&1 | tee "$RUNNER_TEMP/test.log"
+      # The Windows leg must skip exactly the tests docs/windows.md lists. The script fails
+      # on a difference, on a missing log, on a log with no test result and on a list that
+      # matched nothing, so none of them reads as "no skipped tests". always(): it also
+      # runs, and lists the skips, when the tests failed.
+      - name: Compare the tests that skipped with docs/windows.md
+        if: always() && runner.os == 'Windows'
+        shell: bash
+        run: sh ./scripts/windows-skips.sh "$RUNNER_TEMP/test.log" docs/windows.md
+      - name: List the tests that skipped
+        if: always() && runner.os != 'Windows'
+        shell: bash
+        run: |
+          test -f "$RUNNER_TEMP/test.log" || { echo "there is no test log"; exit 1; }
+          grep -E '^[[:space:]]*--- SKIP' "$RUNNER_TEMP/test.log" || echo "no skipped tests"

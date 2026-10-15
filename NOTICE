@@ -1,0 +1,9 @@
+tailkeeper
+Copyright 2026 abm9111
+
+This product includes third-party software, each under the license stated in its
+own repository. The license texts of every module the binary links, and of the Go
+standard library, are in THIRD_PARTY_LICENSES, which ships in each release archive.
+
+tailkeeper is not affiliated with, endorsed by or sponsored by Tailscale Inc.
+"Tailscale" is a trademark of Tailscale Inc.

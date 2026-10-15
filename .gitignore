@@ -1,0 +1,13 @@
+/bin/
+/dist/
+*.test
+*.out
+coverage.*
+!/internal/docsgen/coverage.go
+
+# Machine-local files: never commit them.
+CLAUDE.local.md
+.claude/
+.DS_Store
+.env
+.env.*
