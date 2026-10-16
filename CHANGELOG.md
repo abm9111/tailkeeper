@@ -2,7 +2,7 @@
 
 What each release of tailkeeper changed. Versions follow semantic versioning; until 1.0, a minor release may change the CLI or the MCP tool list.
 
-## 0.5.0 — unreleased
+## 0.5.0 — 2026-10-16
 
 The first public release: tailkeeper's repository is public, and releases are signed, attested binaries. The tools are the same; the fixes, and what masking now covers, are listed below.
 
