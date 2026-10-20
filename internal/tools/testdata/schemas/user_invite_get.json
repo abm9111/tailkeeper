@@ -1,0 +1,43 @@
+{
+  "input": {
+    "additionalProperties": false,
+    "properties": {
+      "id": {
+        "description": "invite ID",
+        "type": "string"
+      }
+    },
+    "required": [
+      "id"
+    ],
+    "type": "object"
+  },
+  "output": {
+    "additionalProperties": false,
+    "properties": {
+      "email": {
+        "type": "string",
+        "x-tailkeeper-masked": true,
+        "x-tailkeeper-untrusted": true
+      },
+      "id": {
+        "type": "string"
+      },
+      "inviterId": {
+        "type": "integer"
+      },
+      "lastEmailSentAt": {
+        "type": "string"
+      },
+      "role": {
+        "type": "string"
+      }
+    },
+    "required": [
+      "id",
+      "role"
+    ],
+    "type": "object"
+  },
+  "tool": "user_invite_get"
+}

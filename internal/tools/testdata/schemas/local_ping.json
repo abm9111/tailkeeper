@@ -1,0 +1,103 @@
+{
+  "input": {
+    "additionalProperties": false,
+    "properties": {
+      "allPings": {
+        "description": "send every ping; by default (like the CLI) disco pings stop at the first direct reply",
+        "type": "boolean"
+      },
+      "count": {
+        "description": "1-10 (default 3)",
+        "type": "integer"
+      },
+      "mode": {
+        "description": "disco (default), tsmp, icmp or peerapi",
+        "type": "string"
+      },
+      "target": {
+        "description": "literal tailnet IP of the peer",
+        "type": "string"
+      },
+      "timeoutSeconds": {
+        "description": "per ping, 1-8 (default 5)",
+        "type": "integer"
+      }
+    },
+    "required": [
+      "target"
+    ],
+    "type": "object"
+  },
+  "output": {
+    "additionalProperties": false,
+    "properties": {
+      "directEstablished": {
+        "type": "boolean"
+      },
+      "directNotEstablished": {
+        "description": "the CLI gave up waiting for a direct path",
+        "type": "boolean"
+      },
+      "mode": {
+        "type": "string"
+      },
+      "noReply": {
+        "description": "no ping was answered",
+        "type": "boolean"
+      },
+      "note": {
+        "type": "string"
+      },
+      "replies": {
+        "items": {
+          "additionalProperties": false,
+          "properties": {
+            "latencyMs": {
+              "type": "number"
+            },
+            "region": {
+              "description": "DERP region code, for derp replies",
+              "type": "string",
+              "x-tailkeeper-untrusted": true
+            },
+            "via": {
+              "description": "direct, derp, peer-relay, icmp, tsmp or peerapi",
+              "type": "string"
+            }
+          },
+          "required": [
+            "via",
+            "latencyMs"
+          ],
+          "type": "object"
+        },
+        "type": [
+          "null",
+          "array"
+        ]
+      },
+      "target": {
+        "type": "string"
+      },
+      "timeouts": {
+        "type": "integer"
+      },
+      "unparsedLines": {
+        "type": "integer"
+      }
+    },
+    "required": [
+      "target",
+      "mode",
+      "replies",
+      "timeouts",
+      "directEstablished",
+      "directNotEstablished",
+      "noReply",
+      "unparsedLines",
+      "note"
+    ],
+    "type": "object"
+  },
+  "tool": "local_ping"
+}

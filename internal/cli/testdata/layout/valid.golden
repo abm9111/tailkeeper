@@ -1,0 +1,8 @@
+VALID · 0 new warnings (3 existing) · 14 tests passed · invariants: none
+not checked: lockout, downgrades, access change
+changes
+  defaults           0
+  tests reduced      0
+  widening           0
+  tailscale-written  2  (expected)
+  semantic           1

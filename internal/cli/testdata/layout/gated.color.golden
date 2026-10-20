@@ -1,0 +1,7 @@
+[33mVALID · 1 new warning (0 existing) · 9 tests passed · invariants: 4[0m
+changes
+  defaults           1
+  tests reduced      3
+  widening           2
+  semantic           14
+policy.hujson:7:3: [33mwarning[0m: the group group:eng is not used

@@ -55,6 +55,9 @@ type InviteRef struct {
 	ID string `json:"id" jsonschema:"invite ID"`
 }
 
+// Check refuses an ID that cannot be one, before anything is sent.
+func (in InviteRef) Check() error { return requireID("id", in.ID) }
+
 func inviteTools() []registry.Tool {
 	ui := withOps(readMeta("user_invites_list", "invites", "users", "List open user invites (invite links are never shown).", "users:read"),
 		"GET /tailnet/{tailnet}/user-invites")
@@ -85,9 +88,6 @@ func deviceInvitesList(ctx context.Context, env *registry.Env, in DeviceRef) (De
 }
 
 func deviceInviteGet(ctx context.Context, env *registry.Env, in InviteRef) (DeviceInvite, error) {
-	if err := requireID("id", in.ID); err != nil {
-		return DeviceInvite{}, err
-	}
 	var inv DeviceInvite
 	if err := get(ctx, env, api.Path("device-invites/%s", in.ID), nil, &inv); err != nil {
 		return DeviceInvite{}, err
@@ -108,9 +108,6 @@ func userInvitesList(ctx context.Context, env *registry.Env, _ NoInput) (UserInv
 }
 
 func userInviteGet(ctx context.Context, env *registry.Env, in InviteRef) (UserInvite, error) {
-	if err := requireID("id", in.ID); err != nil {
-		return UserInvite{}, err
-	}
 	var inv UserInvite
 	if err := get(ctx, env, api.Path("user-invites/%s", in.ID), nil, &inv); err != nil {
 		return UserInvite{}, err

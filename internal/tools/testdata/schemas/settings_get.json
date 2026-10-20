@@ -1,0 +1,111 @@
+{
+  "input": {
+    "additionalProperties": false,
+    "type": "object"
+  },
+  "output": {
+    "additionalProperties": false,
+    "properties": {
+      "externallyManaged": {
+        "description": "true, false or unknown",
+        "type": "string"
+      },
+      "settings": {
+        "additionalProperties": false,
+        "properties": {
+          "aclsExternalLink": {
+            "type": [
+              "null",
+              "string"
+            ],
+            "x-tailkeeper-untrusted": true
+          },
+          "aclsExternallyManagedOn": {
+            "type": [
+              "null",
+              "boolean"
+            ]
+          },
+          "devicesApprovalOn": {
+            "type": [
+              "null",
+              "boolean"
+            ]
+          },
+          "devicesAutoUpdatesOn": {
+            "type": [
+              "null",
+              "boolean"
+            ]
+          },
+          "devicesKeyDurationDays": {
+            "type": [
+              "null",
+              "integer"
+            ]
+          },
+          "httpsEnabled": {
+            "type": [
+              "null",
+              "boolean"
+            ]
+          },
+          "networkFlowLoggingOn": {
+            "type": [
+              "null",
+              "boolean"
+            ]
+          },
+          "postureIdentityCollectionOn": {
+            "type": [
+              "null",
+              "boolean"
+            ]
+          },
+          "regionalRoutingOn": {
+            "type": [
+              "null",
+              "boolean"
+            ]
+          },
+          "routeSelection": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "usersApprovalOn": {
+            "type": [
+              "null",
+              "boolean"
+            ]
+          },
+          "usersRoleAllowedToJoinExternalTailnets": {
+            "type": [
+              "null",
+              "string"
+            ]
+          }
+        },
+        "type": "object"
+      },
+      "unreadable": {
+        "description": "fields absent or null in the response: hidden from these read scopes (scope-partitioned) or not set; unknown, not false",
+        "items": {
+          "type": "string"
+        },
+        "type": [
+          "null",
+          "array"
+        ]
+      }
+    },
+    "required": [
+      "settings",
+      "unreadable",
+      "externallyManaged"
+    ],
+    "type": "object"
+  },
+  "tool": "settings_get"
+}

@@ -1,0 +1,323 @@
+{
+  "input": {
+    "additionalProperties": false,
+    "properties": {
+      "allFields": {
+        "description": "request fields=all: routes, connectivity, SSH, cloned-state flag",
+        "type": "boolean"
+      },
+      "authorized": {
+        "description": "filter on authorized (server-side)",
+        "type": [
+          "null",
+          "boolean"
+        ]
+      },
+      "ephemeral": {
+        "description": "filter on isEphemeral (server-side)",
+        "type": [
+          "null",
+          "boolean"
+        ]
+      },
+      "hostname": {
+        "description": "exact hostname (server-side); while personal data is masked, refused if it contains an email address or a public IP address",
+        "type": "string"
+      },
+      "nameContains": {
+        "description": "case-insensitive substring of name or hostname as the result shows them, where an email or public address is masked while personal data is masked (client-side)",
+        "type": "string"
+      },
+      "online": {
+        "description": "filter on connectedToControl (server-side)",
+        "type": [
+          "null",
+          "boolean"
+        ]
+      },
+      "os": {
+        "description": "exact OS name, for example linux, macOS, windows (server-side)",
+        "type": "string"
+      },
+      "staleDays": {
+        "description": "only devices not connected and last seen more than this many days ago (client-side)",
+        "type": "integer"
+      },
+      "tags": {
+        "description": "devices must carry all of these tags (server-side, exact)",
+        "items": {
+          "type": "string"
+        },
+        "type": [
+          "null",
+          "array"
+        ]
+      },
+      "user": {
+        "description": "exact owner login name (server-side); while personal data is masked, only a pseudonym (p:…) or a masked value carrying one, matched client-side, or tagged-devices (server-side)",
+        "type": "string"
+      }
+    },
+    "type": "object"
+  },
+  "output": {
+    "additionalProperties": false,
+    "properties": {
+      "clientFilters": {
+        "items": {
+          "type": "string"
+        },
+        "type": [
+          "null",
+          "array"
+        ]
+      },
+      "count": {
+        "type": "integer"
+      },
+      "devices": {
+        "items": {
+          "additionalProperties": false,
+          "properties": {
+            "addresses": {
+              "items": {
+                "type": "string"
+              },
+              "type": [
+                "null",
+                "array"
+              ]
+            },
+            "advertisedRoutes": {
+              "items": {
+                "type": "string",
+                "x-tailkeeper-untrusted": true
+              },
+              "type": [
+                "null",
+                "array"
+              ],
+              "x-tailkeeper-untrusted": true
+            },
+            "authorized": {
+              "type": "boolean"
+            },
+            "blocksIncomingConnections": {
+              "type": "boolean"
+            },
+            "clientVersion": {
+              "type": "string",
+              "x-tailkeeper-untrusted": true
+            },
+            "connectedToControl": {
+              "type": "boolean"
+            },
+            "connectivity": {
+              "additionalProperties": false,
+              "properties": {
+                "hardNat": {
+                  "description": "mappingVariesByDestIP: the NAT maps differently per destination",
+                  "type": "boolean"
+                },
+                "preferredDerp": {
+                  "type": "string",
+                  "x-tailkeeper-untrusted": true
+                },
+                "preferredLatencyMs": {
+                  "type": "number"
+                },
+                "supports": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "ipv6": {
+                      "type": [
+                        "null",
+                        "boolean"
+                      ]
+                    },
+                    "pcp": {
+                      "type": [
+                        "null",
+                        "boolean"
+                      ]
+                    },
+                    "pmp": {
+                      "type": [
+                        "null",
+                        "boolean"
+                      ]
+                    },
+                    "udp": {
+                      "type": [
+                        "null",
+                        "boolean"
+                      ]
+                    },
+                    "upnp": {
+                      "type": [
+                        "null",
+                        "boolean"
+                      ]
+                    }
+                  },
+                  "type": "object"
+                }
+              },
+              "required": [
+                "hardNat",
+                "supports"
+              ],
+              "type": [
+                "null",
+                "object"
+              ]
+            },
+            "created": {
+              "type": "string"
+            },
+            "distro": {
+              "additionalProperties": false,
+              "properties": {
+                "codeName": {
+                  "type": "string"
+                },
+                "name": {
+                  "type": "string"
+                },
+                "version": {
+                  "type": "string"
+                }
+              },
+              "type": [
+                "null",
+                "object"
+              ],
+              "x-tailkeeper-untrusted": true
+            },
+            "enabledRoutes": {
+              "items": {
+                "type": "string",
+                "x-tailkeeper-untrusted": true
+              },
+              "type": [
+                "null",
+                "array"
+              ],
+              "x-tailkeeper-untrusted": true
+            },
+            "expires": {
+              "type": "string"
+            },
+            "fields": {
+              "description": "default or all: which API field set was requested; fields absent here are unknown, not false",
+              "type": "string"
+            },
+            "hostname": {
+              "type": "string",
+              "x-tailkeeper-untrusted": true
+            },
+            "isEphemeral": {
+              "type": "boolean"
+            },
+            "isExternal": {
+              "type": "boolean"
+            },
+            "keyExpiryDisabled": {
+              "type": "boolean"
+            },
+            "lastSeen": {
+              "type": "string"
+            },
+            "multipleConnections": {
+              "type": [
+                "null",
+                "boolean"
+              ]
+            },
+            "name": {
+              "type": "string",
+              "x-tailkeeper-untrusted": true
+            },
+            "nodeId": {
+              "type": "string"
+            },
+            "os": {
+              "type": "string",
+              "x-tailkeeper-untrusted": true
+            },
+            "sshEnabled": {
+              "type": [
+                "null",
+                "boolean"
+              ]
+            },
+            "tags": {
+              "items": {
+                "type": "string",
+                "x-tailkeeper-untrusted": true
+              },
+              "type": [
+                "null",
+                "array"
+              ],
+              "x-tailkeeper-untrusted": true
+            },
+            "tailnetLockError": {
+              "type": "string",
+              "x-tailkeeper-untrusted": true
+            },
+            "updateAvailable": {
+              "type": "boolean"
+            },
+            "user": {
+              "type": "string",
+              "x-tailkeeper-masked": true,
+              "x-tailkeeper-untrusted": true
+            }
+          },
+          "required": [
+            "nodeId",
+            "name",
+            "hostname",
+            "user",
+            "os",
+            "updateAvailable",
+            "connectedToControl",
+            "keyExpiryDisabled",
+            "authorized",
+            "isExternal",
+            "isEphemeral",
+            "blocksIncomingConnections",
+            "fields"
+          ],
+          "type": "object"
+        },
+        "type": [
+          "null",
+          "array"
+        ]
+      },
+      "fields": {
+        "type": "string"
+      },
+      "serverFilters": {
+        "items": {
+          "type": "string"
+        },
+        "type": [
+          "null",
+          "array"
+        ]
+      }
+    },
+    "required": [
+      "devices",
+      "count",
+      "fields",
+      "serverFilters",
+      "clientFilters"
+    ],
+    "type": "object"
+  },
+  "tool": "devices_list"
+}

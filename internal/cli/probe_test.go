@@ -2,6 +2,7 @@ package cli
 
 import (
 	"context"
+	"encoding/json"
 	"io"
 	"strings"
 	"testing"
@@ -44,7 +45,7 @@ func withProbe(h *harness, live string, exit int) *probeCalls {
 func TestProbeACLDoesNotExistWithoutAProbe(t *testing.T) {
 	f := apitest.New(t)
 	h := newHarness(t, f)
-	for args, want := range map[string]string{"probe-acl": `unknown area "probe-acl"`, "probe-acl --out": "unknown command `tailkeeper probe-acl --out`"} {
+	for args, want := range map[string]string{"probe-acl": `unknown area "probe-acl"`, "probe-acl --out": `unknown area "probe-acl"`} {
 		h.err.Reset()
 		if code := h.run(strings.Fields(args)...); code != 2 || !strings.Contains(h.err.String(), want) {
 			t.Errorf("%s: exit %d, stderr %q", args, code, h.err)
@@ -73,6 +74,46 @@ func TestProbeACLNeedsTheLiveSwitch(t *testing.T) {
 		if code := h.run("probe-acl"); code != 2 || !strings.Contains(h.err.String(), "make probe-acl") || calls.n != 0 || built || len(f.Requests()) != 0 {
 			t.Errorf("TAILKEEPER_LIVE=%q: exit %d, stderr %q, probe called %d times, built %v", live, code, h.err, calls.n, built)
 		}
+	}
+}
+
+// --json before the command makes its refusals JSON, as for every other command: the
+// probe's own report is text, but an error before it runs is not. Each way it refuses
+// before the Probe: no live switch, a configuration error, a wrapper that cannot start, no
+// credential.
+func TestProbeACLRefusesInJSONWithJSON(t *testing.T) {
+	for name, c := range map[string]struct {
+		live  string
+		setup func(h *harness)
+		code  string
+	}{
+		"no live switch": {"", func(*harness) {}, "usage"},
+		"a configuration error": {"1", func(h *harness) {
+			h.r.Build = func(context.Context, string) (*app.App, error) {
+				return nil, tkerr.New(tkerr.ConfigInvalid, "bad configuration", "")
+			}
+		}, "config_invalid"},
+		"a wrapper that cannot start": {"1", func(h *harness) {
+			h.app.Env.APIErr = creds.ErrReexecRequired
+			h.app.Provider = config.Provider{Provider: "exec", Command: []string{"/bin/wrapper"}}
+		}, "credential_unavailable"},
+		"no credential": {"1", func(*harness) {}, ""},
+	} {
+		t.Run(name, func(t *testing.T) {
+			h := newHarness(t, nil)
+			calls := withProbe(h, c.live, 0)
+			c.setup(h)
+			code := h.run("--json", "probe-acl")
+			var got struct {
+				Error struct {
+					Code string `json:"code"`
+				} `json:"error"`
+			}
+			err := json.Unmarshal(h.out.Bytes(), &got)
+			if code == 0 || err != nil || got.Error.Code == "" || (c.code != "" && got.Error.Code != c.code) || calls.n != 0 {
+				t.Errorf("exit %d, stdout %q (%v), stderr %q, probe called %d times; want the JSON error %q", code, h.out, err, h.err, calls.n, c.code)
+			}
+		})
 	}
 }
 

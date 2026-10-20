@@ -214,10 +214,20 @@ func deviceTools() []registry.Tool {
 	}
 }
 
-func devicesList(ctx context.Context, env *registry.Env, in DevicesListInput) (DevicesListOutput, error) {
+// Check refuses a staleDays or a tag that cannot be right, before anything is sent.
+func (in DevicesListInput) Check() error {
 	if in.StaleDays < 0 || in.StaleDays > 3650 {
-		return DevicesListOutput{}, validationf("staleDays must be between 0 and 3650")
+		return validationf("staleDays must be between 0 and 3650")
 	}
+	for _, tag := range lower(in.Tags) {
+		if !strings.HasPrefix(tag, "tag:") || len(tag) < 5 || strings.ContainsAny(tag, " \t,") {
+			return validationf("tags must look like tag:name")
+		}
+	}
+	return nil
+}
+
+func devicesList(ctx context.Context, env *registry.Env, in DevicesListInput) (DevicesListOutput, error) {
 	fields := "default"
 	if in.AllFields {
 		fields = "all"
@@ -240,9 +250,6 @@ func devicesList(ctx context.Context, env *registry.Env, in DevicesListInput) (D
 	q := url.Values{"fields": {fields}}
 	var server, client []string
 	for _, tag := range lower(in.Tags) {
-		if !strings.HasPrefix(tag, "tag:") || len(tag) < 5 || strings.ContainsAny(tag, " \t,") {
-			return DevicesListOutput{}, validationf("tags must look like tag:name")
-		}
 		q.Add("tags", tag)
 		server = append(server, "tags="+tag)
 	}
@@ -333,14 +340,32 @@ func sorted(ss []string) []string {
 	return out
 }
 
+// checkDeviceRef refuses a device reference that is empty or longer than a
+// hostname, which no device answers to; the length counts for an ID too, since no
+// real ID comes near it. A node ID or numeric ID within it passes: those are used
+// as given, and the rest is looked up by name.
+func checkDeviceRef(ref string) error {
+	ref = strings.TrimSpace(ref)
+	if ref == "" || len(ref) > 253 {
+		return validationf("device must be a node ID, numeric ID or hostname")
+	}
+	return nil
+}
+
+// Check refuses a device reference that cannot name a device, before anything is sent.
+func (in DeviceRef) Check() error { return checkDeviceRef(in.Device) }
+
+// Check refuses a device reference that cannot name a device, before anything is sent.
+func (in DeviceRoutesInput) Check() error { return checkDeviceRef(in.Device) }
+
 // resolveDevice turns a node ID, numeric ID or exact hostname into an API device ID.
 func resolveDevice(ctx context.Context, env *registry.Env, ref string) (string, error) {
 	ref = strings.TrimSpace(ref)
+	if err := checkDeviceRef(ref); err != nil {
+		return "", err
+	}
 	if nodeIDRE.MatchString(ref) || legacyIDRE.MatchString(ref) {
 		return ref, nil
-	}
-	if ref == "" || len(ref) > 253 {
-		return "", validationf("device must be a node ID, numeric ID or hostname")
 	}
 	path, err := tailnetPath(env, "/devices")
 	if err != nil {

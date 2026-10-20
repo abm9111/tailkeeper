@@ -12,6 +12,7 @@ The Windows build (`windows_amd64`) runs the same tools as macOS and Linux, with
 
 Also different on Windows:
 
+- **A file given to a command (a policy file, for the policy tools).** On every platform the name is checked, the file must be a regular file and not a symlink, and the file that is read must be the one that was checked. Windows has no `O_NOFOLLOW`, so tailkeeper reads the file's volume serial number and index when it checks it, opens it without following a reparse point, and compares the two. Any reparse point is refused, including a file in a OneDrive folder with Files On-Demand on, which is one: copy the file to a local folder first. UNC paths, `\\?\`, `\\.\` and `\??\` paths, device names and alternate data streams are refused by name.
 - **Where tailkeeper keeps its files.** Your configuration is `%AppData%\tailkeeper\config.hujson`, a system configuration is `%ProgramData%\tailkeeper\config.hujson`, and the audit log and state are in `%LocalAppData%\tailkeeper` (`audit.jsonl`). `ProgramData`, `AppData` and `LocalAppData` must all be set, or tailkeeper fails with `config_invalid`.
 - **The audit log's permissions.** On macOS and Linux tailkeeper creates the log's directory with mode 0700 and the file with 0600. On Windows `os.Chmod` only sets or clears the read-only attribute, so neither mode is applied: access to the log is whatever `%LocalAppData%\tailkeeper` inherits.
 - **The local tools.** `tailkeeper local ...` and the `local_*` tools look for `C:\Program Files\Tailscale\tailscale.exe`; anywhere else, set `local.tailscaleBinary` to an absolute path. No test has run them against a real `tailscale.exe`: the tests use a shell script as the stand-in CLI, which Windows cannot run (see the list below).
@@ -46,6 +47,9 @@ The suite runs on Windows in CI (the `test-os` job). These tests do not run ther
 - `TestAuditVerifyWarnsAboutAMissingArchive` (`internal/cli`): `audit rotate` needs the file lock, which Windows does not have yet.
 - `TestAuditVerifyEscapesTheNamesItPrints` (`internal/cli`): Windows refuses a control character in a directory name, which the test creates.
 - `TestAuditRotateEscapesThePathsItPrints` (`internal/cli`): `audit rotate` needs the file lock, which Windows does not have yet.
+- `TestAuditRotateNamesTheWholeArchivePath` (`internal/cli`): `audit rotate` needs the file lock, which Windows does not have yet.
+- `TestAuditVerifyReturnsAWriteErrorOnAnyLine` (`internal/cli`): `audit rotate` needs the file lock, which Windows does not have yet.
+- `TestAuditLinesStartingWithThePathHoldNoCILogCommand` (`internal/cli`): `audit rotate` needs the file lock, which Windows does not have yet.
 - `TestCheckOwnershipRefusesGroupWritable` (`internal/config`): Windows has no strict mode (`docs/design.md` §4).
 - `TestStrictModeChecksTheDirectoryAndSecretModes` (`internal/config`): Windows has no strict mode (`docs/design.md` §4).
 - `TestLoadReadsOnlyTheFileTheCheckApproved` (`internal/config`): Windows has no strict mode (`docs/design.md` §4).
@@ -141,4 +145,10 @@ These files carry `//go:build !windows`. Their tests need the file lock (`syscal
 - `TestSameChangeTimeFailsClosedWithoutAStat` (`internal/config`): needs FIFOs (`syscall.Mkfifo`), `O_NOFOLLOW` and the change time of a file.
 - `TestUnrecordedReadsWarnInTheAuditLogCheck` (`internal/doctor`): holds the audit log's file lock with `syscall.Flock`.
 - `TestAuditWarningRearmsAfterRecovery` (`internal/mcpserver`): holds the audit log's file lock with `syscall.Flock`.
+- `TestAFifoIsRefusedNotWaitedOn` (`internal/safefile`): needs FIFOs (`syscall.Mkfifo`).
+- `TestAFifoSwappedInAfterTheInspectionIsRefusedNotWaitedOn` (`internal/safefile`): needs FIFOs (`syscall.Mkfifo`) and `O_NOFOLLOW`.
+- `TestAPipedPolicyReachesTheProcessThatHoldsTheCredential` (`internal/cli`): the stand-in wrapper is a POSIX shell script, and the `exec` provider re-executes with `execve`, which Windows lacks.
+- `TestAnOfflineCommandReadsItsOwnStandardInputAndSkipsTheWrapper` (`internal/cli`): the stand-in wrapper is a POSIX shell script.
+- `TestABadPathNeverStartsTheStandInWrapper` (`internal/cli`): the stand-in wrapper is a POSIX shell script.
+- `TestHelperProcess` (`internal/cli`): the process the stand-in wrapper starts; it runs only for the three tests above.
 <!-- windows-excluded:end -->

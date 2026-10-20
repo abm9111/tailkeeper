@@ -4,10 +4,16 @@ import (
 	"encoding/json"
 	"flag"
 	"fmt"
+	"io"
 	"reflect"
+	"regexp"
 	"strconv"
 	"strings"
 	"unicode"
+
+	"github.com/abm9111/tailkeeper/internal/registry"
+	"github.com/abm9111/tailkeeper/internal/safefile"
+	"github.com/abm9111/tailkeeper/internal/tkerr"
 )
 
 // Flags are derived from a tool's input type, so the CLI accepts exactly the
@@ -70,6 +76,71 @@ type param struct {
 type binding struct {
 	params     []param
 	positional string // JSON name filled by the single positional argument, if any
+	files      []fileParam
+	switches   []switchParam
+}
+
+// fileParam is a string field filled from a file, or from standard input, named
+// by a flag. The tool sees the text; the command line never carries it.
+type fileParam struct {
+	field       int // index of the field in the input struct
+	flag        string
+	val         *strValue
+	stdin, live bool
+	group       string
+}
+
+// switchParam is a bool field set by a flag that exists on the command line only.
+type switchParam struct {
+	field int
+	flag  string
+	val   *boolValue
+}
+
+// cliTag is a parsed `cli` struct tag. A tool's input type uses it on fields the
+// command line fills differently from MCP:
+//
+//	cli:"file:NAME[,stdin][,live][,group=G]"  a string field read from the file NAME names;
+//	                                          stdin allows -, live makes the word live mean
+//	                                          "no file", and at most one flag of a group may be set
+//	cli:"bool:NAME"                           a bool field set by --NAME (use json:"-" for a
+//	                                          field MCP must not have)
+//	cli:"-"                                   no flag for this field
+//
+// A field with a cli tag gets no flag from its JSON name, so a policy's text is
+// never an argument.
+type cliTag struct {
+	kind        string // "file", "bool" or "-"
+	flag        string
+	stdin, live bool
+	group       string
+}
+
+var flagNameRE = regexp.MustCompile(`^[a-z][a-z0-9]*(-[a-z0-9]+)*$`)
+
+func parseCLITag(tag string) (cliTag, error) {
+	if tag == "" || tag == "-" {
+		return cliTag{kind: tag}, nil
+	}
+	kind, rest, _ := strings.Cut(tag, ":")
+	parts := strings.Split(rest, ",")
+	t := cliTag{kind: kind, flag: parts[0]}
+	if (kind != "file" && kind != "bool") || !flagNameRE.MatchString(t.flag) {
+		return cliTag{}, fmt.Errorf("cli tag %q must be file:NAME, bool:NAME or -", tag)
+	}
+	for _, o := range parts[1:] {
+		switch {
+		case kind == "file" && o == "stdin":
+			t.stdin = true
+		case kind == "file" && o == "live":
+			t.live = true
+		case kind == "file" && strings.HasPrefix(o, "group=") && len(o) > len("group="):
+			t.group = strings.TrimPrefix(o, "group=")
+		default:
+			return cliTag{}, fmt.Errorf("cli tag %q: unknown option %q", tag, o)
+		}
+	}
+	return t, nil
 }
 
 // kebab turns a JSON name into a flag name: nameContains -> name-contains.
@@ -90,9 +161,22 @@ func bind(fs *flag.FlagSet, t reflect.Type, describe func(jsonName string) strin
 	var requiredStrings []string
 	for i := 0; i < t.NumField(); i++ {
 		f := t.Field(i)
+		if !f.IsExported() {
+			continue
+		}
 		tag := strings.Split(f.Tag.Get("json"), ",")
 		name := tag[0]
-		if name == "" || name == "-" || !f.IsExported() {
+		ct, err := parseCLITag(f.Tag.Get("cli"))
+		if err != nil {
+			return nil, fmt.Errorf("input field %s: %w", f.Name, err)
+		}
+		if ct.kind != "" {
+			if err := b.addCLI(fs, i, f, ct, name, describe); err != nil {
+				return nil, fmt.Errorf("input field %s: %w", f.Name, err)
+			}
+			continue
+		}
+		if name == "" || name == "-" {
 			continue
 		}
 		p := param{json: name, flag: kebab(name), required: !strings.Contains(f.Tag.Get("json"), "omitempty")}
@@ -112,6 +196,9 @@ func bind(fs *flag.FlagSet, t reflect.Type, describe func(jsonName string) strin
 		default:
 			return nil, fmt.Errorf("input field %s has unsupported type %s", name, ft)
 		}
+		if fs.Lookup(p.flag) != nil {
+			return nil, fmt.Errorf("input field %s: flag --%s is already taken", f.Name, p.flag)
+		}
 		fs.Var(p.value, p.flag, describe(name))
 		b.params = append(b.params, p)
 	}
@@ -119,6 +206,143 @@ func bind(fs *flag.FlagSet, t reflect.Type, describe func(jsonName string) strin
 		b.positional = requiredStrings[0]
 	}
 	return b, nil
+}
+
+// addCLI registers the flag a cli tag asks for. The field's JSON name, if it has
+// one, gets no flag of its own.
+func (b *binding) addCLI(fs *flag.FlagSet, i int, f reflect.StructField, ct cliTag, jsonName string, describe func(string) string) error {
+	if ct.kind == "-" {
+		return nil
+	}
+	if fs.Lookup(ct.flag) != nil {
+		return fmt.Errorf("flag --%s is already taken", ct.flag)
+	}
+	desc := f.Tag.Get("jsonschema")
+	if jsonName != "" && jsonName != "-" {
+		if d := describe(jsonName); d != "" {
+			desc = d
+		}
+	}
+	switch ct.kind {
+	case "file":
+		if f.Type.Kind() != reflect.String {
+			return fmt.Errorf("a file field must be a string, not %s", f.Type)
+		}
+		if ct.stdin {
+			desc += " (read from FILE, or from standard input with -)"
+		} else {
+			desc += " (read from FILE)"
+		}
+		fp := fileParam{field: i, flag: ct.flag, val: &strValue{}, stdin: ct.stdin, live: ct.live, group: ct.group}
+		fs.Var(fp.val, ct.flag, desc)
+		b.files = append(b.files, fp)
+	case "bool":
+		if f.Type.Kind() != reflect.Bool {
+			return fmt.Errorf("a bool field must be a bool, not %s", f.Type)
+		}
+		sp := switchParam{field: i, flag: ct.flag, val: &boolValue{}}
+		fs.Var(sp.val, ct.flag, desc)
+		b.switches = append(b.switches, sp)
+	}
+	return nil
+}
+
+// given reports which of the binder's flags the command line set, for the
+// registry's decision whether the call needs the credential. A file flag whose
+// value is the word live (where the tag allows it) counts as not set.
+func (b *binding) given() registry.Given {
+	g := registry.Given{}
+	for _, f := range b.files {
+		if f.val.set && !(f.live && f.val.v == "live") {
+			g[f.flag] = true
+		}
+	}
+	for _, s := range b.switches {
+		if s.val.set && s.val.v {
+			g[s.flag] = true
+		}
+	}
+	return g
+}
+
+func usageErr(format string, args ...any) error {
+	return tkerr.New(tkerr.Usage, fmt.Sprintf(format, args...), "")
+}
+
+// check refuses, before the configuration loads and before the credential wrapper
+// starts, what can be refused without reading: two flags of a group, standard
+// input named twice, and a file that is not a regular file of an acceptable size.
+// It reads nothing: standard input is for the process that holds the credential.
+func (b *binding) check() error {
+	groups := map[string]string{} // group -> the flag that took it
+	stdinBy := ""
+	for _, f := range b.files {
+		if !f.val.set || f.live && f.val.v == "live" {
+			continue
+		}
+		if f.val.v == "" {
+			return usageErr("--%s needs a file name", f.flag)
+		}
+		if f.group != "" {
+			if prev, taken := groups[f.group]; taken {
+				return usageErr("--%s and --%s both give the %s: give one", prev, f.flag, f.group)
+			}
+			groups[f.group] = f.flag
+		}
+		if f.val.v == "-" {
+			if !f.stdin {
+				return usageErr("--%s takes a file name, not standard input", f.flag)
+			}
+			if stdinBy != "" {
+				return usageErr("standard input can be read once: --%s and --%s both name it", stdinBy, f.flag)
+			}
+			stdinBy = f.flag
+		}
+	}
+	for _, f := range b.files {
+		if f.val.set && f.val.v != "" && f.val.v != "-" && !(f.live && f.val.v == "live") {
+			if err := safefile.Check(f.val.v, safefile.Options{Code: tkerr.Usage}); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
+}
+
+// setSwitches sets the bool fields their flags name. in is the input struct.
+func (b *binding) setSwitches(in reflect.Value) {
+	for _, s := range b.switches {
+		if s.val.set {
+			in.Field(s.field).SetBool(s.val.v)
+		}
+	}
+}
+
+// load reads each file, and standard input if a flag names it, into its field of
+// the input struct in, and returns how each flag's source is called in output
+// (the path as typed, or <stdin>). It runs in the process that holds the credential.
+func (b *binding) load(in reflect.Value, stdin io.Reader) (map[string]string, error) {
+	names := map[string]string{}
+	o := safefile.Options{Code: tkerr.Usage}
+	for _, f := range b.files {
+		if !f.val.set || f.live && f.val.v == "live" {
+			continue
+		}
+		var data []byte
+		var err error
+		if f.val.v == "-" {
+			data, err = safefile.ReadAll(stdin, "standard input", o)
+			names[f.flag] = "<stdin>"
+		} else {
+			data, err = safefile.Read(f.val.v, o)
+			names[f.flag] = f.val.v
+		}
+		if err != nil {
+			return nil, err
+		}
+		in.Field(f.field).SetString(string(data))
+	}
+	return names, nil
 }
 
 // arguments builds the JSON arguments from the flags that were set and the
@@ -165,22 +389,43 @@ func (b *binding) arguments(rest []string) (json.RawMessage, error) {
 }
 
 // parseInterspersed parses flags that may follow the positional argument, as in
-// `tailkeeper devices get web-1 --json`. After "--" everything is positional.
+// `tailkeeper devices get web-1 --json`. A "--" that ends the flags makes everything
+// after it positional; a "--" that a flag takes as its value does not.
 func parseInterspersed(fs *flag.FlagSet, args []string) ([]string, error) {
+	args, tail := splitAtTerminator(fs, args)
 	var positional []string
 	for len(args) > 0 {
 		if err := fs.Parse(args); err != nil {
 			return nil, err
 		}
 		rest := fs.Args()
-		if consumed := len(args) - len(rest); consumed > 0 && args[consumed-1] == "--" {
-			return append(positional, rest...), nil
-		}
 		if len(rest) == 0 {
 			break
 		}
 		positional = append(positional, rest[0])
 		args = rest[1:]
 	}
-	return positional, nil
+	return append(positional, tail...), nil
+}
+
+// splitAtTerminator cuts args at the first "--" that stands on its own: not the
+// value of a flag (the argument after a flag that takes one, or the text after an
+// equals sign). The terminator is dropped.
+func splitAtTerminator(fs *flag.FlagSet, args []string) (flags, tail []string) {
+	for i := 0; i < len(args); i++ {
+		a := args[i]
+		if a == "--" {
+			return args[:i], args[i+1:]
+		}
+		if len(a) < 2 || a[0] != '-' || strings.Contains(a, "=") {
+			continue
+		}
+		name := strings.TrimPrefix(strings.TrimPrefix(a, "-"), "-")
+		if f := fs.Lookup(name); f != nil {
+			if bf, ok := f.Value.(interface{ IsBoolFlag() bool }); !ok || !bf.IsBoolFlag() {
+				i++ // the next argument is this flag's value, whatever it is
+			}
+		}
+	}
+	return args, nil
 }

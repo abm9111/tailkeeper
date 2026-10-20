@@ -1,0 +1,81 @@
+{
+  "input": {
+    "additionalProperties": false,
+    "type": "object"
+  },
+  "output": {
+    "additionalProperties": false,
+    "properties": {
+      "count": {
+        "type": "integer"
+      },
+      "entries": {
+        "items": {
+          "additionalProperties": false,
+          "properties": {
+            "funnel": {
+              "description": "exposed to the public internet",
+              "type": "boolean"
+            },
+            "handlers": {
+              "description": "handler kinds: proxy, path, text or redirect",
+              "items": {
+                "type": "string"
+              },
+              "type": [
+                "null",
+                "array"
+              ]
+            },
+            "kind": {
+              "description": "web, https, http, tcp-forward or tun",
+              "type": "string"
+            },
+            "listener": {
+              "description": "host:port for web listeners, port for TCP",
+              "type": "string",
+              "x-tailkeeper-untrusted": true
+            },
+            "paths": {
+              "items": {
+                "type": "string",
+                "x-tailkeeper-untrusted": true
+              },
+              "type": [
+                "null",
+                "array"
+              ],
+              "x-tailkeeper-untrusted": true
+            },
+            "service": {
+              "description": "Tailscale Service name, for source service",
+              "type": "string",
+              "x-tailkeeper-untrusted": true
+            },
+            "source": {
+              "description": "background, foreground or service",
+              "type": "string"
+            }
+          },
+          "required": [
+            "source",
+            "listener",
+            "kind",
+            "funnel"
+          ],
+          "type": "object"
+        },
+        "type": [
+          "null",
+          "array"
+        ]
+      }
+    },
+    "required": [
+      "entries",
+      "count"
+    ],
+    "type": "object"
+  },
+  "tool": "local_funnel_status"
+}

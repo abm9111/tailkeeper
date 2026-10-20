@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -24,6 +25,16 @@ func render(w io.Writer, out any) error {
 	if v.Kind() != reflect.Struct {
 		return writeJSON(w, out)
 	}
+	// Every line goes through the guard that keeps CI log commands out of text.
+	g := &lineGuard{w: w}
+	if err := renderStruct(g, v, out); err != nil {
+		return err
+	}
+	return g.Flush()
+}
+
+// renderStruct writes the struct out is held in v as lines on w.
+func renderStruct(w io.Writer, v reflect.Value, out any) error {
 	t := v.Type()
 	for i := 0; i < t.NumField(); i++ {
 		if sanitize.HasTag(t.Field(i).Tag, "rows") {
@@ -40,6 +51,9 @@ func render(w io.Writer, out any) error {
 			continue
 		}
 		if fv.Kind() == reflect.Pointer && fv.IsNil() && fv.Type().Elem().Kind() != reflect.Struct {
+			if sanitize.HasTag(f.Tag, "absentok") {
+				continue // absent on purpose, and the field's description says when
+			}
 			// A nil scalar means the source did not say; a nil struct is absent.
 			if _, err := fmt.Fprintf(w, "%s: unknown\n", jsonName(f)); err != nil {
 				return err
@@ -179,8 +193,37 @@ func cell(v reflect.Value) string {
 	return sanitize.String(string(b), sanitize.DefaultMax)
 }
 
-func writeJSON(w io.Writer, v any) error {
-	enc := json.NewEncoder(w)
-	enc.SetIndent("", "  ")
-	return enc.Encode(v)
+// jsonHash is the JSON escape for the character #. It is written with \x5c so that
+// this file holds no \u escape in its source.
+const jsonHash = "\x5cu0023"
+
+// ciLogMarkers are the CI log commands that act anywhere in a line.
+var ciLogMarkers = []string{"##vso[", "##teamcity["}
+
+// writeJSON writes v as indented JSON followed by a newline. Every JSON the command
+// line prints goes through this function or writeJSONLine: they write the first #
+// of each CI log command marker as the JSON escape for #, so that a string from the
+// tailnet or the command line cannot drive a CI log that shows the output. That is
+// lossless: # appears in JSON only inside strings, and a decoder reads the escape
+// back as #.
+func writeJSON(w io.Writer, v any) error { return encodeJSON(w, v, "  ") }
+
+// writeJSONLine writes v as JSON on one line, followed by a newline (JSON lines).
+func writeJSONLine(w io.Writer, v any) error { return encodeJSON(w, v, "") }
+
+func encodeJSON(w io.Writer, v any, indent string) error {
+	var buf bytes.Buffer
+	enc := json.NewEncoder(&buf)
+	if indent != "" {
+		enc.SetIndent("", indent)
+	}
+	if err := enc.Encode(v); err != nil {
+		return err
+	}
+	out := buf.String()
+	for _, m := range ciLogMarkers {
+		out = strings.ReplaceAll(out, m, jsonHash+m[1:])
+	}
+	_, err := io.WriteString(w, out)
+	return err
 }

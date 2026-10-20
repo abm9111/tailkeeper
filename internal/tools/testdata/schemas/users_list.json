@@ -1,0 +1,93 @@
+{
+  "input": {
+    "additionalProperties": false,
+    "properties": {
+      "role": {
+        "description": "owner, member, admin, it-admin, network-admin, billing-admin, auditor or all (default all)",
+        "type": "string"
+      },
+      "type": {
+        "description": "member, shared or all (default all; the API's own default hides shared users)",
+        "type": "string"
+      }
+    },
+    "type": "object"
+  },
+  "output": {
+    "additionalProperties": false,
+    "properties": {
+      "count": {
+        "type": "integer"
+      },
+      "type": {
+        "type": "string"
+      },
+      "users": {
+        "items": {
+          "additionalProperties": false,
+          "properties": {
+            "created": {
+              "type": "string"
+            },
+            "currentlyConnected": {
+              "type": "boolean"
+            },
+            "deviceCount": {
+              "type": "integer"
+            },
+            "displayName": {
+              "type": "string",
+              "x-tailkeeper-masked": true,
+              "x-tailkeeper-untrusted": true
+            },
+            "id": {
+              "type": "string"
+            },
+            "lastSeen": {
+              "type": "string"
+            },
+            "loginName": {
+              "type": "string",
+              "x-tailkeeper-masked": true,
+              "x-tailkeeper-untrusted": true
+            },
+            "role": {
+              "type": "string"
+            },
+            "status": {
+              "type": "string"
+            },
+            "tailnetId": {
+              "type": "string",
+              "x-tailkeeper-masked": true
+            },
+            "type": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "id",
+            "loginName",
+            "type",
+            "role",
+            "status",
+            "deviceCount",
+            "currentlyConnected"
+          ],
+          "type": "object"
+        },
+        "type": [
+          "null",
+          "array"
+        ]
+      }
+    },
+    "required": [
+      "users",
+      "count",
+      "type"
+    ],
+    "type": "object"
+  },
+  "tool": "users_list"
+}

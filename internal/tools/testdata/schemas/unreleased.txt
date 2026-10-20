@@ -1,0 +1,4 @@
+# Tools that no release has shipped yet, one per line. They have no baseline.
+# The release PR empties this list and runs
+#   go test ./internal/tools -run TestSchemasKeepTheReleasedContract -update
+# which writes their baselines.

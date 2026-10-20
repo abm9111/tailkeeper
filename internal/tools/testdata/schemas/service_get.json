@@ -1,0 +1,68 @@
+{
+  "input": {
+    "additionalProperties": false,
+    "properties": {
+      "name": {
+        "description": "service name, for example svc:web",
+        "type": "string"
+      }
+    },
+    "required": [
+      "name"
+    ],
+    "type": "object"
+  },
+  "output": {
+    "additionalProperties": false,
+    "properties": {
+      "addrs": {
+        "items": {
+          "type": "string"
+        },
+        "type": [
+          "null",
+          "array"
+        ]
+      },
+      "comment": {
+        "type": "string",
+        "x-tailkeeper-untrusted": true
+      },
+      "displayName": {
+        "type": "string",
+        "x-tailkeeper-untrusted": true
+      },
+      "name": {
+        "type": "string",
+        "x-tailkeeper-untrusted": true
+      },
+      "ports": {
+        "items": {
+          "type": "string",
+          "x-tailkeeper-untrusted": true
+        },
+        "type": [
+          "null",
+          "array"
+        ],
+        "x-tailkeeper-untrusted": true
+      },
+      "tags": {
+        "items": {
+          "type": "string",
+          "x-tailkeeper-untrusted": true
+        },
+        "type": [
+          "null",
+          "array"
+        ],
+        "x-tailkeeper-untrusted": true
+      }
+    },
+    "required": [
+      "name"
+    ],
+    "type": "object"
+  },
+  "tool": "service_get"
+}

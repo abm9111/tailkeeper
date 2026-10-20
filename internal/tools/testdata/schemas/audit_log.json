@@ -1,0 +1,211 @@
+{
+  "input": {
+    "additionalProperties": false,
+    "properties": {
+      "actor": {
+        "description": "exact actor IDs, or ~search on login or display name (server-side); a pseudonym (p:…) matches client-side; while personal data is masked, ~search and addresses are refused, and with masking off they cannot share a list with a pseudonym",
+        "items": {
+          "type": "string"
+        },
+        "type": [
+          "null",
+          "array"
+        ]
+      },
+      "cursor": {
+        "description": "nextCursor from the previous page; it fixes the window, so omit start and end and repeat the same filters, limit and includeValues",
+        "type": "string"
+      },
+      "end": {
+        "description": "RFC 3339 end (default now); the window may span at most 31 days",
+        "type": "string"
+      },
+      "event": {
+        "description": "event names such as TAILNET.UPDATE.ACL (server-side)",
+        "items": {
+          "type": "string"
+        },
+        "type": [
+          "null",
+          "array"
+        ]
+      },
+      "includeValues": {
+        "description": "also return previews of old and new values, up to 256 bytes each (a cut one ends in ...[truncated]): http and https URLs show as their scheme and host and a hash of their path and query when they have either (https://host/…[path sha256 …]), values under credential-named keys are removed (true, false and null stay), and email and public addresses are masked unless the owner turned masking off; they can still hold user names",
+        "type": "boolean"
+      },
+      "limit": {
+        "description": "page size, 1-5000 (default 500)",
+        "type": "integer"
+      },
+      "origin": {
+        "description": "origins such as ADMIN_CONSOLE or CONFIG_API (client-side)",
+        "items": {
+          "type": "string"
+        },
+        "type": [
+          "null",
+          "array"
+        ]
+      },
+      "start": {
+        "description": "RFC 3339 start (default end minus 24h)",
+        "type": "string"
+      },
+      "target": {
+        "description": "substring, in any case, of the target's ID, name, type or property as the result shows it (client-side: a URL in them shows as its scheme and host and a hash of its path and query when it has either, so a substring of its path matches nothing); a pseudonym (p:…) matches client-side; while personal data is masked, only exact target IDs and pseudonyms; with masking off a substring cannot share a list with a pseudonym",
+        "items": {
+          "type": "string"
+        },
+        "type": [
+          "null",
+          "array"
+        ]
+      }
+    },
+    "type": "object"
+  },
+  "output": {
+    "additionalProperties": false,
+    "properties": {
+      "count": {
+        "type": "integer"
+      },
+      "entries": {
+        "items": {
+          "additionalProperties": false,
+          "properties": {
+            "action": {
+              "type": "string"
+            },
+            "actionDetails": {
+              "type": "string",
+              "x-tailkeeper-untrusted": true
+            },
+            "actor": {
+              "additionalProperties": false,
+              "properties": {
+                "displayName": {
+                  "type": "string",
+                  "x-tailkeeper-masked": true,
+                  "x-tailkeeper-untrusted": true
+                },
+                "id": {
+                  "type": "string"
+                },
+                "loginName": {
+                  "type": "string",
+                  "x-tailkeeper-masked": true,
+                  "x-tailkeeper-untrusted": true
+                },
+                "tags": {
+                  "items": {
+                    "type": "string",
+                    "x-tailkeeper-untrusted": true
+                  },
+                  "type": [
+                    "null",
+                    "array"
+                  ],
+                  "x-tailkeeper-untrusted": true
+                },
+                "type": {
+                  "type": "string"
+                }
+              },
+              "type": "object"
+            },
+            "deferredAt": {
+              "type": "string"
+            },
+            "error": {
+              "type": "string",
+              "x-tailkeeper-untrusted": true
+            },
+            "eventGroupId": {
+              "type": "string"
+            },
+            "eventTime": {
+              "type": "string"
+            },
+            "newDigest": {
+              "description": "as oldDigest",
+              "type": "string"
+            },
+            "newPreview": {
+              "type": "string",
+              "x-tailkeeper-untrusted": true
+            },
+            "oldDigest": {
+              "description": "a digest of the old value's JSON as the API sent it: hmac-sha256: under the privacy key while personal data is masked, sha256: when it is not; absent while masked with no key",
+              "type": "string"
+            },
+            "oldPreview": {
+              "type": "string",
+              "x-tailkeeper-untrusted": true
+            },
+            "origin": {
+              "type": "string"
+            },
+            "target": {
+              "additionalProperties": false,
+              "properties": {
+                "id": {
+                  "type": "string"
+                },
+                "isEphemeral": {
+                  "type": "boolean"
+                },
+                "name": {
+                  "type": "string",
+                  "x-tailkeeper-untrusted": true
+                },
+                "property": {
+                  "type": "string",
+                  "x-tailkeeper-untrusted": true
+                },
+                "type": {
+                  "type": "string"
+                }
+              },
+              "type": "object"
+            }
+          },
+          "required": [
+            "eventTime",
+            "origin",
+            "action",
+            "actor",
+            "target"
+          ],
+          "type": "object"
+        },
+        "type": [
+          "null",
+          "array"
+        ]
+      },
+      "nextCursor": {
+        "type": "string"
+      },
+      "note": {
+        "type": "string"
+      },
+      "windowEnd": {
+        "type": "string"
+      },
+      "windowStart": {
+        "type": "string"
+      }
+    },
+    "required": [
+      "entries",
+      "count",
+      "windowStart",
+      "windowEnd",
+      "note"
+    ],
+    "type": "object"
+  },
+  "tool": "audit_log"
+}

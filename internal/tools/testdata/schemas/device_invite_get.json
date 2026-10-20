@@ -1,0 +1,78 @@
+{
+  "input": {
+    "additionalProperties": false,
+    "properties": {
+      "id": {
+        "description": "invite ID",
+        "type": "string"
+      }
+    },
+    "required": [
+      "id"
+    ],
+    "type": "object"
+  },
+  "output": {
+    "additionalProperties": false,
+    "properties": {
+      "accepted": {
+        "type": "boolean"
+      },
+      "acceptedBy": {
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "type": "integer"
+          },
+          "loginName": {
+            "type": "string",
+            "x-tailkeeper-masked": true,
+            "x-tailkeeper-untrusted": true
+          }
+        },
+        "required": [
+          "id",
+          "loginName"
+        ],
+        "type": [
+          "null",
+          "object"
+        ]
+      },
+      "allowExitNode": {
+        "type": "boolean"
+      },
+      "created": {
+        "type": "string"
+      },
+      "deviceId": {
+        "type": "integer"
+      },
+      "email": {
+        "type": "string",
+        "x-tailkeeper-masked": true,
+        "x-tailkeeper-untrusted": true
+      },
+      "id": {
+        "type": "string"
+      },
+      "lastEmailSentAt": {
+        "type": "string"
+      },
+      "multiUse": {
+        "type": "boolean"
+      },
+      "sharerId": {
+        "type": "integer"
+      }
+    },
+    "required": [
+      "id",
+      "multiUse",
+      "allowExitNode",
+      "accepted"
+    ],
+    "type": "object"
+  },
+  "tool": "device_invite_get"
+}

@@ -233,6 +233,9 @@ func decodeAuditCursor(s string) (auditCursor, time.Time, time.Time, time.Time, 
 // auditMaxSpan is the longest window audit_log reads.
 const auditMaxSpan = 31 * 24 * time.Hour
 
+// flowMaxSpan is the longest window network_flow_logs reads.
+const flowMaxSpan = time.Hour
+
 // auditFilters fingerprints what a cursor was issued for: the filters, the page
 // size, whether previews are shown, and how entries are displayed. The last
 // decides the order of entries that share a timestamp (see displayKey), so under
@@ -411,13 +414,28 @@ func wholeRefs(env *registry.Env, values ...string) []string {
 	return out
 }
 
+// Check refuses a limit out of range, a cursor given with a window or that no page
+// issued, and a window that is malformed or too long, before anything is sent. What
+// depends on the filters or the privacy setting waits for the run. Zero means the
+// default limit.
+func (in AuditLogInput) Check() error {
+	if in.Limit != 0 && (in.Limit < 1 || in.Limit > 5000) {
+		return validationf("limit must be between 1 and 5000")
+	}
+	if in.Cursor != "" && (in.Start != "" || in.End != "") {
+		return validationf("a cursor fixes the window: omit start and end")
+	}
+	if in.Cursor == "" {
+		return checkWindow(in.Start, in.End, auditMaxSpan)
+	}
+	_, _, _, _, err := decodeAuditCursor(in.Cursor)
+	return err
+}
+
 func auditLog(ctx context.Context, env *registry.Env, in AuditLogInput) (AuditLogOutput, error) {
 	limit := in.Limit
 	if limit == 0 {
 		limit = 500
-	}
-	if limit < 1 || limit > 5000 {
-		return AuditLogOutput{}, validationf("limit must be between 1 and 5000")
 	}
 	filters := auditFilters(env, in, limit)
 	var (
@@ -425,9 +443,6 @@ func auditLog(ctx context.Context, env *registry.Env, in AuditLogInput) (AuditLo
 		cur               *auditCursor
 	)
 	if in.Cursor != "" {
-		if in.Start != "" || in.End != "" {
-			return AuditLogOutput{}, validationf("a cursor fixes the window: omit start and end")
-		}
 		c, s, e, a, err := decodeAuditCursor(in.Cursor)
 		if err != nil {
 			return AuditLogOutput{}, err
@@ -613,18 +628,27 @@ func previewText(raw json.RawMessage) string {
 	return string(redactSecrets(raw))
 }
 
+// Check refuses a window that is malformed or too long and a maxRecords out of
+// range, before anything is sent. Zero means the default.
+func (in FlowLogsInput) Check() error {
+	if err := checkWindow(in.Start, in.End, flowMaxSpan); err != nil {
+		return err
+	}
+	if in.MaxRecords != 0 && (in.MaxRecords < 1 || in.MaxRecords > 10000) {
+		return validationf("maxRecords must be between 1 and 10000")
+	}
+	return nil
+}
+
 func networkFlowLogs(ctx context.Context, env *registry.Env, in FlowLogsInput) (FlowLogsOutput, error) {
 	now := env.Clock()
-	start, end, err := parseWindow(now, in.Start, in.End, 15*time.Minute, time.Hour)
+	start, end, err := parseWindow(now, in.Start, in.End, 15*time.Minute, flowMaxSpan)
 	if err != nil {
 		return FlowLogsOutput{}, err
 	}
 	maxRecords := in.MaxRecords
 	if maxRecords == 0 {
 		maxRecords = 1000
-	}
-	if maxRecords < 1 || maxRecords > 10000 {
-		return FlowLogsOutput{}, validationf("maxRecords must be between 1 and 10000")
 	}
 	out := FlowLogsOutput{Records: []FlowRecord{}, AsOf: now.UTC().Format(time.RFC3339), MayBeIncomplete: true, LoggingEnabled: "unknown",
 		Note: "Node-reported times and traffic are not verified by Tailscale; only successful connections are logged; repeated queries may differ."}
@@ -730,10 +754,15 @@ func (p *flowProto) UnmarshalJSON(b []byte) error {
 	return nil
 }
 
-func logStreamingGet(ctx context.Context, env *registry.Env, in LogStreamInput) (LogStreamOutput, error) {
+// Check refuses a log type Tailscale does not have, before anything is sent.
+func (in LogStreamInput) Check() error {
 	if !slices.Contains([]string{"configuration", "network"}, in.LogType) {
-		return LogStreamOutput{}, validationf("logType must be configuration or network")
+		return validationf("logType must be configuration or network")
 	}
+	return nil
+}
+
+func logStreamingGet(ctx context.Context, env *registry.Env, in LogStreamInput) (LogStreamOutput, error) {
 	out := LogStreamOutput{LogType: in.LogType, Findings: []string{}}
 	path, err := tailnetPath(env, "/logging/"+in.LogType+"/stream")
 	if err != nil {

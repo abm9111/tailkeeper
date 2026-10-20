@@ -1,0 +1,70 @@
+{
+  "input": {
+    "additionalProperties": false,
+    "type": "object"
+  },
+  "output": {
+    "additionalProperties": false,
+    "properties": {
+      "count": {
+        "type": "integer"
+      },
+      "webhooks": {
+        "items": {
+          "additionalProperties": false,
+          "properties": {
+            "created": {
+              "type": "string"
+            },
+            "creatorLoginName": {
+              "type": "string",
+              "x-tailkeeper-masked": true,
+              "x-tailkeeper-untrusted": true
+            },
+            "endpointHost": {
+              "type": "string",
+              "x-tailkeeper-untrusted": true
+            },
+            "endpointId": {
+              "type": "string"
+            },
+            "endpointPathSha256": {
+              "type": "string"
+            },
+            "lastModified": {
+              "type": "string"
+            },
+            "providerType": {
+              "type": "string"
+            },
+            "subscriptions": {
+              "items": {
+                "type": "string"
+              },
+              "type": [
+                "null",
+                "array"
+              ]
+            }
+          },
+          "required": [
+            "endpointId",
+            "endpointHost",
+            "subscriptions"
+          ],
+          "type": "object"
+        },
+        "type": [
+          "null",
+          "array"
+        ]
+      }
+    },
+    "required": [
+      "webhooks",
+      "count"
+    ],
+    "type": "object"
+  },
+  "tool": "webhooks_list"
+}

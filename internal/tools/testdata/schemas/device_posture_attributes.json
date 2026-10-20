@@ -1,0 +1,60 @@
+{
+  "input": {
+    "additionalProperties": false,
+    "properties": {
+      "device": {
+        "description": "node ID (preferred), numeric ID, or exact hostname as the result shows it: while personal data is masked, an email or public address in it is masked, so use the node ID",
+        "type": "string"
+      }
+    },
+    "required": [
+      "device"
+    ],
+    "type": "object"
+  },
+  "output": {
+    "additionalProperties": false,
+    "properties": {
+      "attributes": {
+        "items": {
+          "additionalProperties": false,
+          "properties": {
+            "attribute": {
+              "type": "string",
+              "x-tailkeeper-untrusted": true
+            },
+            "expiry": {
+              "type": "string"
+            },
+            "type": {
+              "type": "string"
+            },
+            "value": {
+              "type": "string",
+              "x-tailkeeper-untrusted": true
+            }
+          },
+          "required": [
+            "attribute",
+            "value",
+            "type"
+          ],
+          "type": "object"
+        },
+        "type": [
+          "null",
+          "array"
+        ]
+      },
+      "nodeId": {
+        "type": "string"
+      }
+    },
+    "required": [
+      "nodeId",
+      "attributes"
+    ],
+    "type": "object"
+  },
+  "tool": "device_posture_attributes"
+}

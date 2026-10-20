@@ -145,6 +145,8 @@ Put `TAILKEEPER_PRIVACY_KEY`, 64 hexadecimal characters (`openssl rand -hex 32`)
 | `mcp.profile` | `reads` (the default), `core` or `full` (the same tools in 0.x) |
 | `mcp.enableAlpha` | `true` also advertises the tools for alpha Tailscale features |
 | `audit.reads` | `metadata` (the default: which tool ran, for whom, how much it returned) or `none` |
+| `acl.invariantsFile` | absolute path of the invariants file the policy checks add to every validation; unset by default. No command reads it yet. A path that is set and cannot be read fails every call that uses it. A 0.5.0 binary refuses this key, so set it in a context only 0.6.0 uses |
+| `acl.validatePerMinute` | a whole number from 1 to 120 (default 30): how many policy validation requests one tailkeeper process sends per minute. A 0.5.0 binary refuses this key |
 | `personalData` | `mask` (the default) or `show` |
 
 The context is chosen by `--context NAME` (before the command, or after `mcp`), then `TAILKEEPER_CONTEXT`, then `defaultContext`, then the only context there is. A system configuration, `/etc/tailkeeper/config.hujson` (Windows: `%ProgramData%\tailkeeper\config.hujson`), wins outright over yours; `doctor` says which file it read. Your configuration lives at `~/Library/Application Support/tailkeeper/config.hujson` (macOS), `$XDG_CONFIG_HOME/tailkeeper/config.hujson`, by default `~/.config/tailkeeper/config.hujson` (Linux), or `%AppData%\tailkeeper\config.hujson` (Windows). The audit log is `~/Library/Logs/tailkeeper/audit.jsonl` (macOS), `$XDG_STATE_HOME/tailkeeper/audit.jsonl`, by default `~/.local/state/tailkeeper/audit.jsonl` (Linux), or `%LocalAppData%\tailkeeper\audit.jsonl` (Windows).

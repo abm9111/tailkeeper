@@ -1,0 +1,107 @@
+{
+  "input": {
+    "additionalProperties": false,
+    "type": "object"
+  },
+  "output": {
+    "additionalProperties": false,
+    "properties": {
+      "account": {
+        "additionalProperties": false,
+        "properties": {
+          "email": {
+            "type": "string",
+            "x-tailkeeper-masked": true,
+            "x-tailkeeper-untrusted": true
+          },
+          "fallbackEmail": {
+            "type": "string",
+            "x-tailkeeper-masked": true,
+            "x-tailkeeper-untrusted": true
+          },
+          "needsVerification": {
+            "description": "null when the API did not say; only an explicit false counts as verified",
+            "type": [
+              "null",
+              "boolean"
+            ]
+          }
+        },
+        "required": [
+          "needsVerification"
+        ],
+        "type": [
+          "null",
+          "object"
+        ]
+      },
+      "security": {
+        "additionalProperties": false,
+        "properties": {
+          "email": {
+            "type": "string",
+            "x-tailkeeper-masked": true,
+            "x-tailkeeper-untrusted": true
+          },
+          "fallbackEmail": {
+            "type": "string",
+            "x-tailkeeper-masked": true,
+            "x-tailkeeper-untrusted": true
+          },
+          "needsVerification": {
+            "description": "null when the API did not say; only an explicit false counts as verified",
+            "type": [
+              "null",
+              "boolean"
+            ]
+          }
+        },
+        "required": [
+          "needsVerification"
+        ],
+        "type": [
+          "null",
+          "object"
+        ]
+      },
+      "securityContactOk": {
+        "description": "security contact set and verified: Tailscale emails it when secret scanning revokes a leaked key",
+        "type": "boolean"
+      },
+      "support": {
+        "additionalProperties": false,
+        "properties": {
+          "email": {
+            "type": "string",
+            "x-tailkeeper-masked": true,
+            "x-tailkeeper-untrusted": true
+          },
+          "fallbackEmail": {
+            "type": "string",
+            "x-tailkeeper-masked": true,
+            "x-tailkeeper-untrusted": true
+          },
+          "needsVerification": {
+            "description": "null when the API did not say; only an explicit false counts as verified",
+            "type": [
+              "null",
+              "boolean"
+            ]
+          }
+        },
+        "required": [
+          "needsVerification"
+        ],
+        "type": [
+          "null",
+          "object"
+        ]
+      }
+    },
+    "required": [
+      "securityContactOk"
+    ],
+    "type": "object"
+  },
+  "tool": "contacts_get"
+}

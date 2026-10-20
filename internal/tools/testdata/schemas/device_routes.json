@@ -1,0 +1,118 @@
+{
+  "input": {
+    "additionalProperties": false,
+    "properties": {
+      "device": {
+        "description": "node ID (preferred), numeric ID, or exact hostname as the result shows it: while personal data is masked, an email or public address in it is masked, so use the node ID",
+        "type": "string"
+      },
+      "includeHa": {
+        "description": "also list other devices with identical enabled subnet routes (exit-node routes are not HA)",
+        "type": "boolean"
+      }
+    },
+    "required": [
+      "device"
+    ],
+    "type": "object"
+  },
+  "output": {
+    "additionalProperties": false,
+    "properties": {
+      "advertised": {
+        "items": {
+          "type": "string",
+          "x-tailkeeper-untrusted": true
+        },
+        "type": [
+          "null",
+          "array"
+        ],
+        "x-tailkeeper-untrusted": true
+      },
+      "enabled": {
+        "items": {
+          "type": "string",
+          "x-tailkeeper-untrusted": true
+        },
+        "type": [
+          "null",
+          "array"
+        ],
+        "x-tailkeeper-untrusted": true
+      },
+      "exitNodeAdvertised": {
+        "type": "boolean"
+      },
+      "exitNodeEnabled": {
+        "type": "boolean"
+      },
+      "haPeers": {
+        "items": {
+          "additionalProperties": false,
+          "properties": {
+            "name": {
+              "type": "string",
+              "x-tailkeeper-untrusted": true
+            },
+            "nodeId": {
+              "type": "string"
+            },
+            "prefix": {
+              "type": "string",
+              "x-tailkeeper-untrusted": true
+            }
+          },
+          "required": [
+            "prefix",
+            "nodeId",
+            "name"
+          ],
+          "type": "object"
+        },
+        "type": [
+          "null",
+          "array"
+        ]
+      },
+      "latent": {
+        "description": "approved but not advertised: activates if this identity ever advertises it",
+        "items": {
+          "type": "string",
+          "x-tailkeeper-untrusted": true
+        },
+        "type": [
+          "null",
+          "array"
+        ],
+        "x-tailkeeper-untrusted": true
+      },
+      "nodeId": {
+        "type": "string"
+      },
+      "pending": {
+        "description": "advertised but not approved",
+        "items": {
+          "type": "string",
+          "x-tailkeeper-untrusted": true
+        },
+        "type": [
+          "null",
+          "array"
+        ],
+        "x-tailkeeper-untrusted": true
+      }
+    },
+    "required": [
+      "nodeId",
+      "advertised",
+      "enabled",
+      "pending",
+      "latent",
+      "exitNodeAdvertised",
+      "exitNodeEnabled"
+    ],
+    "type": "object"
+  },
+  "tool": "device_routes"
+}

@@ -119,9 +119,13 @@ func Resolve(ctx context.Context, p config.Provider, sys System) (Read, error) {
 		case sys.Getenv(EnvReexec) != "1":
 			return Read{}, ErrReexecRequired
 		case errors.Is(err, errNoCredential):
+			// The variable may be inherited from a parent process: no wrapper ran, and
+			// the message says what tailkeeper took from it.
 			return Read{}, tkerr.New(tkerr.CredentialUnavailable,
-				"the exec wrapper ran but did not provide "+EnvClientID+"/"+EnvClientSecret+" or "+EnvAPIKey,
-				"check the wrapper's env file and that the secret manager is unlocked")
+				EnvReexec+"=1 is set, so tailkeeper took the exec wrapper to have run, but no credential came with it ("+
+					EnvClientID+"/"+EnvClientSecret+" or "+EnvAPIKey+" are not set)",
+				"check the wrapper's env file and that the secret manager is unlocked; if no wrapper ran, "+
+					EnvReexec+" was inherited from a parent process: unset it")
 		}
 		return Read{}, err
 	case "file":
@@ -171,7 +175,8 @@ func fromVars(get func(string) string, readFile func(string) ([]byte, error), pr
 var (
 	errNoCredential = tkerr.New(tkerr.CredentialUnavailable,
 		"no read credential: set "+EnvClientID+" and "+EnvClientSecret+" (or "+EnvAPIKey+")",
-		"tailkeeper ignores TS_* and TAILSCALE_* variables on purpose")
+		"set "+EnvClientID+" and "+EnvClientSecret+" (or "+EnvAPIKey+") where the provider reads them (README, Configure); "+
+			"tailkeeper ignores TS_* and TAILSCALE_* variables on purpose")
 	errPartialCredential = tkerr.New(tkerr.CredentialUnavailable,
 		"only one of "+EnvClientID+" and "+EnvClientSecret+" is set", "set both")
 )

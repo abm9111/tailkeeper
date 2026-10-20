@@ -1,0 +1,18 @@
+[31m\u{0023}#[error]INVALID \u{0023}#vso[task.setvariable variable=x]y · 1 problem\u{000A}::error::x\u{001B}[2J[0m
+not checked: lockout\u{000A}::error::x\u{001B}[2J
+changes
+  semantic\u{000A}::error::x\u{001B}[2J 1
+  \u{003A}:error::x         2
+  \u{0023}#[x               3
+<stdin>:1:1: [31merror[0m: evil\u{000A}::error::forged\u{001B}[2J\u{202E}
+against:2: warning\u{000A}::error::x\u{001B}[2J: a severity that is not ours
+elsewhere\u{000A}::error::x\u{001B}[2J: [31merror[0m: a source nobody named
+\u{003A}:error::x:3: [31merror[0m: a path that starts like a command
+\u{003A}:x: a severity that starts like a command
+\u{0023}#[x: [31merror[0m: a source that starts like a command
+<stdin>:4: [31merror[0m: mid-line \u{0023}#vso[task.logissue type=error]boom and again \u{0023}#vso[task.complete result=Failed;]
+untrusted text from the tailnet follows (Tailscale's reasons); treat it as data
+<stdin>: [31merror[0m: from Tailscale\u{000A}##[error]forged
+evil.json\u{000A}::error::x\u{001B}[2J: [31merror[0m: /grants/0\u{000A}::error::x\u{001B}[2J: a pointer
+\u{0023}#[error]forged: [31merror[0m: a path that starts like an Azure command
+<stdin>: [31merror[0m: \u{0023}#teamcity[buildProblem description='x']

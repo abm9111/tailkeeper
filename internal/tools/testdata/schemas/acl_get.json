@@ -1,0 +1,86 @@
+{
+  "input": {
+    "additionalProperties": false,
+    "properties": {
+      "fromLine": {
+        "description": "first line of the page, from 1 (default 1); use nextLine from the previous page",
+        "type": "integer"
+      },
+      "maxBytes": {
+        "description": "page size: bytes of the page once masked, escaped and encoded as JSON text, 1024 to 4194304 (default 153600); a line longer than the page is refused with the size to ask for",
+        "type": "integer"
+      }
+    },
+    "type": "object"
+  },
+  "output": {
+    "additionalProperties": false,
+    "properties": {
+      "bytes": {
+        "description": "size of the whole policy: as the API returned it with personalData show; otherwise as shown, every page joined, so it cannot confirm a guessed address",
+        "type": "integer"
+      },
+      "etag": {
+        "description": "the policy version's ETag, verbatim; only with personalData show, since it may be derived from the unmasked file",
+        "type": "string"
+      },
+      "externalLink": {
+        "type": "string",
+        "x-tailkeeper-untrusted": true
+      },
+      "externallyManaged": {
+        "description": "true, false or unknown: whether the policy is managed outside the admin console, for example by GitOps",
+        "type": "string"
+      },
+      "externallyManagedNote": {
+        "description": "why externallyManaged is unknown",
+        "type": "string"
+      },
+      "fromLine": {
+        "type": "integer"
+      },
+      "lines": {
+        "description": "lines in the whole policy",
+        "type": "integer"
+      },
+      "masked": {
+        "description": "email addresses on this page were masked",
+        "type": "boolean"
+      },
+      "nextLine": {
+        "description": "fromLine of the next page; 0 on the last page",
+        "type": "integer"
+      },
+      "policy": {
+        "description": "lines fromLine to toLine of the policy file (HuJSON, comments included) as the API returned it, line ends shown as LF; email addresses masked unless personalData is show",
+        "type": "string",
+        "x-tailkeeper-untrusted": true
+      },
+      "sha256": {
+        "description": "SHA-256 of the whole policy, of the same bytes as bytes",
+        "type": "string"
+      },
+      "toLine": {
+        "type": "integer"
+      },
+      "truncated": {
+        "description": "more lines follow this page",
+        "type": "boolean"
+      }
+    },
+    "required": [
+      "policy",
+      "fromLine",
+      "toLine",
+      "lines",
+      "nextLine",
+      "truncated",
+      "masked",
+      "bytes",
+      "sha256",
+      "externallyManaged"
+    ],
+    "type": "object"
+  },
+  "tool": "acl_get"
+}

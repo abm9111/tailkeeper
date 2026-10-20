@@ -1,0 +1,128 @@
+{
+  "input": {
+    "additionalProperties": false,
+    "properties": {
+      "id": {
+        "description": "key ID",
+        "type": "string"
+      }
+    },
+    "required": [
+      "id"
+    ],
+    "type": "object"
+  },
+  "output": {
+    "additionalProperties": false,
+    "properties": {
+      "audience": {
+        "type": "string",
+        "x-tailkeeper-untrusted": true
+      },
+      "authKeyCapabilities": {
+        "additionalProperties": false,
+        "properties": {
+          "ephemeral": {
+            "type": "boolean"
+          },
+          "preauthorized": {
+            "type": "boolean"
+          },
+          "reusable": {
+            "type": "boolean"
+          },
+          "tags": {
+            "items": {
+              "type": "string",
+              "x-tailkeeper-untrusted": true
+            },
+            "type": [
+              "null",
+              "array"
+            ],
+            "x-tailkeeper-untrusted": true
+          }
+        },
+        "required": [
+          "reusable",
+          "ephemeral",
+          "preauthorized"
+        ],
+        "type": [
+          "null",
+          "object"
+        ]
+      },
+      "created": {
+        "type": "string"
+      },
+      "customClaimRules": {
+        "additionalProperties": {
+          "type": "string"
+        },
+        "type": "object",
+        "x-tailkeeper-untrusted": true
+      },
+      "description": {
+        "type": "string",
+        "x-tailkeeper-untrusted": true
+      },
+      "expires": {
+        "type": "string"
+      },
+      "id": {
+        "type": "string"
+      },
+      "invalid": {
+        "type": "boolean"
+      },
+      "issuer": {
+        "type": "string",
+        "x-tailkeeper-untrusted": true
+      },
+      "keyType": {
+        "type": "string"
+      },
+      "revoked": {
+        "type": "string"
+      },
+      "scopes": {
+        "items": {
+          "type": "string"
+        },
+        "type": [
+          "null",
+          "array"
+        ]
+      },
+      "subject": {
+        "type": "string",
+        "x-tailkeeper-untrusted": true
+      },
+      "tags": {
+        "items": {
+          "type": "string",
+          "x-tailkeeper-untrusted": true
+        },
+        "type": [
+          "null",
+          "array"
+        ],
+        "x-tailkeeper-untrusted": true
+      },
+      "updated": {
+        "type": "string"
+      },
+      "userId": {
+        "type": "string"
+      }
+    },
+    "required": [
+      "id",
+      "keyType",
+      "invalid"
+    ],
+    "type": "object"
+  },
+  "tool": "key_get"
+}

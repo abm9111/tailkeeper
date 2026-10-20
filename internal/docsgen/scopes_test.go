@@ -87,9 +87,9 @@ func TestScopesComeFromTheRegistry(t *testing.T) {
 	}
 	md := ScopesMarkdown(reg)
 	for _, row := range []string{
-		"| `zz:read` | `zz_full`, `zz_plan` | `zz_part` | Tailscale plans: zz_plan: Premium |\n",
-		"| `zz_alpha:read` | `zz_alpha` |  | alpha tools only (MCP lists them with `--enable-alpha`) |\n",
-		"| `zz_only_part:read` |  | `zz_part` |  |\n",
+		"| `zz:read` | `zz_full`, `zz_plan` | `zz_part` |  | Tailscale plans: zz_plan: Premium |\n",
+		"| `zz_alpha:read` | `zz_alpha` |  |  | alpha tools only (MCP lists them with `--enable-alpha`) |\n",
+		"| `zz_only_part:read` |  | `zz_part` |  |  |\n",
 	} {
 		if !strings.Contains(md, row) {
 			t.Errorf("markdown lacks %q:\n%s", row, md)

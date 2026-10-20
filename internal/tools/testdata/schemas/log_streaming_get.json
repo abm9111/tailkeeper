@@ -1,0 +1,167 @@
+{
+  "input": {
+    "additionalProperties": false,
+    "properties": {
+      "logType": {
+        "description": "configuration or network",
+        "type": "string"
+      }
+    },
+    "required": [
+      "logType"
+    ],
+    "type": "object"
+  },
+  "output": {
+    "additionalProperties": false,
+    "properties": {
+      "configuration": {
+        "additionalProperties": false,
+        "properties": {
+          "compressionFormat": {
+            "type": "string"
+          },
+          "destinationType": {
+            "type": "string"
+          },
+          "gcsBucket": {
+            "type": "string",
+            "x-tailkeeper-untrusted": true
+          },
+          "gcsKeyPrefix": {
+            "type": "string",
+            "x-tailkeeper-untrusted": true
+          },
+          "gcsScopes": {
+            "items": {
+              "type": "string",
+              "x-tailkeeper-untrusted": true
+            },
+            "type": [
+              "null",
+              "array"
+            ],
+            "x-tailkeeper-untrusted": true
+          },
+          "s3AccessKeyId": {
+            "type": "string",
+            "x-tailkeeper-untrusted": true
+          },
+          "s3AuthenticationType": {
+            "type": "string"
+          },
+          "s3Bucket": {
+            "type": "string",
+            "x-tailkeeper-untrusted": true
+          },
+          "s3ExternalId": {
+            "type": "string",
+            "x-tailkeeper-untrusted": true
+          },
+          "s3KeyPrefix": {
+            "type": "string",
+            "x-tailkeeper-untrusted": true
+          },
+          "s3Region": {
+            "type": "string",
+            "x-tailkeeper-untrusted": true
+          },
+          "s3RoleArn": {
+            "type": "string",
+            "x-tailkeeper-untrusted": true
+          },
+          "uploadPeriodMinutes": {
+            "type": "integer"
+          },
+          "url": {
+            "description": "scheme and host only",
+            "type": "string",
+            "x-tailkeeper-untrusted": true
+          },
+          "urlPathSha256": {
+            "description": "SHA-256 of the URL's path and query, which can carry a collector token",
+            "type": "string"
+          },
+          "user": {
+            "type": "string",
+            "x-tailkeeper-masked": true,
+            "x-tailkeeper-untrusted": true
+          }
+        },
+        "type": [
+          "null",
+          "object"
+        ]
+      },
+      "findings": {
+        "items": {
+          "type": "string"
+        },
+        "type": [
+          "null",
+          "array"
+        ]
+      },
+      "health": {
+        "additionalProperties": false,
+        "properties": {
+          "lastActivity": {
+            "type": "string"
+          },
+          "lastError": {
+            "type": "string",
+            "x-tailkeeper-untrusted": true
+          },
+          "numBytesSent": {
+            "type": "integer"
+          },
+          "numEntriesSent": {
+            "type": "integer"
+          },
+          "numFailedRequests": {
+            "type": "integer"
+          },
+          "numSpoofedEntries": {
+            "type": "integer"
+          },
+          "numTotalRequests": {
+            "type": "integer"
+          },
+          "rateFailedRequests": {
+            "type": "number"
+          }
+        },
+        "required": [
+          "numBytesSent",
+          "numEntriesSent",
+          "numSpoofedEntries",
+          "numTotalRequests",
+          "numFailedRequests",
+          "rateFailedRequests"
+        ],
+        "type": [
+          "null",
+          "object"
+        ]
+      },
+      "healthError": {
+        "description": "error code when delivery health could not be read",
+        "type": "string"
+      },
+      "logType": {
+        "type": "string"
+      },
+      "status": {
+        "description": "configured or not_configured",
+        "type": "string"
+      }
+    },
+    "required": [
+      "logType",
+      "status",
+      "findings"
+    ],
+    "type": "object"
+  },
+  "tool": "log_streaming_get"
+}
