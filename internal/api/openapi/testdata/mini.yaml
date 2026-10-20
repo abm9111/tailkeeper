@@ -1,8 +1,9 @@
 # A small hand-made OpenAPI 3.1 document for the fingerprint tests. It is not
 # Tailscale's: it holds one of each shape the fingerprint must walk (a $ref'd
 # response, a $ref'd schema, allOf, nested objects, an array of objects, maps, a
-# type list, a cycle)
-# and nothing that looks like a credential.
+# type list, a cycle), the request side (a $ref'd and an inline parameter, one on the
+# path item, one whose name holds spaces, request bodies of two content types) and
+# error responses, and nothing that looks like a credential.
 openapi: 3.1.0
 info:
   title: Mini
@@ -11,6 +12,17 @@ paths:
   /widgets:
     get:
       operationId: listWidgets
+      parameters:
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: integer
+        - $ref: '#/components/parameters/AcceptHeader'
+        - name: '<field>=<value> filters'
+          in: query
+          schema:
+            type: string
       responses:
         '200':
           $ref: '#/components/responses/Widgets'
@@ -23,7 +35,34 @@ paths:
                 properties:
                   errorOnly:
                     type: string
+    post:
+      operationId: createWidget
+      parameters:
+        - name: dryRun
+          in: query
+          schema:
+            type: boolean
+      requestBody:
+        content:
+          application/x-www-form-urlencoded:
+            schema:
+              type: object
+              properties:
+                formOnly:
+                  type: string
+      responses:
+        '200':
+          description: Created.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  createdOnly:
+                    type: string
   /widgets/{id}:
+    parameters:
+      - $ref: '#/components/parameters/WidgetId'
     get:
       operationId: getWidget
       responses:
@@ -41,6 +80,11 @@ paths:
                     type: string
     delete:
       operationId: deleteWidget
+      parameters:
+        - name: force
+          in: query
+          schema:
+            type: boolean
       responses:
         '200':
           description: Deleted.
@@ -51,8 +95,82 @@ paths:
                 properties:
                   writeOnly:
                     type: string
+  /tailnet/{tailnet}/acl/validate:
+    parameters:
+      - $ref: '#/components/parameters/Tenant'
+    post:
+      operationId: validateWidgets
+      requestBody:
+        content:
+          application/json:
+            schema:
+              oneOf:
+                - type: array
+                  items:
+                    type: object
+                    properties:
+                      bodyOnly:
+                        type: string
+                - type: string
+          application/hujson:
+            schema:
+              type: string
+      responses:
+        '200':
+          description: Validation or tests have run.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+                  data:
+                    type: array
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '403':
+          description: Forbidden.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+        '500':
+          description: Server error.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  serverOnly:
+                    type: string
 components:
+  parameters:
+    AcceptHeader:
+      in: header
+      name: Accept
+      required: false
+      schema:
+        type: string
+    Tenant:
+      in: path
+      name: tailnet
+      required: true
+      schema:
+        type: string
+    WidgetId:
+      in: path
+      name: id
+      required: true
+      schema:
+        type: string
   responses:
+    BadRequest:
+      description: Bad request.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Problem'
     Widgets:
       description: A list of widgets.
       content:
@@ -65,6 +183,15 @@ components:
                 items:
                   $ref: '#/components/schemas/Widget'
   schemas:
+    Problem:
+      type: object
+      properties:
+        message:
+          type: string
+        hint:
+          type:
+            - string
+            - 'null'
     Base:
       type: object
       properties:

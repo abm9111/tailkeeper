@@ -3,8 +3,10 @@
 // sha256. The document itself is not committed: TestOperationsMatchTheDocument
 // compares the list with a copy named by TAILKEEPER_OPENAPI_LIVE, and the weekly
 // drift check does the same against the live document. fingerprint.txt pins what
-// the tools decode: the required operations and the fields of their 2xx JSON
-// responses, compared by TestLiveDocumentMatchesThePin. The binary never parses
+// the tools depend on: the required operations; the fields of their 2xx JSON
+// responses (and of the validate call's 4xx responses: see ReadsErrorBody); their
+// parameters ("param <name> <in>") and the content types they accept ("req
+// <type>"), compared by TestLiveDocumentMatchesThePin. The binary never parses
 // YAML.
 package openapi
 
@@ -36,6 +38,16 @@ func parseOperations(text string) []string {
 // policy validation acl_test sends. Writes arrive with the gate (M2).
 func Required(op string) bool {
 	return strings.HasPrefix(op, "GET ") || op == "POST /tailnet/{tailnet}/acl/validate"
+}
+
+// ReadsErrorBody reports whether fingerprint.txt pins the fields of op's 4xx JSON
+// responses. The client reads message from every error body, and every 4xx
+// response of the required operations refers to one shared error schema, so the
+// validate call's lines pin that shape for all of them; the validate call is also
+// the one whose 400 the client reads beyond message (a rejected policy's test
+// results).
+func ReadsErrorBody(op string) bool {
+	return op == "POST /tailnet/{tailnet}/acl/validate"
 }
 
 // Skipped lists the required operations no tool calls, and why.
