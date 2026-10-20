@@ -1,0 +1,53 @@
+{
+  "input": {
+    "additionalProperties": false,
+    "type": "object"
+  },
+  "output": {
+    "additionalProperties": false,
+    "properties": {
+      "count": {
+        "type": "integer"
+      },
+      "invites": {
+        "items": {
+          "additionalProperties": false,
+          "properties": {
+            "email": {
+              "type": "string",
+              "x-tailkeeper-masked": true,
+              "x-tailkeeper-untrusted": true
+            },
+            "id": {
+              "type": "string"
+            },
+            "inviterId": {
+              "type": "integer"
+            },
+            "lastEmailSentAt": {
+              "type": "string"
+            },
+            "role": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "id",
+            "role"
+          ],
+          "type": "object"
+        },
+        "type": [
+          "null",
+          "array"
+        ]
+      }
+    },
+    "required": [
+      "invites",
+      "count"
+    ],
+    "type": "object"
+  },
+  "tool": "user_invites_list"
+}

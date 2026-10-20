@@ -1,0 +1,116 @@
+{
+  "input": {
+    "additionalProperties": false,
+    "type": "object"
+  },
+  "output": {
+    "additionalProperties": false,
+    "properties": {
+      "magicDns": {
+        "description": "null when the API did not say",
+        "type": [
+          "null",
+          "boolean"
+        ]
+      },
+      "nameservers": {
+        "items": {
+          "additionalProperties": false,
+          "properties": {
+            "address": {
+              "type": "string",
+              "x-tailkeeper-untrusted": true
+            },
+            "useWithExitNode": {
+              "type": "boolean"
+            }
+          },
+          "required": [
+            "address",
+            "useWithExitNode"
+          ],
+          "type": "object"
+        },
+        "type": [
+          "null",
+          "array"
+        ]
+      },
+      "overrideLocalDns": {
+        "description": "null when the API did not say",
+        "type": [
+          "null",
+          "boolean"
+        ]
+      },
+      "policyOverridesAnalysed": {
+        "description": "false until milestone M3: split-DNS policies and extraDNSRecords in the policy file are not yet included",
+        "type": "boolean"
+      },
+      "searchPaths": {
+        "items": {
+          "type": "string",
+          "x-tailkeeper-untrusted": true
+        },
+        "type": [
+          "null",
+          "array"
+        ],
+        "x-tailkeeper-untrusted": true
+      },
+      "splitDns": {
+        "items": {
+          "additionalProperties": false,
+          "properties": {
+            "domain": {
+              "type": "string",
+              "x-tailkeeper-untrusted": true
+            },
+            "resolvers": {
+              "items": {
+                "additionalProperties": false,
+                "properties": {
+                  "address": {
+                    "type": "string",
+                    "x-tailkeeper-untrusted": true
+                  },
+                  "useWithExitNode": {
+                    "type": "boolean"
+                  }
+                },
+                "required": [
+                  "address",
+                  "useWithExitNode"
+                ],
+                "type": "object"
+              },
+              "type": [
+                "null",
+                "array"
+              ]
+            }
+          },
+          "required": [
+            "domain",
+            "resolvers"
+          ],
+          "type": "object"
+        },
+        "type": [
+          "null",
+          "array"
+        ]
+      }
+    },
+    "required": [
+      "nameservers",
+      "splitDns",
+      "searchPaths",
+      "magicDns",
+      "overrideLocalDns",
+      "policyOverridesAnalysed"
+    ],
+    "type": "object"
+  },
+  "tool": "dns_get"
+}

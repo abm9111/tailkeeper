@@ -1,0 +1,84 @@
+{
+  "input": {
+    "additionalProperties": false,
+    "type": "object"
+  },
+  "output": {
+    "additionalProperties": false,
+    "properties": {
+      "apps": {
+        "items": {
+          "additionalProperties": false,
+          "properties": {
+            "allowedNodeAttributes": {
+              "items": {
+                "type": "string",
+                "x-tailkeeper-untrusted": true
+              },
+              "type": [
+                "null",
+                "array"
+              ],
+              "x-tailkeeper-untrusted": true
+            },
+            "created": {
+              "type": "string"
+            },
+            "description": {
+              "type": "string",
+              "x-tailkeeper-untrusted": true
+            },
+            "id": {
+              "type": "string"
+            },
+            "name": {
+              "type": "string",
+              "x-tailkeeper-untrusted": true
+            },
+            "redirectURIs": {
+              "items": {
+                "type": "string",
+                "x-tailkeeper-untrusted": true
+              },
+              "type": [
+                "null",
+                "array"
+              ],
+              "x-tailkeeper-untrusted": true
+            },
+            "scopes": {
+              "items": {
+                "type": "string"
+              },
+              "type": [
+                "null",
+                "array"
+              ]
+            },
+            "updated": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "id",
+            "name"
+          ],
+          "type": "object"
+        },
+        "type": [
+          "null",
+          "array"
+        ]
+      },
+      "count": {
+        "type": "integer"
+      }
+    },
+    "required": [
+      "apps",
+      "count"
+    ],
+    "type": "object"
+  },
+  "tool": "oauth_apps_list"
+}

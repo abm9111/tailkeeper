@@ -1,0 +1,147 @@
+{
+  "input": {
+    "additionalProperties": false,
+    "properties": {
+      "end": {
+        "description": "RFC 3339 end (default now); the window may span at most 1h",
+        "type": "string"
+      },
+      "maxRecords": {
+        "description": "1-10000 (default 1000)",
+        "type": "integer"
+      },
+      "node": {
+        "description": "only records logged by this node ID (client-side)",
+        "type": "string"
+      },
+      "start": {
+        "description": "RFC 3339 start (default end minus 15m)",
+        "type": "string"
+      }
+    },
+    "type": "object"
+  },
+  "output": {
+    "additionalProperties": false,
+    "properties": {
+      "asOf": {
+        "type": "string"
+      },
+      "count": {
+        "type": "integer"
+      },
+      "loggingEnabled": {
+        "description": "true, false or unknown (settings unreadable): with unknown, zero records may mean logging is off",
+        "type": "string"
+      },
+      "mayBeIncomplete": {
+        "type": "boolean"
+      },
+      "note": {
+        "type": "string"
+      },
+      "records": {
+        "items": {
+          "additionalProperties": false,
+          "properties": {
+            "end": {
+              "type": "string",
+              "x-tailkeeper-untrusted": true
+            },
+            "flows": {
+              "items": {
+                "additionalProperties": false,
+                "properties": {
+                  "dst": {
+                    "type": "string",
+                    "x-tailkeeper-untrusted": true
+                  },
+                  "kind": {
+                    "description": "virtual, subnet, exit or physical",
+                    "type": "string"
+                  },
+                  "proto": {
+                    "type": "string",
+                    "x-tailkeeper-untrusted": true
+                  },
+                  "rxBytes": {
+                    "type": "integer"
+                  },
+                  "rxPkts": {
+                    "type": "integer"
+                  },
+                  "src": {
+                    "type": "string",
+                    "x-tailkeeper-untrusted": true
+                  },
+                  "txBytes": {
+                    "type": "integer"
+                  },
+                  "txPkts": {
+                    "type": "integer"
+                  }
+                },
+                "required": [
+                  "kind",
+                  "proto",
+                  "src",
+                  "dst",
+                  "txPkts",
+                  "txBytes",
+                  "rxPkts",
+                  "rxBytes"
+                ],
+                "type": "object"
+              },
+              "type": [
+                "null",
+                "array"
+              ]
+            },
+            "logged": {
+              "type": "string"
+            },
+            "nodeId": {
+              "type": "string"
+            },
+            "start": {
+              "type": "string",
+              "x-tailkeeper-untrusted": true
+            }
+          },
+          "required": [
+            "nodeId",
+            "logged",
+            "start",
+            "end",
+            "flows"
+          ],
+          "type": "object"
+        },
+        "type": [
+          "null",
+          "array"
+        ]
+      },
+      "status": {
+        "description": "ok, not_enabled (flow logging is off) or not_available (not on this plan)",
+        "type": "string"
+      },
+      "truncated": {
+        "type": "boolean"
+      }
+    },
+    "required": [
+      "status",
+      "loggingEnabled",
+      "records",
+      "count",
+      "truncated",
+      "asOf",
+      "mayBeIncomplete",
+      "note"
+    ],
+    "type": "object"
+  },
+  "tool": "network_flow_logs"
+}

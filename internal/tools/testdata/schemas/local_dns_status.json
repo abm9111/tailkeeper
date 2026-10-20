@@ -1,0 +1,117 @@
+{
+  "input": {
+    "additionalProperties": false,
+    "type": "object"
+  },
+  "output": {
+    "additionalProperties": false,
+    "properties": {
+      "magicDnsEnabled": {
+        "type": "boolean"
+      },
+      "magicDnsSuffix": {
+        "type": "string",
+        "x-tailkeeper-untrusted": true
+      },
+      "resolvers": {
+        "description": "the tailnet's resolvers in preference order; empty means system defaults",
+        "items": {
+          "type": "string",
+          "x-tailkeeper-untrusted": true
+        },
+        "type": [
+          "null",
+          "array"
+        ],
+        "x-tailkeeper-untrusted": true
+      },
+      "searchDomains": {
+        "items": {
+          "type": "string",
+          "x-tailkeeper-untrusted": true
+        },
+        "type": [
+          "null",
+          "array"
+        ],
+        "x-tailkeeper-untrusted": true
+      },
+      "selfDnsName": {
+        "type": "string",
+        "x-tailkeeper-untrusted": true
+      },
+      "splitDns": {
+        "items": {
+          "additionalProperties": false,
+          "properties": {
+            "domain": {
+              "type": "string",
+              "x-tailkeeper-untrusted": true
+            },
+            "resolvers": {
+              "items": {
+                "additionalProperties": false,
+                "properties": {
+                  "address": {
+                    "type": "string",
+                    "x-tailkeeper-untrusted": true
+                  },
+                  "useWithExitNode": {
+                    "type": "boolean"
+                  }
+                },
+                "required": [
+                  "address",
+                  "useWithExitNode"
+                ],
+                "type": "object"
+              },
+              "type": [
+                "null",
+                "array"
+              ]
+            }
+          },
+          "required": [
+            "domain",
+            "resolvers"
+          ],
+          "type": "object"
+        },
+        "type": [
+          "null",
+          "array"
+        ]
+      },
+      "systemDnsError": {
+        "type": "string",
+        "x-tailkeeper-untrusted": true
+      },
+      "systemNameservers": {
+        "items": {
+          "type": "string",
+          "x-tailkeeper-untrusted": true
+        },
+        "type": [
+          "null",
+          "array"
+        ],
+        "x-tailkeeper-untrusted": true
+      },
+      "tailscaleDns": {
+        "description": "the node accepts the tailnet DNS configuration (--accept-dns)",
+        "type": "boolean"
+      }
+    },
+    "required": [
+      "tailscaleDns",
+      "magicDnsEnabled",
+      "resolvers",
+      "splitDns",
+      "searchDomains",
+      "systemNameservers"
+    ],
+    "type": "object"
+  },
+  "tool": "local_dns_status"
+}

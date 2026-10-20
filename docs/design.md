@@ -1372,7 +1372,7 @@ Every error carries a code, a message and the one action that fixes it. API erro
 | `api_error` | Anything else (status and message) | 1 |
 | `write_limit_exceeded` | Local bucket exhausted | 3 |
 | `kill_switch` | `DISABLED` present | 6 |
-| `config_unsafe` | Strict-mode check failed (file and required mode); refuses every tool | 6 |
+| `config_unsafe` | Strict-mode check failed (file and required mode). An unsafe configuration file refuses every tool (the `exec` provider runs commands it names); an unsafe credential file fails the API tools only, and the local tools keep working | 6 |
 | `config_missing`, `config_invalid` | No configuration file (local tools still run); a file that fails to parse or validate (refuses every tool: the `exec` provider runs commands the configuration names); an `acl.invariantsFile` that is set but cannot be read (refuses the calls that use it) | 6 |
 | `externally_managed`, `externally_owned` | GitOps lock or ownership map (link or owner) | 6 |
 | `audit_unavailable` | Intent could not be recorded | 7 |
@@ -1401,7 +1401,7 @@ Every error carries a code, a message and the one action that fixes it. API erro
 - **Dependencies.** Standard library; `tailscale.com/client/tailscale/v2` (with `github.com/tailscale/hujson`, `golang.org/x/oauth2`); `github.com/modelcontextprotocol/go-sdk` (with `github.com/google/jsonschema-go`, `github.com/segmentio/encoding`, `github.com/segmentio/asm`, `github.com/yosida95/uritemplate/v3`, `golang.org/x/{sync,sys,time}`). `gopkg.in/yaml.v3` is a test-only dependency: the OpenAPI pin tests read the document with it, and the binary never parses YAML (`go list -deps ./cmd/tailkeeper` does not list it). `go list -deps` output is checked into `docs/dependencies.md`; any change fails CI until reviewed.
 - **Build.** `CGO_ENABLED=0`, `-trimpath`, pinned toolchain (`toolchain go1.27.2` in `go.mod`: go1.27.1 has nine standard-library vulnerabilities reachable from tailkeeper's code), `GOFLAGS=-mod=readonly`, `go mod verify`. staticcheck v0.8.1 cannot read go1.27.2 export data, so `make lint` runs it under go1.27.1; lint findings do not depend on the patch release.
 - **Network.**
-  - Egress goes only to `api.tailscale.com` (API, token and token-exchange endpoints), the configured platform token source for `oidc`, and nothing else; `login.tailscale.com` is not needed.
+  - Egress goes only to `api.tailscale.com` (API, token and token-exchange endpoints), the configured platform token source for `oidc`, and nothing else; `login.tailscale.com` is not needed. The client honours `HTTPS_PROXY` and `NO_PROXY`, because it uses `http.DefaultTransport`; a proxy sees the `CONNECT` host and port, not the requests.
   - TLS 1.2 or later with system roots; 60 s timeout per request attempt. No client follows redirects: the bearer is added per request, so a followed redirect would carry it to whatever host the response names.
   - Reads retry on 429, 500, 502, 503, 504 and transport errors (client timeouts included) with bounded exponential backoff; the caller's own cancellation is never retried, and writes are never retried. A path with an empty, `.` or `..` segment, or an encoded slash, is refused before any request.
 - **Inputs.**

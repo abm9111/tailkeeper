@@ -79,6 +79,9 @@ type WebhookRef struct {
 	ID string `json:"id" jsonschema:"webhook endpoint ID"`
 }
 
+// Check refuses an ID that cannot be one, before anything is sent.
+func (in WebhookRef) Check() error { return requireID("id", in.ID) }
+
 // PostureIntegration is an EDR/MDM integration without its client secret.
 type PostureIntegration struct {
 	ID            string         `json:"id" tk:"col"`
@@ -110,6 +113,9 @@ type IDRef struct {
 	ID string `json:"id" jsonschema:"object ID"`
 }
 
+// Check refuses an ID that cannot be one, before anything is sent.
+func (in IDRef) Check() error { return requireID("id", in.ID) }
+
 // Service is a Tailscale Service.
 type Service struct {
 	Name        string   `json:"name" tk:"untrusted,col"`
@@ -130,6 +136,9 @@ type ServicesOutput struct {
 type ServiceRef struct {
 	Name string `json:"name" jsonschema:"service name, for example svc:web"`
 }
+
+// Check refuses a name that cannot be one, before anything is sent.
+func (in ServiceRef) Check() error { return requireID("name", in.Name) }
 
 // OAuthApp is an OAuth app without its client secret.
 type OAuthApp struct {
@@ -198,9 +207,6 @@ func webhooksList(ctx context.Context, env *registry.Env, _ NoInput) (WebhooksOu
 }
 
 func webhookGet(ctx context.Context, env *registry.Env, in WebhookRef) (Webhook, error) {
-	if err := requireID("id", in.ID); err != nil {
-		return Webhook{}, err
-	}
 	var w apiWebhook
 	if err := get(ctx, env, api.Path("webhooks/%s", in.ID), nil, &w); err != nil {
 		return Webhook{}, err
@@ -223,9 +229,6 @@ func postureList(ctx context.Context, env *registry.Env, _ NoInput) (PostureInte
 }
 
 func postureGetOne(ctx context.Context, env *registry.Env, in IDRef) (PostureIntegration, error) {
-	if err := requireID("id", in.ID); err != nil {
-		return PostureIntegration{}, err
-	}
 	var p PostureIntegration
 	if err := get(ctx, env, api.Path("posture/integrations/%s", in.ID), nil, &p); err != nil {
 		return PostureIntegration{}, err
@@ -248,9 +251,6 @@ func servicesList(ctx context.Context, env *registry.Env, _ NoInput) (ServicesOu
 }
 
 func serviceGet(ctx context.Context, env *registry.Env, in ServiceRef) (Service, error) {
-	if err := requireID("name", in.Name); err != nil {
-		return Service{}, err
-	}
 	path, err := tailnetPath(env, "/services/"+url.PathEscape(in.Name))
 	if err != nil {
 		return Service{}, err
@@ -277,9 +277,6 @@ func oauthAppsList(ctx context.Context, env *registry.Env, _ NoInput) (OAuthApps
 }
 
 func oauthAppGet(ctx context.Context, env *registry.Env, in IDRef) (OAuthApp, error) {
-	if err := requireID("id", in.ID); err != nil {
-		return OAuthApp{}, err
-	}
 	path, err := tailnetPath(env, "/oauth-apps/"+url.PathEscape(in.ID))
 	if err != nil {
 		return OAuthApp{}, err

@@ -407,7 +407,8 @@ func TestDocsCheck(t *testing.T) {
 		t.Errorf("stale docs: exit %d", code)
 	}
 	h.err.Reset()
-	if code := h.run("docs", "--check", filepath.Join(t.TempDir(), "missing.md")); code != 2 || !strings.Contains(h.err.String(), "does not exist") || !strings.Contains(h.err.String(), "make docs") {
+	if code := h.run("docs", "--check", filepath.Join(t.TempDir(), "missing.md")); code != 2 || !strings.Contains(h.err.String(), "does not exist") ||
+		!strings.Contains(h.err.String(), "generate it with `tailkeeper docs > ") || strings.Contains(h.err.String(), "make docs") {
 		t.Errorf("missing docs: exit %d, stderr %q", code, h.err.String())
 	}
 }
@@ -714,6 +715,29 @@ func TestACLTestExitCodes(t *testing.T) {
 	}
 }
 
+// acl test --quiet prints nothing for a test that passes and still prints the
+// result, with exit 9, for one that fails.
+func TestACLTestQuiet(t *testing.T) {
+	f := apitest.New(t)
+	f.ServeValidate(apitest.TestsPass())
+	h := newHarness(t, f)
+	if code := h.run("acl", "test", "tag:ci", "--accept", "tag:prod:22", "--quiet"); code != 0 || h.out.Len() != 0 || h.err.Len() != 0 {
+		t.Errorf("a passing test: exit %d, stdout %q, stderr %q; want 0 and no output", code, h.out, h.err)
+	}
+	// Without the flag, the same passing test does print its result.
+	h = newHarness(t, f)
+	if code := h.run("acl", "test", "tag:ci", "--accept", "tag:prod:22"); code != 0 || h.out.Len() == 0 {
+		t.Errorf("a passing test without --quiet: exit %d, stdout %q; want 0 and the result", code, h.out)
+	}
+	f = apitest.New(t)
+	f.ServeValidate(apitest.TestsFailed(apitest.Entry{User: "tag:ci", Errors: []string{`address "tag:prod:22": want: Accept, got: Drop`}}))
+	h = newHarness(t, f)
+	if code := h.run("acl", "test", "tag:ci", "--accept", "tag:prod:22", "--quiet"); code != 9 ||
+		!strings.Contains(h.out.String(), "failed  tag:ci: address \"tag:prod:22\": want: Accept, got: Drop\n") {
+		t.Errorf("a failing test: exit %d, stdout %q, stderr %q; want 9 and the result", code, h.out, h.err)
+	}
+}
+
 func TestDoctorJSONEscapesItsChecks(t *testing.T) {
 	const rlo, bs = "\xe2\x80\xae", "\x5c"
 	h := newHarness(t, nil)
@@ -735,7 +759,7 @@ func TestFlagErrorsAreEscaped(t *testing.T) {
 		code := h.run(args...)
 		e := h.err.String()
 		if code != 2 || strings.Contains(e, rlo) || strings.Contains(e, "\x1b") ||
-			!strings.Contains(e, bs+"u{202E}") || !strings.Contains(e, bs+"u{001B}") || !strings.Contains(e, "Usage") {
+			!strings.Contains(e, bs+"u{202E}") || !strings.Contains(e, bs+"u{001B}") || !strings.Contains(e, "tailkeeper: usage: flag provided but not defined") {
 			t.Errorf("%v: exit %d, stderr %q", args, code, e)
 		}
 	}
@@ -967,9 +991,9 @@ func TestEveryFlagSetWritesThroughFlagOutput(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	// The scan must have read the module and found the commands that exist (tool,
-	// docs, mcp, doctor, audit), or a clean result would prove nothing.
-	if !seen["cmd/tailkeeper/main.go"] || !seen["internal/cli/cli.go"] || !seen["internal/mcpserver/server.go"] || sets < 5 {
+	// The scan must have read the module and found the place every command's FlagSet
+	// is built (newFlags), or a clean result would prove nothing.
+	if !seen["cmd/tailkeeper/main.go"] || !seen["internal/cli/cli.go"] || !seen["internal/mcpserver/server.go"] || sets < 1 {
 		t.Errorf("the scan read %d files and found %d FlagSets (cli.go seen: %v): it is not reading the module", files, sets, seen["internal/cli/cli.go"])
 	}
 }
@@ -1168,5 +1192,32 @@ func TestScopesAndDocsRefuseArguments(t *testing.T) {
 	h := newHarness(t, nil)
 	if code := h.run("scopes", bad); code != 2 || !strings.Contains(h.err.String(), bs+"u{202E}") || !strings.Contains(h.err.String(), bs+"u{001B}") {
 		t.Errorf("the refused argument is not shown escaped: exit %d, stderr %q", code, h.err)
+	}
+}
+
+func TestFailGivesAProgramHintWhenTheErrorHasNone(t *testing.T) {
+	h := newHarness(t, nil)
+	h.r.Build = func(context.Context, string) (*app.App, error) {
+		return nil, tkerr.New(tkerr.ConfigInvalid, "config.hujson line 3: bad", "")
+	}
+	if code := h.run("local", "version"); code != 6 || !strings.Contains(h.err.String(), "  fix: "+tkerr.ProgramHint(tkerr.ConfigInvalid)+"\n") {
+		t.Errorf("exit %d, stderr %q", code, h.err)
+	}
+	h.out.Reset()
+	h.run("--json", "local", "version")
+	var e struct {
+		Error struct{ Code, Hint string } `json:"error"`
+	}
+	if err := json.Unmarshal(h.out.Bytes(), &e); err != nil || e.Error.Hint != tkerr.ProgramHint(tkerr.ConfigInvalid) {
+		t.Errorf("json error = %s (%v)", h.out, err)
+	}
+	// A hint written where the error is raised is kept.
+	h.err.Reset()
+	h.r.Build = func(context.Context, string) (*app.App, error) {
+		return nil, tkerr.New(tkerr.ConfigInvalid, "bad", "fix line 3")
+	}
+	h.run("local", "version")
+	if !strings.Contains(h.err.String(), "  fix: fix line 3\n") {
+		t.Errorf("stderr %q", h.err)
 	}
 }

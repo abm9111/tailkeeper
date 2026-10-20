@@ -1,0 +1,35 @@
+{
+  "input": {
+    "additionalProperties": false,
+    "properties": {
+      "family": {
+        "description": "4, 6 or 1 (first address only); default all",
+        "type": "string"
+      },
+      "peer": {
+        "description": "a peer's tailnet IP (default: this node)",
+        "type": "string"
+      }
+    },
+    "type": "object"
+  },
+  "output": {
+    "additionalProperties": false,
+    "properties": {
+      "addresses": {
+        "items": {
+          "type": "string"
+        },
+        "type": [
+          "null",
+          "array"
+        ]
+      }
+    },
+    "required": [
+      "addresses"
+    ],
+    "type": "object"
+  },
+  "tool": "local_ip"
+}

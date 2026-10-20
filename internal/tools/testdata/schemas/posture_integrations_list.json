@@ -1,0 +1,87 @@
+{
+  "input": {
+    "additionalProperties": false,
+    "type": "object"
+  },
+  "output": {
+    "additionalProperties": false,
+    "properties": {
+      "count": {
+        "type": "integer"
+      },
+      "integrations": {
+        "items": {
+          "additionalProperties": false,
+          "properties": {
+            "clientId": {
+              "type": "string",
+              "x-tailkeeper-untrusted": true
+            },
+            "cloudId": {
+              "type": "string",
+              "x-tailkeeper-untrusted": true
+            },
+            "configUpdated": {
+              "type": "string"
+            },
+            "id": {
+              "type": "string"
+            },
+            "provider": {
+              "type": "string"
+            },
+            "status": {
+              "additionalProperties": false,
+              "properties": {
+                "error": {
+                  "type": "string",
+                  "x-tailkeeper-untrusted": true
+                },
+                "lastSync": {
+                  "type": "string"
+                },
+                "matchedCount": {
+                  "type": "integer"
+                },
+                "possibleMatchedCount": {
+                  "type": "integer"
+                },
+                "providerHostCount": {
+                  "type": "integer"
+                }
+              },
+              "required": [
+                "providerHostCount",
+                "matchedCount",
+                "possibleMatchedCount"
+              ],
+              "type": [
+                "null",
+                "object"
+              ]
+            },
+            "tenantId": {
+              "type": "string",
+              "x-tailkeeper-untrusted": true
+            }
+          },
+          "required": [
+            "id",
+            "provider"
+          ],
+          "type": "object"
+        },
+        "type": [
+          "null",
+          "array"
+        ]
+      }
+    },
+    "required": [
+      "integrations",
+      "count"
+    ],
+    "type": "object"
+  },
+  "tool": "posture_integrations_list"
+}

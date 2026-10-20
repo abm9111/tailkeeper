@@ -50,6 +50,13 @@ linters:
         linters: [gosec]
         text: G304
         source: 'os\.OpenFile\(path, os\.O_RDONLY\|openFlags, 0\)'
+      # An operator's policy file: the name is checked, the file is inspected with
+      # Lstat (a symlink or a non-regular file is refused), opened without following
+      # a symlink, and compared with what was inspected.
+      - path: internal/safefile/open_unix\.go
+        linters: [gosec]
+        text: G304
+        source: 'os\.OpenFile\(path, os\.O_RDONLY\|syscall\.O_NOFOLLOW\|syscall\.O_NONBLOCK, 0\)'
 
       # G204 (subprocess with variable arguments): the exec provider's command is
       # the owner's configuration (spec §7.3), and the process replaces itself with
@@ -77,6 +84,11 @@ linters:
         linters: [gosec]
         text: G101
         source: 'CredentialUnavailable\s+Code = "credential_unavailable"'
+      # The hints are sentences for programs that name credentials, not credentials.
+      - path: internal/tkerr/hints\.go
+        linters: [gosec]
+        text: G101
+        source: 'var programHints = map\[Code\]string\{'
 
       # G404 (math/rand): up to 250 ms of jitter on a retry's backoff, so clients
       # do not retry in step. Nothing depends on it being unpredictable.

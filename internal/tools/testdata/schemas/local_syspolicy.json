@@ -1,0 +1,52 @@
+{
+  "input": {
+    "additionalProperties": false,
+    "type": "object"
+  },
+  "output": {
+    "additionalProperties": false,
+    "properties": {
+      "policies": {
+        "items": {
+          "additionalProperties": false,
+          "properties": {
+            "error": {
+              "type": "string",
+              "x-tailkeeper-untrusted": true
+            },
+            "name": {
+              "type": "string",
+              "x-tailkeeper-untrusted": true
+            },
+            "origin": {
+              "type": "string",
+              "x-tailkeeper-untrusted": true
+            },
+            "value": {
+              "type": "string",
+              "x-tailkeeper-untrusted": true
+            }
+          },
+          "required": [
+            "name",
+            "value"
+          ],
+          "type": "object"
+        },
+        "type": [
+          "null",
+          "array"
+        ]
+      },
+      "scope": {
+        "type": "string",
+        "x-tailkeeper-untrusted": true
+      }
+    },
+    "required": [
+      "policies"
+    ],
+    "type": "object"
+  },
+  "tool": "local_syspolicy"
+}

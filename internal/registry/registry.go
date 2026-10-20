@@ -4,15 +4,16 @@
 package registry
 
 import (
-	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
 	"reflect"
 	"regexp"
+	"slices"
 	"sort"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/google/jsonschema-go/jsonschema"
 
@@ -53,7 +54,17 @@ type Credential string
 const (
 	CredRead Credential = "read"
 	CredNone Credential = "none"
+	// CredOptional is for a read tool that can also run without a credential, for
+	// example on two local files. The input type says when, through OfflineInput.
+	CredOptional Credential = "optional"
 )
+
+// OptionalScope is an OAuth scope that enables one feature of a tool without being
+// needed for the tool to run.
+type OptionalScope struct {
+	Scope  string `json:"scope"`
+	Reason string `json:"reason"` // what the scope enables, in one line
+}
 
 // Meta is a tool's declared metadata.
 type Meta struct {
@@ -69,7 +80,17 @@ type Meta struct {
 	// PartialScopes means each scope reads part of the result (settings fields,
 	// key types): a missing one narrows the result instead of failing the tool.
 	PartialScopes bool
-	Notes         string // extra facts for the docs, e.g. an unverified scope
+	// OptionalScopes each enable one feature of the tool and are not needed for it to
+	// run: the tool tries the feature and, on scope_missing, leaves it out and says
+	// so. They are never read from the granted list (stale for federated identities).
+	OptionalScopes []OptionalScope
+	// Title is the name a host shows for the tool. Optional, except for OpenWorld tools.
+	Title string
+	// OpenWorld marks a tool that sends text the caller supplied (a proposed policy,
+	// a test) to Tailscale: MCP advertises openWorldHint true for it, and its
+	// description says the input leaves the machine.
+	OpenWorld bool
+	Notes     string // extra facts for the docs, e.g. an unverified scope
 	// Operations are the API operations the tool calls, as "METHOD /path" with the
 	// path spelled as Tailscale's OpenAPI document spells it (spec §20).
 	Operations []string
@@ -240,38 +261,6 @@ func Define[In, Out any](m Meta, run func(ctx context.Context, env *Env, in In) 
 	}
 }
 
-// Call validates raw JSON arguments against the input schema, decodes them
-// strictly, and runs the tool. Errors leave it the way results do, sanitized and
-// then scanned by the secret tripwire, and a panic in the tool becomes
-// internal_error without its value.
-func (t Tool) Call(ctx context.Context, env *Env, raw json.RawMessage) (out any, err error) {
-	defer func() {
-		if r := recover(); r != nil {
-			err = tkerr.New(tkerr.Internal, "unexpected internal error in "+t.Meta.Name, "report this with `tailkeeper version` output")
-		}
-		if err != nil {
-			out, err = nil, scrub(err, t.Meta, env)
-		}
-	}()
-	if len(bytes.TrimSpace(raw)) == 0 || string(bytes.TrimSpace(raw)) == "null" {
-		raw = json.RawMessage("{}")
-	}
-	var generic any
-	if err := json.Unmarshal(raw, &generic); err != nil {
-		return nil, tkerr.New(tkerr.ValidationFailed, "arguments are not valid JSON", "")
-	}
-	if err := t.resolved.Validate(generic); err != nil {
-		return nil, tkerr.New(tkerr.ValidationFailed, "invalid arguments: "+err.Error(), "")
-	}
-	in := reflect.New(t.InputType)
-	dec := json.NewDecoder(bytes.NewReader(raw))
-	dec.DisallowUnknownFields()
-	if err := dec.Decode(in.Interface()); err != nil {
-		return nil, tkerr.New(tkerr.ValidationFailed, "invalid arguments: "+err.Error(), "")
-	}
-	return t.run(ctx, env, in.Elem().Interface())
-}
-
 // scrub gives an error what a result gets: an unclassified cause stays hidden
 // (tkerr.From), the message and hint are sanitized like untrusted fields, and a
 // credential shape in either withholds the whole error.
@@ -289,8 +278,14 @@ func scrub(err error, m Meta, env *Env) (clean error) {
 	}
 	e := *fe
 	if e.Code == tkerr.ScopeMissing && len(m.Scopes) > 0 {
-		// Spec §19: name the scope, with companions.
-		e.Hint = "this tool reads with " + strings.Join(m.Scopes, ", ") + "; grant the read credential the one it lacks, unless the feature is not on this plan"
+		// docs/design.md §19: name the scope, with companions. A scope that only enables a
+		// feature is named apart, so it is not taken for one the tool cannot run without.
+		e.Hint = "this tool reads with " + strings.Join(m.Scopes, ", ") + optionalHint(m.OptionalScopes) +
+			"; grant the read credential the one it lacks, unless the feature is not on this plan"
+	}
+	if e.Hint == "" {
+		// Every error tells a program what to do about it, whoever raised it.
+		e.Hint = tkerr.ProgramHint(e.Code)
 	}
 	if !env.ShowPersonalData() {
 		// Errors quote the API and the local CLI, which can name people and
@@ -305,6 +300,18 @@ func scrub(err error, m Meta, env *Env) (clean error) {
 		return hit
 	}
 	return &e
+}
+
+// optionalHint lists optional scopes with their reasons, for the scope_missing hint.
+func optionalHint(opt []OptionalScope) string {
+	if len(opt) == 0 {
+		return ""
+	}
+	parts := make([]string, len(opt))
+	for i, o := range opt {
+		parts[i] = o.Scope + " (" + o.Reason + ")"
+	}
+	return "; optional scopes, each enabling one feature: " + strings.Join(parts, ", ")
 }
 
 // secretNames and secretWords describe output field names that must never appear:
@@ -359,6 +366,9 @@ func (r *Registry) Add(t Tool) error {
 	case r.verbs[m.Area+" "+m.Verb] != "":
 		return fmt.Errorf("tool %s: CLI command %q %q already used by %s", m.Name, m.Area, m.Verb, r.verbs[m.Area+" "+m.Verb])
 	}
+	if err := checkText(m); err != nil {
+		return err
+	}
 	switch m.Stage {
 	case StageGA, StageBeta, StageAlpha:
 	default:
@@ -366,8 +376,8 @@ func (r *Registry) Add(t Tool) error {
 	}
 	switch m.Tier {
 	case TierRead:
-		if m.Credential != CredRead || len(m.Scopes) == 0 {
-			return fmt.Errorf("tool %s: read tools use the read credential and declare scopes", m.Name)
+		if (m.Credential != CredRead && m.Credential != CredOptional) || len(m.Scopes) == 0 {
+			return fmt.Errorf("tool %s: read tools use the read credential (or an optional one) and declare scopes", m.Name)
 		}
 	case TierLocal, TierOffline:
 		if m.Credential != CredNone || len(m.Scopes) != 0 {
@@ -379,6 +389,12 @@ func (r *Registry) Add(t Tool) error {
 		return fmt.Errorf("tool %s: tier %q needs the approval gate (milestone M2)", m.Name, m.Tier)
 	default:
 		return fmt.Errorf("tool %s: unknown tier %q", m.Name, m.Tier)
+	}
+	if (m.OpenWorld || len(m.OptionalScopes) > 0) && m.Tier != TierRead {
+		return fmt.Errorf("tool %s: only API tools can be open-world or have optional scopes (only read tools use scopes)", m.Name)
+	}
+	if err := checkOptionalScopes(m); err != nil {
+		return err
 	}
 	for _, op := range m.Operations {
 		if !operationRE.MatchString(op) {
@@ -396,6 +412,55 @@ func (r *Registry) Add(t Tool) error {
 	}
 	r.tools[m.Name] = t
 	r.verbs[m.Area+" "+m.Verb] = m.Name
+	return nil
+}
+
+// maxTitle and maxReason bound the text a host shows and a hint repeats.
+const (
+	maxTitle  = 80
+	maxReason = 200
+)
+
+var scopeRE = regexp.MustCompile(`^[A-Za-z0-9_:.-]+$`)
+
+// checkText refuses a line break in the text that docs/tools.md writes verbatim
+// as a heading and a list item, and an open-world tool without a title.
+func checkText(m Meta) error {
+	for _, f := range []struct{ name, v string }{{"summary", m.Summary}, {"notes", m.Notes}, {"title", m.Title}} {
+		if strings.ContainsAny(f.v, "\r\n") {
+			return fmt.Errorf("tool %s: %s must be one line", m.Name, f.name)
+		}
+	}
+	if utf8.RuneCountInString(m.Title) > maxTitle {
+		return fmt.Errorf("tool %s: title is longer than %d characters", m.Name, maxTitle)
+	}
+	if m.OpenWorld && m.Title == "" {
+		return fmt.Errorf("tool %s: an open-world tool needs a title", m.Name)
+	}
+	return nil
+}
+
+// checkOptionalScopes refuses an optional scope that is empty, repeated, also
+// required, or without a one-line reason.
+func checkOptionalScopes(m Meta) error {
+	seen := map[string]bool{}
+	for _, o := range m.OptionalScopes {
+		switch {
+		case !scopeRE.MatchString(o.Scope):
+			return fmt.Errorf("tool %s: an optional scope needs a scope name of letters, digits, '_', ':', '.' or '-'", m.Name)
+		case o.Reason == "":
+			return fmt.Errorf("tool %s: optional scope %s needs a reason", m.Name, o.Scope)
+		case strings.ContainsAny(o.Reason, "\r\n"):
+			return fmt.Errorf("tool %s: optional scope %s: the reason must be one line", m.Name, o.Scope)
+		case utf8.RuneCountInString(o.Reason) > maxReason:
+			return fmt.Errorf("tool %s: optional scope %s: the reason is longer than %d characters", m.Name, o.Scope, maxReason)
+		case slices.Contains(m.Scopes, o.Scope):
+			return fmt.Errorf("tool %s: optional scope %s is also required", m.Name, o.Scope)
+		case seen[o.Scope]:
+			return fmt.Errorf("tool %s: optional scope %s is listed twice", m.Name, o.Scope)
+		}
+		seen[o.Scope] = true
+	}
 	return nil
 }
 

@@ -1,0 +1,49 @@
+{
+  "input": {
+    "additionalProperties": false,
+    "type": "object"
+  },
+  "output": {
+    "additionalProperties": false,
+    "properties": {
+      "enabled": {
+        "type": "boolean"
+      },
+      "lockedOutPeers": {
+        "description": "peers filtered out because their node key is not signed",
+        "type": "integer"
+      },
+      "nodeKey": {
+        "description": "this node's public node key",
+        "type": "string",
+        "x-tailkeeper-untrusted": true
+      },
+      "nodeKeySigned": {
+        "description": "absent when Tailnet Lock is off",
+        "type": [
+          "null",
+          "boolean"
+        ]
+      },
+      "publicKey": {
+        "description": "this node's Tailnet Lock public key",
+        "type": "string",
+        "x-tailkeeper-untrusted": true
+      },
+      "trustedKeyCount": {
+        "type": "integer"
+      },
+      "visiblePeerCount": {
+        "type": "integer"
+      }
+    },
+    "required": [
+      "enabled",
+      "trustedKeyCount",
+      "visiblePeerCount",
+      "lockedOutPeers"
+    ],
+    "type": "object"
+  },
+  "tool": "local_lock_status"
+}

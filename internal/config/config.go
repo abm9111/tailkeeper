@@ -31,6 +31,7 @@ type Config struct {
 	Local          Local              `json:"local,omitzero"`
 	MCP            MCP                `json:"mcp,omitzero"`
 	Audit          Audit              `json:"audit,omitzero"`
+	ACL            ACL                `json:"acl,omitzero"`
 	// PersonalData is "mask" (the default) or "show": whether tool results carry
 	// login names, display names, email addresses and public IP addresses whole
 	// (spec Appendix C).
@@ -80,6 +81,35 @@ type MCP struct {
 // Audit configures tailkeeper's own audit log.
 type Audit struct {
 	Reads string `json:"reads,omitempty"` // "metadata" (default) or "none"
+}
+
+// ACL configures the policy checks (acl validate, acl diff). The keys are read by
+// 0.6.0 and later: a 0.5.0 binary refuses them as unknown (config_invalid), so
+// they belong in a context only 0.6.0 uses.
+type ACL struct {
+	// InvariantsFile is the absolute path of the invariants file: tests every
+	// validation must also pass (a HuJSON object with optional "tests" and
+	// "sshTests"). Unset means no invariants. A set path that is missing or
+	// unreadable fails every call that uses it; it is never taken for none.
+	InvariantsFile string `json:"invariantsFile,omitempty"`
+	// ValidatePerMinute is the process's own limit on policy validation requests,
+	// 1 to 120. Unset means DefaultValidatePerMinute.
+	ValidatePerMinute *int `json:"validatePerMinute,omitempty"`
+}
+
+// The bounds of ACL.ValidatePerMinute.
+const (
+	DefaultValidatePerMinute = 30
+	MinValidatePerMinute     = 1
+	MaxValidatePerMinute     = 120
+)
+
+// ValidateRate is the validation requests per minute this process may send.
+func (a ACL) ValidateRate() int {
+	if a.ValidatePerMinute == nil {
+		return DefaultValidatePerMinute
+	}
+	return *a.ValidatePerMinute
 }
 
 var (
@@ -157,6 +187,12 @@ func (c Config) Validate() error {
 	case "", "metadata", "none":
 	default:
 		return invalid(fmt.Sprintf("audit.reads %q must be metadata or none", c.Audit.Reads))
+	}
+	if f := c.ACL.InvariantsFile; f != "" && !filepath.IsAbs(f) {
+		return invalid("acl.invariantsFile must be an absolute path")
+	}
+	if n := c.ACL.ValidatePerMinute; n != nil && (*n < MinValidatePerMinute || *n > MaxValidatePerMinute) {
+		return invalid(fmt.Sprintf("acl.validatePerMinute must be a whole number from %d to %d", MinValidatePerMinute, MaxValidatePerMinute))
 	}
 	if c.Local.TailscaleBinary != "" && !filepath.IsAbs(c.Local.TailscaleBinary) {
 		return invalid("local.tailscaleBinary must be an absolute path")

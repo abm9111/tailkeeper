@@ -1,0 +1,236 @@
+{
+  "input": {
+    "additionalProperties": false,
+    "properties": {
+      "active": {
+        "description": "include only peers with active sessions (implies peers)",
+        "type": "boolean"
+      },
+      "peers": {
+        "description": "include peers",
+        "type": "boolean"
+      }
+    },
+    "type": "object"
+  },
+  "output": {
+    "additionalProperties": false,
+    "properties": {
+      "backendState": {
+        "type": "string"
+      },
+      "health": {
+        "items": {
+          "type": "string",
+          "x-tailkeeper-untrusted": true
+        },
+        "type": [
+          "null",
+          "array"
+        ],
+        "x-tailkeeper-untrusted": true
+      },
+      "magicDnsEnabled": {
+        "type": "boolean"
+      },
+      "magicDnsSuffix": {
+        "type": "string",
+        "x-tailkeeper-untrusted": true
+      },
+      "needsLogin": {
+        "type": "boolean"
+      },
+      "peerCount": {
+        "type": "integer"
+      },
+      "peerScope": {
+        "description": "network_map: peers are those in this node's network map; devices it may not reach are absent",
+        "type": "string"
+      },
+      "peers": {
+        "items": {
+          "additionalProperties": false,
+          "properties": {
+            "active": {
+              "type": "boolean"
+            },
+            "dnsName": {
+              "type": "string",
+              "x-tailkeeper-untrusted": true
+            },
+            "exitNode": {
+              "type": "boolean"
+            },
+            "exitNodeOption": {
+              "type": "boolean"
+            },
+            "hostName": {
+              "type": "string",
+              "x-tailkeeper-untrusted": true
+            },
+            "keyExpiry": {
+              "type": "string"
+            },
+            "lastHandshake": {
+              "type": "string"
+            },
+            "nodeId": {
+              "type": "string"
+            },
+            "online": {
+              "type": "boolean"
+            },
+            "os": {
+              "type": "string",
+              "x-tailkeeper-untrusted": true
+            },
+            "path": {
+              "description": "direct, peer-relay, derp or none (peers only)",
+              "type": "string"
+            },
+            "relay": {
+              "description": "home DERP region code",
+              "type": "string",
+              "x-tailkeeper-untrusted": true
+            },
+            "tags": {
+              "items": {
+                "type": "string",
+                "x-tailkeeper-untrusted": true
+              },
+              "type": [
+                "null",
+                "array"
+              ],
+              "x-tailkeeper-untrusted": true
+            },
+            "tailscaleIps": {
+              "items": {
+                "type": "string"
+              },
+              "type": [
+                "null",
+                "array"
+              ]
+            }
+          },
+          "required": [
+            "nodeId",
+            "hostName",
+            "dnsName",
+            "tailscaleIps",
+            "online",
+            "active",
+            "exitNode",
+            "exitNodeOption"
+          ],
+          "type": "object"
+        },
+        "type": [
+          "null",
+          "array"
+        ]
+      },
+      "self": {
+        "additionalProperties": false,
+        "properties": {
+          "active": {
+            "type": "boolean"
+          },
+          "dnsName": {
+            "type": "string",
+            "x-tailkeeper-untrusted": true
+          },
+          "exitNode": {
+            "type": "boolean"
+          },
+          "exitNodeOption": {
+            "type": "boolean"
+          },
+          "hostName": {
+            "type": "string",
+            "x-tailkeeper-untrusted": true
+          },
+          "keyExpiry": {
+            "type": "string"
+          },
+          "lastHandshake": {
+            "type": "string"
+          },
+          "nodeId": {
+            "type": "string"
+          },
+          "online": {
+            "type": "boolean"
+          },
+          "os": {
+            "type": "string",
+            "x-tailkeeper-untrusted": true
+          },
+          "path": {
+            "description": "direct, peer-relay, derp or none (peers only)",
+            "type": "string"
+          },
+          "relay": {
+            "description": "home DERP region code",
+            "type": "string",
+            "x-tailkeeper-untrusted": true
+          },
+          "tags": {
+            "items": {
+              "type": "string",
+              "x-tailkeeper-untrusted": true
+            },
+            "type": [
+              "null",
+              "array"
+            ],
+            "x-tailkeeper-untrusted": true
+          },
+          "tailscaleIps": {
+            "items": {
+              "type": "string"
+            },
+            "type": [
+              "null",
+              "array"
+            ]
+          }
+        },
+        "required": [
+          "nodeId",
+          "hostName",
+          "dnsName",
+          "tailscaleIps",
+          "online",
+          "active",
+          "exitNode",
+          "exitNodeOption"
+        ],
+        "type": [
+          "null",
+          "object"
+        ]
+      },
+      "tailnet": {
+        "description": "the tailnet name: an organization's domain, or a person's login for a personal tailnet",
+        "type": "string",
+        "x-tailkeeper-untrusted": true
+      },
+      "version": {
+        "type": "string",
+        "x-tailkeeper-untrusted": true
+      }
+    },
+    "required": [
+      "backendState",
+      "needsLogin",
+      "version",
+      "magicDnsEnabled",
+      "health",
+      "peerCount"
+    ],
+    "type": "object"
+  },
+  "tool": "local_status"
+}

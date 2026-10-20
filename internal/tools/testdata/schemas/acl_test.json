@@ -1,0 +1,103 @@
+{
+  "input": {
+    "additionalProperties": false,
+    "properties": {
+      "accept": {
+        "description": "destinations src must reach, as host:port (tag:prod:22, 100.64.0.5:443, [fd7a:115c:a1e0::5]:22)",
+        "items": {
+          "type": "string"
+        },
+        "type": [
+          "null",
+          "array"
+        ]
+      },
+      "deny": {
+        "description": "destinations src must not reach, as host:port",
+        "items": {
+          "type": "string"
+        },
+        "type": [
+          "null",
+          "array"
+        ]
+      },
+      "proto": {
+        "description": "IP protocol, a name such as tcp, udp or icmp, or a number from 1 to 255; icmp needs port 0",
+        "type": "string"
+      },
+      "src": {
+        "description": "the source: a user's login, group:name, tag:name, a host alias or a tailnet address; never a masked value",
+        "type": "string"
+      }
+    },
+    "required": [
+      "src"
+    ],
+    "type": "object"
+  },
+  "output": {
+    "additionalProperties": false,
+    "properties": {
+      "evaluatedAt": {
+        "type": "string"
+      },
+      "failures": {
+        "items": {
+          "additionalProperties": false,
+          "properties": {
+            "errors": {
+              "items": {
+                "type": "string",
+                "x-tailkeeper-untrusted": true
+              },
+              "type": [
+                "null",
+                "array"
+              ],
+              "x-tailkeeper-untrusted": true
+            },
+            "src": {
+              "type": "string",
+              "x-tailkeeper-untrusted": true
+            }
+          },
+          "required": [
+            "src",
+            "errors"
+          ],
+          "type": "object"
+        },
+        "type": [
+          "null",
+          "array"
+        ]
+      },
+      "note": {
+        "type": "string"
+      },
+      "status": {
+        "description": "pass: every destination matched as asked; fail: at least one did not",
+        "type": "string"
+      },
+      "warnings": {
+        "items": {
+          "type": "string",
+          "x-tailkeeper-untrusted": true
+        },
+        "type": [
+          "null",
+          "array"
+        ],
+        "x-tailkeeper-untrusted": true
+      }
+    },
+    "required": [
+      "status",
+      "evaluatedAt",
+      "note"
+    ],
+    "type": "object"
+  },
+  "tool": "acl_test"
+}

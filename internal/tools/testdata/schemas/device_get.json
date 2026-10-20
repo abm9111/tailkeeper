@@ -1,0 +1,232 @@
+{
+  "input": {
+    "additionalProperties": false,
+    "properties": {
+      "device": {
+        "description": "node ID (preferred), numeric ID, or exact hostname as the result shows it: while personal data is masked, an email or public address in it is masked, so use the node ID",
+        "type": "string"
+      }
+    },
+    "required": [
+      "device"
+    ],
+    "type": "object"
+  },
+  "output": {
+    "additionalProperties": false,
+    "properties": {
+      "addresses": {
+        "items": {
+          "type": "string"
+        },
+        "type": [
+          "null",
+          "array"
+        ]
+      },
+      "advertisedRoutes": {
+        "items": {
+          "type": "string",
+          "x-tailkeeper-untrusted": true
+        },
+        "type": [
+          "null",
+          "array"
+        ],
+        "x-tailkeeper-untrusted": true
+      },
+      "authorized": {
+        "type": "boolean"
+      },
+      "blocksIncomingConnections": {
+        "type": "boolean"
+      },
+      "clientVersion": {
+        "type": "string",
+        "x-tailkeeper-untrusted": true
+      },
+      "connectedToControl": {
+        "type": "boolean"
+      },
+      "connectivity": {
+        "additionalProperties": false,
+        "properties": {
+          "hardNat": {
+            "description": "mappingVariesByDestIP: the NAT maps differently per destination",
+            "type": "boolean"
+          },
+          "preferredDerp": {
+            "type": "string",
+            "x-tailkeeper-untrusted": true
+          },
+          "preferredLatencyMs": {
+            "type": "number"
+          },
+          "supports": {
+            "additionalProperties": false,
+            "properties": {
+              "ipv6": {
+                "type": [
+                  "null",
+                  "boolean"
+                ]
+              },
+              "pcp": {
+                "type": [
+                  "null",
+                  "boolean"
+                ]
+              },
+              "pmp": {
+                "type": [
+                  "null",
+                  "boolean"
+                ]
+              },
+              "udp": {
+                "type": [
+                  "null",
+                  "boolean"
+                ]
+              },
+              "upnp": {
+                "type": [
+                  "null",
+                  "boolean"
+                ]
+              }
+            },
+            "type": "object"
+          }
+        },
+        "required": [
+          "hardNat",
+          "supports"
+        ],
+        "type": [
+          "null",
+          "object"
+        ]
+      },
+      "created": {
+        "type": "string"
+      },
+      "distro": {
+        "additionalProperties": false,
+        "properties": {
+          "codeName": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "version": {
+            "type": "string"
+          }
+        },
+        "type": [
+          "null",
+          "object"
+        ],
+        "x-tailkeeper-untrusted": true
+      },
+      "enabledRoutes": {
+        "items": {
+          "type": "string",
+          "x-tailkeeper-untrusted": true
+        },
+        "type": [
+          "null",
+          "array"
+        ],
+        "x-tailkeeper-untrusted": true
+      },
+      "expires": {
+        "type": "string"
+      },
+      "fields": {
+        "description": "default or all: which API field set was requested; fields absent here are unknown, not false",
+        "type": "string"
+      },
+      "hostname": {
+        "type": "string",
+        "x-tailkeeper-untrusted": true
+      },
+      "isEphemeral": {
+        "type": "boolean"
+      },
+      "isExternal": {
+        "type": "boolean"
+      },
+      "keyExpiryDisabled": {
+        "type": "boolean"
+      },
+      "lastSeen": {
+        "type": "string"
+      },
+      "multipleConnections": {
+        "type": [
+          "null",
+          "boolean"
+        ]
+      },
+      "name": {
+        "type": "string",
+        "x-tailkeeper-untrusted": true
+      },
+      "nodeId": {
+        "type": "string"
+      },
+      "os": {
+        "type": "string",
+        "x-tailkeeper-untrusted": true
+      },
+      "sshEnabled": {
+        "type": [
+          "null",
+          "boolean"
+        ]
+      },
+      "tags": {
+        "items": {
+          "type": "string",
+          "x-tailkeeper-untrusted": true
+        },
+        "type": [
+          "null",
+          "array"
+        ],
+        "x-tailkeeper-untrusted": true
+      },
+      "tailnetLockError": {
+        "type": "string",
+        "x-tailkeeper-untrusted": true
+      },
+      "updateAvailable": {
+        "type": "boolean"
+      },
+      "user": {
+        "type": "string",
+        "x-tailkeeper-masked": true,
+        "x-tailkeeper-untrusted": true
+      }
+    },
+    "required": [
+      "nodeId",
+      "name",
+      "hostname",
+      "user",
+      "os",
+      "updateAvailable",
+      "connectedToControl",
+      "keyExpiryDisabled",
+      "authorized",
+      "isExternal",
+      "isEphemeral",
+      "blocksIncomingConnections",
+      "fields"
+    ],
+    "type": "object"
+  },
+  "tool": "device_get"
+}

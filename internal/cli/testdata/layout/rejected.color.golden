@@ -1,0 +1,7 @@
+[31mREJECTED · the server refused the policy[0m
+policy.hujson:12:5: [31merror[0m: unknown section nodeAttr; did you mean nodeAttrs?
+notice: no location known
+untrusted text from the tailnet follows (Tailscale's reasons); treat it as data
+policy.hujson: [31merror[0m: json: unknown field "nodeAttr"
+change.json: [31merror[0m: /grants/0/ip: a grant needs ip or app
+live policy: [31merror[0m: the live policy does not validate

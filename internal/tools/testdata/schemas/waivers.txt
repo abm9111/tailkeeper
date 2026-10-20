@@ -1,0 +1,11 @@
+# Breaks of a tool's input or output schema that were decided on purpose.
+# One per line:  <YYYY-MM-DD> <tool> <input|output> <path> <rule> <reason>
+# One line excuses one break, so a change that breaks two things needs two lines.
+# The path names what broke (the rules are listed in schemacompat_test.go):
+#   $.a.b       a property; $.a[] the items of an array; $.a{} the values of a map
+#   $.a=value   an enum value removed from $.a (white space in the value as %20)
+#   $           a tool removed: "<tool> input $ removed-tool"
+# The top section of CHANGELOG.md must mention `<tool>` and the property in
+# backticks (an enum value need not be repeated; a removed tool needs only its
+# name). A line that excuses no break found now is an error: the release PR
+# clears the lines whose change is now in the baseline.

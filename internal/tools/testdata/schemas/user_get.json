@@ -1,0 +1,69 @@
+{
+  "input": {
+    "additionalProperties": false,
+    "properties": {
+      "id": {
+        "description": "user ID",
+        "type": "string"
+      }
+    },
+    "required": [
+      "id"
+    ],
+    "type": "object"
+  },
+  "output": {
+    "additionalProperties": false,
+    "properties": {
+      "created": {
+        "type": "string"
+      },
+      "currentlyConnected": {
+        "type": "boolean"
+      },
+      "deviceCount": {
+        "type": "integer"
+      },
+      "displayName": {
+        "type": "string",
+        "x-tailkeeper-masked": true,
+        "x-tailkeeper-untrusted": true
+      },
+      "id": {
+        "type": "string"
+      },
+      "lastSeen": {
+        "type": "string"
+      },
+      "loginName": {
+        "type": "string",
+        "x-tailkeeper-masked": true,
+        "x-tailkeeper-untrusted": true
+      },
+      "role": {
+        "type": "string"
+      },
+      "status": {
+        "type": "string"
+      },
+      "tailnetId": {
+        "type": "string",
+        "x-tailkeeper-masked": true
+      },
+      "type": {
+        "type": "string"
+      }
+    },
+    "required": [
+      "id",
+      "loginName",
+      "type",
+      "role",
+      "status",
+      "deviceCount",
+      "currentlyConnected"
+    ],
+    "type": "object"
+  },
+  "tool": "user_get"
+}

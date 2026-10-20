@@ -1,0 +1,101 @@
+{
+  "input": {
+    "additionalProperties": false,
+    "properties": {
+      "device": {
+        "description": "node ID (preferred), numeric ID, or exact hostname as the result shows it: while personal data is masked, an email or public address in it is masked, so use the node ID",
+        "type": "string"
+      }
+    },
+    "required": [
+      "device"
+    ],
+    "type": "object"
+  },
+  "output": {
+    "additionalProperties": false,
+    "properties": {
+      "count": {
+        "type": "integer"
+      },
+      "invites": {
+        "items": {
+          "additionalProperties": false,
+          "properties": {
+            "accepted": {
+              "type": "boolean"
+            },
+            "acceptedBy": {
+              "additionalProperties": false,
+              "properties": {
+                "id": {
+                  "type": "integer"
+                },
+                "loginName": {
+                  "type": "string",
+                  "x-tailkeeper-masked": true,
+                  "x-tailkeeper-untrusted": true
+                }
+              },
+              "required": [
+                "id",
+                "loginName"
+              ],
+              "type": [
+                "null",
+                "object"
+              ]
+            },
+            "allowExitNode": {
+              "type": "boolean"
+            },
+            "created": {
+              "type": "string"
+            },
+            "deviceId": {
+              "type": "integer"
+            },
+            "email": {
+              "type": "string",
+              "x-tailkeeper-masked": true,
+              "x-tailkeeper-untrusted": true
+            },
+            "id": {
+              "type": "string"
+            },
+            "lastEmailSentAt": {
+              "type": "string"
+            },
+            "multiUse": {
+              "type": "boolean"
+            },
+            "sharerId": {
+              "type": "integer"
+            }
+          },
+          "required": [
+            "id",
+            "multiUse",
+            "allowExitNode",
+            "accepted"
+          ],
+          "type": "object"
+        },
+        "type": [
+          "null",
+          "array"
+        ]
+      },
+      "nodeId": {
+        "type": "string"
+      }
+    },
+    "required": [
+      "nodeId",
+      "invites",
+      "count"
+    ],
+    "type": "object"
+  },
+  "tool": "device_invites_list"
+}

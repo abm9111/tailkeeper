@@ -1,0 +1,50 @@
+{
+  "input": {
+    "additionalProperties": false,
+    "type": "object"
+  },
+  "output": {
+    "additionalProperties": false,
+    "properties": {
+      "dropped": {
+        "description": "samples with undocumented names, not shown",
+        "type": "integer"
+      },
+      "metrics": {
+        "items": {
+          "additionalProperties": false,
+          "properties": {
+            "labels": {
+              "additionalProperties": {
+                "type": "string"
+              },
+              "type": "object",
+              "x-tailkeeper-untrusted": true
+            },
+            "name": {
+              "type": "string"
+            },
+            "value": {
+              "type": "number"
+            }
+          },
+          "required": [
+            "name",
+            "value"
+          ],
+          "type": "object"
+        },
+        "type": [
+          "null",
+          "array"
+        ]
+      }
+    },
+    "required": [
+      "metrics",
+      "dropped"
+    ],
+    "type": "object"
+  },
+  "tool": "local_metrics"
+}

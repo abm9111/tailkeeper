@@ -1,0 +1,86 @@
+{
+  "input": {
+    "additionalProperties": false,
+    "properties": {
+      "name": {
+        "description": "a name under the tailnet's MagicDNS suffix, or allowed by local.dnsQueryAllowlist",
+        "type": "string"
+      },
+      "type": {
+        "description": "A (default), AAAA, CNAME, MX, NS, PTR, SRV or TXT",
+        "type": "string"
+      }
+    },
+    "required": [
+      "name"
+    ],
+    "type": "object"
+  },
+  "output": {
+    "additionalProperties": false,
+    "properties": {
+      "answers": {
+        "items": {
+          "additionalProperties": false,
+          "properties": {
+            "body": {
+              "type": "string",
+              "x-tailkeeper-untrusted": true
+            },
+            "name": {
+              "type": "string",
+              "x-tailkeeper-untrusted": true
+            },
+            "ttl": {
+              "type": "integer"
+            },
+            "type": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "name",
+            "type",
+            "ttl",
+            "body"
+          ],
+          "type": "object"
+        },
+        "type": [
+          "null",
+          "array"
+        ]
+      },
+      "name": {
+        "type": "string",
+        "x-tailkeeper-untrusted": true
+      },
+      "resolvers": {
+        "items": {
+          "type": "string",
+          "x-tailkeeper-untrusted": true
+        },
+        "type": [
+          "null",
+          "array"
+        ],
+        "x-tailkeeper-untrusted": true
+      },
+      "responseCode": {
+        "type": "string"
+      },
+      "type": {
+        "type": "string"
+      }
+    },
+    "required": [
+      "name",
+      "type",
+      "responseCode",
+      "resolvers",
+      "answers"
+    ],
+    "type": "object"
+  },
+  "tool": "local_dns_query"
+}

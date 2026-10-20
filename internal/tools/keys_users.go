@@ -83,6 +83,9 @@ type KeyRef struct {
 	ID string `json:"id" jsonschema:"key ID"`
 }
 
+// Check refuses an ID that cannot be one, before anything is sent.
+func (in KeyRef) Check() error { return requireID("id", in.ID) }
+
 // User is a tailnet user.
 type User struct {
 	ID                 string `json:"id" tk:"col"`
@@ -115,6 +118,9 @@ type UsersListOutput struct {
 type UserRef struct {
 	ID string `json:"id" jsonschema:"user ID"`
 }
+
+// Check refuses an ID that cannot be one, before anything is sent.
+func (in UserRef) Check() error { return requireID("id", in.ID) }
 
 // keyTypeScopes maps each key type to the scopes that let a credential list it.
 var keyTypeScopes = map[string][]string{
@@ -182,9 +188,6 @@ func keysList(ctx context.Context, env *registry.Env, _ NoInput) (KeysListOutput
 }
 
 func keyGet(ctx context.Context, env *registry.Env, in KeyRef) (Key, error) {
-	if err := requireID("id", in.ID); err != nil {
-		return Key{}, err
-	}
 	path, err := tailnetPath(env, "/keys/"+url.PathEscape(in.ID))
 	if err != nil {
 		return Key{}, err
@@ -205,20 +208,25 @@ func userTools() []registry.Tool {
 	}
 }
 
+// Check refuses a type or a role Tailscale does not have, before anything is sent.
+func (in UsersListInput) Check() error {
+	if in.Type != "" && !slices.Contains([]string{"member", "shared", "all"}, in.Type) {
+		return validationf("type must be member, shared or all")
+	}
+	if in.Role != "" && !slices.Contains([]string{"owner", "member", "admin", "it-admin", "network-admin", "billing-admin", "auditor", "all"}, in.Role) {
+		return validationf("role is not a Tailscale role")
+	}
+	return nil
+}
+
 func usersList(ctx context.Context, env *registry.Env, in UsersListInput) (UsersListOutput, error) {
 	typ := in.Type
 	if typ == "" {
 		typ = "all"
 	}
-	if !slices.Contains([]string{"member", "shared", "all"}, typ) {
-		return UsersListOutput{}, validationf("type must be member, shared or all")
-	}
 	role := in.Role
 	if role == "" {
 		role = "all"
-	}
-	if !slices.Contains([]string{"owner", "member", "admin", "it-admin", "network-admin", "billing-admin", "auditor", "all"}, role) {
-		return UsersListOutput{}, validationf("role is not a Tailscale role")
 	}
 	path, err := tailnetPath(env, "/users")
 	if err != nil {
@@ -234,9 +242,6 @@ func usersList(ctx context.Context, env *registry.Env, in UsersListInput) (Users
 }
 
 func userGet(ctx context.Context, env *registry.Env, in UserRef) (User, error) {
-	if err := requireID("id", in.ID); err != nil {
-		return User{}, err
-	}
 	var u User
 	if err := get(ctx, env, api.Path("users/%s", in.ID), nil, &u); err != nil {
 		return User{}, err

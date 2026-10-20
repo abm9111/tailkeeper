@@ -871,7 +871,7 @@ type LockStatusOutput struct {
 	Enabled          bool   `json:"enabled"`
 	PublicKey        string `json:"publicKey,omitempty" jsonschema:"this node's Tailnet Lock public key" tk:"untrusted"`
 	NodeKey          string `json:"nodeKey,omitempty" jsonschema:"this node's public node key" tk:"untrusted"`
-	NodeKeySigned    *bool  `json:"nodeKeySigned,omitempty" jsonschema:"absent when Tailnet Lock is off"`
+	NodeKeySigned    *bool  `json:"nodeKeySigned,omitempty" jsonschema:"absent when Tailnet Lock is off" tk:"absentok"`
 	TrustedKeyCount  int    `json:"trustedKeyCount"`
 	VisiblePeerCount int    `json:"visiblePeerCount"`
 	LockedOutPeers   int    `json:"lockedOutPeers" jsonschema:"peers filtered out because their node key is not signed"`

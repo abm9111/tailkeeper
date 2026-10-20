@@ -28,6 +28,7 @@ func main() {
 	r := &cli.Runner{
 		Stdout: os.Stdout,
 		Stderr: os.Stderr,
+		Stdin:  os.Stdin,
 		Build: func(ctx context.Context, contextName string) (*app.App, error) {
 			return app.Build(ctx, app.Options{Context: contextName})
 		},

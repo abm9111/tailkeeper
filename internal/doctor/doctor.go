@@ -51,13 +51,20 @@ type Report struct {
 }
 
 func (r *Report) add(name string, s Status, detail, hint string) {
-	r.Checks = append(r.Checks, Check{Name: name, Status: s, Detail: detail, Hint: hint})
+	r.Checks = append(r.Checks, Check{Name: name, Status: s, Detail: detail, Hint: selfHint(hint)})
 	switch s {
 	case Fail:
 		r.Failed++
 	case Warn:
 		r.Warned++
 	}
+}
+
+// selfHint rewrites a hint that sends the reader to `tailkeeper doctor --probe`,
+// which every other command may say, and which would send a reader of doctor's own
+// report in a circle.
+func selfHint(h string) string {
+	return strings.ReplaceAll(h, "run `tailkeeper doctor --probe`", "report this with `tailkeeper version`")
 }
 
 func (r *Report) addErr(name string, s Status, err error) {
@@ -352,9 +359,15 @@ func scopeChecks(r *Report, a *app.App, keyScopes []string) {
 	// default. A tool with PartialScopes reads what its granted scopes cover and
 	// fails only when none is granted.
 	need, partial, alphaNeed := map[string][]string{}, map[string][]string{}, map[string][]string{}
+	optional := map[string][]string{}
 	for _, t := range a.Registry.All() {
 		if t.Meta.Tier != registry.TierRead {
 			continue
+		}
+		if t.Meta.Stage != registry.StageAlpha {
+			for _, o := range t.Meta.OptionalScopes {
+				optional[o.Scope] = append(optional[o.Scope], t.Meta.Name+" ("+o.Reason+")")
+			}
 		}
 		into := need
 		switch {
@@ -378,6 +391,12 @@ func scopeChecks(r *Report, a *app.App, keyScopes []string) {
 	if missing, affected := uncovered(granted, partial); len(missing) > 0 {
 		r.add("partial scopes", Info, "missing "+strings.Join(missing, ", ")+"; these tools return only what the granted scopes cover: "+strings.Join(affected, ", "),
 			"grant a scope only if you need what it shows")
+	}
+	// An optional scope turns one feature of a tool off when it is missing, and
+	// nothing else: information, never a warning.
+	if missing, features := uncovered(granted, optional); len(missing) > 0 {
+		r.add("optional scopes", Info, "missing "+strings.Join(missing, ", ")+"; these features are off: "+strings.Join(features, ", "),
+			"grant a scope only if you need the feature")
 	}
 	if missing, affected := uncovered(granted, alphaNeed); len(missing) > 0 {
 		r.add("alpha scopes", Info, "missing "+strings.Join(missing, ", ")+" for the alpha tools "+strings.Join(affected, ", "),

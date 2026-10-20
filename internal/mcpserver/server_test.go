@@ -760,3 +760,46 @@ func TestWarningsAreEscapedBeforeWarn(t *testing.T) {
 		}
 	}
 }
+
+// An error the server builds itself (an oversized argument, a cancelled call, a
+// result that cannot be encoded) never passed through the registry, so the result
+// builders give it the generic hint of its code; a hint written where the error
+// is raised is kept, and the caller's error is not changed.
+func TestServerBuiltErrorsCarryTheProgramHint(t *testing.T) {
+	for _, c := range []tkerr.Code{tkerr.ValidationFailed, tkerr.APIError, tkerr.Internal} {
+		raised := tkerr.New(c, "built by the server", "")
+		want := tkerr.ProgramHint(c)
+		if want == "" {
+			t.Fatalf("%s has no program hint", c)
+		}
+		res := ErrorResult(raised)
+		if txt := text(res, 0); !strings.HasSuffix(txt, " Fix: "+want) {
+			t.Errorf("%s: tool result text %q lacks the fix", c, txt)
+		}
+		if got := res.StructuredContent.(map[string]any)["error"].(*tkerr.Error).Hint; got != want {
+			t.Errorf("%s: structured hint = %q, want %q", c, got, want)
+		}
+		// A resource read renders the same error through errorText.
+		if txt := errorText(tkerr.From(raised)); !strings.HasSuffix(txt, " Fix: "+want) {
+			t.Errorf("%s: resource error text %q lacks the fix", c, txt)
+		}
+		if raised.Hint != "" {
+			t.Errorf("%s: the caller's error was changed: hint %q", c, raised.Hint)
+		}
+	}
+	own := tkerr.New(tkerr.Internal, "built by the server", "its own hint")
+	if txt := text(ErrorResult(own), 0); !strings.HasSuffix(txt, " Fix: its own hint") {
+		t.Errorf("own hint: %q", txt)
+	}
+}
+
+// The oversized-argument refusal is built in the call handler: it reaches a host
+// with the generic hint.
+func TestOversizedArgumentsCarryTheProgramHint(t *testing.T) {
+	cs := connect(t, newApp(t, nil), Options{})
+	res := callTool(t, cs, "devices_list", map[string]any{"staleDays": strings.Repeat("x", maxArguments)})
+	want := " Fix: " + tkerr.ProgramHint(tkerr.ValidationFailed)
+	if !res.IsError || !strings.Contains(text(res, 0), "arguments exceed 1 MiB") || !strings.HasSuffix(text(res, 0), want) {
+		t.Errorf("isError=%v text=%.200q", res.IsError, text(res, 0))
+	}
+}

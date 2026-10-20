@@ -1,0 +1,45 @@
+{
+  "input": {
+    "additionalProperties": false,
+    "type": "object"
+  },
+  "output": {
+    "additionalProperties": false,
+    "properties": {
+      "cli": {
+        "type": "string",
+        "x-tailkeeper-untrusted": true
+      },
+      "daemon": {
+        "type": "string",
+        "x-tailkeeper-untrusted": true
+      },
+      "osVariant": {
+        "type": "string",
+        "x-tailkeeper-untrusted": true
+      },
+      "skew": {
+        "description": "CLI and daemon release versions differ",
+        "type": "boolean"
+      },
+      "warnings": {
+        "items": {
+          "type": "string",
+          "x-tailkeeper-untrusted": true
+        },
+        "type": [
+          "null",
+          "array"
+        ],
+        "x-tailkeeper-untrusted": true
+      }
+    },
+    "required": [
+      "cli",
+      "skew",
+      "warnings"
+    ],
+    "type": "object"
+  },
+  "tool": "local_version"
+}

@@ -111,6 +111,35 @@ func sortedKeys[V any](m map[string]V) []string {
 	return out
 }
 
+// checkWindow refuses what no clock can make valid in a start/end pair: a time that
+// is not RFC 3339, and, when both are given, a start that is not before the end or
+// a span over the maximum. A missing end defaults to now and a missing start to a
+// span before the end, so those cases wait for parseWindow.
+func checkWindow(start, end string, maxSpan time.Duration) error {
+	var s, e time.Time
+	var err error
+	if end != "" {
+		if e, err = time.Parse(time.RFC3339Nano, end); err != nil {
+			return validationf("end must be an RFC 3339 time")
+		}
+	}
+	if start != "" {
+		if s, err = time.Parse(time.RFC3339Nano, start); err != nil {
+			return validationf("start must be an RFC 3339 time")
+		}
+	}
+	if start == "" || end == "" {
+		return nil
+	}
+	if !s.Before(e) {
+		return validationf("start must be before end")
+	}
+	if e.Sub(s) > maxSpan {
+		return validationf("the window may span at most " + maxSpan.String())
+	}
+	return nil
+}
+
 // parseWindow resolves an RFC 3339 start/end pair with defaults and a maximum span.
 func parseWindow(now time.Time, start, end string, defaultSpan, maxSpan time.Duration) (time.Time, time.Time, error) {
 	e := now

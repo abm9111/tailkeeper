@@ -1,0 +1,91 @@
+{
+  "input": {
+    "additionalProperties": false,
+    "type": "object"
+  },
+  "output": {
+    "additionalProperties": false,
+    "properties": {
+      "captivePortal": {
+        "description": "absent when unknown",
+        "type": [
+          "null",
+          "boolean"
+        ]
+      },
+      "icmpv4": {
+        "type": "boolean"
+      },
+      "ipv4": {
+        "type": "boolean"
+      },
+      "ipv4CanSend": {
+        "type": "boolean"
+      },
+      "ipv6": {
+        "type": "boolean"
+      },
+      "ipv6CanSend": {
+        "type": "boolean"
+      },
+      "mappingVariesByDestIp": {
+        "description": "hard NAT when true; absent when unknown",
+        "type": [
+          "null",
+          "boolean"
+        ]
+      },
+      "osHasIpv6": {
+        "type": "boolean"
+      },
+      "pcp": {
+        "description": "absent when unknown",
+        "type": [
+          "null",
+          "boolean"
+        ]
+      },
+      "pmp": {
+        "description": "absent when unknown",
+        "type": [
+          "null",
+          "boolean"
+        ]
+      },
+      "preferredDerp": {
+        "description": "region ID; 0 when unknown",
+        "type": "integer"
+      },
+      "regionLatencyMs": {
+        "additionalProperties": {
+          "type": "number"
+        },
+        "description": "keyed by DERP region ID",
+        "type": "object"
+      },
+      "udp": {
+        "type": "boolean"
+      },
+      "upnp": {
+        "description": "absent when unknown",
+        "type": [
+          "null",
+          "boolean"
+        ]
+      }
+    },
+    "required": [
+      "udp",
+      "ipv4",
+      "ipv6",
+      "ipv4CanSend",
+      "ipv6CanSend",
+      "osHasIpv6",
+      "icmpv4",
+      "preferredDerp",
+      "regionLatencyMs"
+    ],
+    "type": "object"
+  },
+  "tool": "local_netcheck"
+}

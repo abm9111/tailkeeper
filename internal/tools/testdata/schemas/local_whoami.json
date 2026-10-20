@@ -1,0 +1,71 @@
+{
+  "input": {
+    "additionalProperties": false,
+    "type": "object"
+  },
+  "output": {
+    "additionalProperties": false,
+    "properties": {
+      "addresses": {
+        "items": {
+          "type": "string"
+        },
+        "type": [
+          "null",
+          "array"
+        ]
+      },
+      "capabilities": {
+        "description": "names of application capabilities the peer is granted on this node (whois only; values are not shown)",
+        "items": {
+          "type": "string",
+          "x-tailkeeper-untrusted": true
+        },
+        "type": [
+          "null",
+          "array"
+        ],
+        "x-tailkeeper-untrusted": true
+      },
+      "displayName": {
+        "type": "string",
+        "x-tailkeeper-masked": true,
+        "x-tailkeeper-untrusted": true
+      },
+      "loginName": {
+        "type": "string",
+        "x-tailkeeper-masked": true,
+        "x-tailkeeper-untrusted": true
+      },
+      "machineAuthorized": {
+        "type": "boolean"
+      },
+      "name": {
+        "type": "string",
+        "x-tailkeeper-untrusted": true
+      },
+      "nodeId": {
+        "type": "string"
+      },
+      "tags": {
+        "items": {
+          "type": "string",
+          "x-tailkeeper-untrusted": true
+        },
+        "type": [
+          "null",
+          "array"
+        ],
+        "x-tailkeeper-untrusted": true
+      }
+    },
+    "required": [
+      "nodeId",
+      "name",
+      "addresses",
+      "machineAuthorized"
+    ],
+    "type": "object"
+  },
+  "tool": "local_whoami"
+}
