@@ -9,7 +9,7 @@ ACTIONLINT  := github.com/rhysd/actionlint/cmd/actionlint@v1.7.12
 GORELEASER  := github.com/goreleaser/goreleaser/v2@v2.18.2
 BINDIR      ?= $(HOME)/.local/bin
 
-.PHONY: build install test cover bench fuzz live vet fmt-check lint lint-extra actionlint vuln docs docs-check deps deps-check release-notes-check release-check verify
+.PHONY: build install test cover cover-pkg bench fuzz mutate live vet fmt-check lint lint-extra actionlint vuln docs docs-check deps deps-check release-notes-check release-check verify
 
 # Every go command a recipe runs refuses to change go.mod or go.sum, whatever GOFLAGS the
 # environment or the command line carries (a stray -mod=mod) and even if a vendor/
@@ -62,7 +62,7 @@ test:
 # compares exact counts, not a rounded percentage. Fails below COVER_MIN percent.
 COVER_MIN ?= 90
 
-cover:
+cover: cover-pkg
 	@root="$$(mktemp -d)" && trap 'rm -rf "$$root"' EXIT && mkdir "$$root/data" && \
 	env -u TAILKEEPER_LIVE $(GO) test -count=1 -timeout 180s -cover -coverpkg=github.com/abm9111/tailkeeper/... ./... -args -test.gocoverdir="$$root/data" && \
 	$(GO) tool covdata textfmt -i="$$root/data" -o="$$root/cover.out" && \
@@ -70,6 +70,26 @@ cover:
 		NR > 1 { stmts[$$1] = $$2; if ($$3 > 0) hit[$$1] = 1 } \
 		END { if (bad) exit 2; for (b in stmts) { n += stmts[b]; if (b in hit) c += stmts[b] } if (n == 0) exit 1; \
 			printf "coverage: %.2f%% of %d statements (minimum %s%%)\n", 100 * c / n, n, m; exit !(100 * c >= m * n) }' "$$root/cover.out"
+
+# The packages whose own tests must cover COVER_PKG_MIN percent of their statements: the
+# engine and its guard, which the end-to-end runs reach only in part and whose gaps the
+# aggregate figure above would hide. Each package is measured on its own, with only its own
+# tests. Fails closed: a package with no statements in its profile, or whose tests fail,
+# fails the target.
+COVER_PKGS    ?= ./internal/acl ./internal/guard
+COVER_PKG_MIN ?= 95
+
+cover-pkg:
+	@set -eu; \
+	printf '%s\n' "$(COVER_PKG_MIN)" | grep -Eq '^[0-9]+([.][0-9]+)?$$' || { echo "cover-pkg: COVER_PKG_MIN must be a number, not \"$(COVER_PKG_MIN)\""; exit 2; }; \
+	[ -n "$(strip $(COVER_PKGS))" ] || { echo "cover-pkg: COVER_PKGS names no package"; exit 2; }; \
+	root="$$(mktemp -d)"; trap 'rm -rf "$$root"' EXIT; \
+	for pkg in $(COVER_PKGS); do \
+		env -u TAILKEEPER_LIVE $(GO) test -count=1 -timeout 180s -coverprofile="$$root/cover.out" "$$pkg" || { echo "cover-pkg: the tests of $$pkg failed"; exit 1; }; \
+		awk -v m="$(COVER_PKG_MIN)" -v p="$$pkg" 'NR > 1 { n += $$2; if ($$3 > 0) c += $$2 } \
+			END { if (n == 0) { print "cover-pkg: " p " has no statements in its profile"; exit 1 } \
+				printf "coverage of %s from its own tests: %.2f%% of %d statements (minimum %s%%)\n", p, 100 * c / n, n, m; exit !(100 * c >= m * n) }' "$$root/cover.out" || exit 1; \
+	done
 
 # Benchmarks of the masking paths and two end-to-end tools, six runs each so
 # benchstat (golang.org/x/perf/cmd/benchstat) can compare two saved outputs. Not
@@ -82,15 +102,20 @@ bench:
 # input is written to testdata/fuzz/<target>/ and fails the run. Fails closed: each
 # package's listing is captured on its own, so a listing that fails (a compile error)
 # fails the run instead of reading as "no targets", and the run fails unless it ran at
-# least FUZZ_MIN targets (five exist today). A package with no fuzz target is fine. Not
+# least FUZZ_MIN targets (nine exist today). A package with no fuzz target is fine. Not
 # part of verify: it takes minutes and its inputs are random.
+#
+# FUZZ_PKG limits the run to some packages (go list patterns, such as ./internal/acl); the
+# nightly workflow runs one package for each of its jobs and sets FUZZ_MIN to the number
+# of targets that package holds.
 FUZZTIME ?= 20s
-FUZZ_MIN ?= 5
+FUZZ_MIN ?= 9
+FUZZ_PKG ?= ./...
 
 fuzz:
 	@set -eu; \
 	case "$(FUZZ_MIN)" in ''|*[!0-9]*) echo "fuzz: FUZZ_MIN must be a whole number, not \"$(FUZZ_MIN)\""; exit 2;; esac; \
-	pkgs="$$($(GO) list ./...)" || { echo "fuzz: go list ./... failed"; exit 1; }; \
+	pkgs="$$($(GO) list $(FUZZ_PKG))" || { echo "fuzz: go list $(FUZZ_PKG) failed"; exit 1; }; \
 	n=0; \
 	for pkg in $$pkgs; do \
 		listing="$$($(GO) test -list '^Fuzz' $$pkg)" || { echo "fuzz: go test -list failed for $$pkg"; exit 1; }; \
@@ -103,6 +128,17 @@ fuzz:
 	done; \
 	echo "fuzz: ran $$n target(s) (minimum $(FUZZ_MIN))"; \
 	if [ "$$n" -lt "$(FUZZ_MIN)" ]; then echo "fuzz: fewer than $(FUZZ_MIN) targets ran, so the listing or the package list is wrong"; exit 1; fi
+
+# Checks that the tests of a package notice a change to its code: for each mutant listed in
+# the package's mutants.txt (a change, and the tests one of which must fail with it) it
+# builds and tests a copy of the repository, and fails if a mutant survives. MUTATE_PKG
+# limits it to one package directory (make mutate MUTATE_PKG=internal/acl); without it
+# every package with a mutants.txt runs. Not part of verify: each mutant builds and tests
+# a package. The result for a pull request's packages goes in its description.
+MUTATE_PKG ?=
+
+mutate:
+	$(GO) run scripts/mutate.go $(MUTATE_PKG)
 
 # Runs every tool once against the tailnet your configuration names, and one MCP
 # session, through the built binary, and checks the results without printing them:
@@ -131,9 +167,13 @@ live:
 	./scripts/live-check.sh "$$log" "$$status"
 
 # Strict mode, re-exec and log locking have Windows-only files: vet them too.
+# scripts/mutate.go has `//go:build ignore`, so ./... never loads it; naming the file
+# makes go vet (and golangci-lint, in lint-extra) read it despite the tag.
 vet:
 	$(GO) vet ./...
 	GOOS=windows $(GO) vet ./...
+	$(GO) vet scripts/mutate.go
+	GOOS=windows $(GO) vet scripts/mutate.go
 
 fmt-check:
 	@out="$$(gofmt -l .)" || exit 1; if [ -n "$$out" ]; then echo "gofmt needed:"; echo "$$out"; exit 1; fi
@@ -148,6 +188,7 @@ lint:
 # (.golangci.yml). staticcheck stays in `lint`.
 lint-extra:
 	$(GO) run $(GOLANGCI) run ./...
+	$(GO) run $(GOLANGCI) run scripts/mutate.go
 
 # Checks the workflow files: syntax, expressions, permissions and the shell in run:
 # steps; and, with shellcheck itself, the scripts in scripts/. Not in verify (it needs no

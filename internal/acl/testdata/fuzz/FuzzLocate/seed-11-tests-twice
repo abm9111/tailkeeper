@@ -1,0 +1,4 @@
+go test fuzz v1
+[]byte("{\"tests\":[{\"src\":\"a\",\"accept\":[\"x:1\"]}],\"Tests\":[{\"src\":\"b\",\"accept\":[\"x:1\"]}]}")
+string("b")
+string("x:1")

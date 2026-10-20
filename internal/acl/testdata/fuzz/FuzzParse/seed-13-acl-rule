@@ -1,0 +1,2 @@
+go test fuzz v1
+[]byte("{\"acls\":[{\"action\":\"accept\",\"src\":[\"group:eng\"],\"dst\":[\"tag:web:443\"],\"proto\":\"tcp\"}]}")

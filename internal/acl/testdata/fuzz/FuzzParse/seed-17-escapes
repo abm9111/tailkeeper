@@ -1,0 +1,2 @@
+go test fuzz v1
+[]byte("{\"gr\\u006fups\":{\"group:\\u00e9\\n\":[\"a\\/b\",\"\\ud800\"]},\"ACLS\":[{\"Action\":\"acc\\u0065pt\",\"SRC\":[\"*\"],\"Dst\":[\"*:*\"]}]}")

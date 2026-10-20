@@ -1,0 +1,3 @@
+go test fuzz v1
+[]byte("{\"ipsets\":{\"ipset:s\":[\"add 192.0.2.1\",\"remove 192.0.2.1\"]}}")
+[]byte("{\"ipsets\":{\"ipset:s\":[\"remove 192.0.2.1\",\"add 192.0.2.1\"]}}")

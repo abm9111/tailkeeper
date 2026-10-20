@@ -1,0 +1,3 @@
+go test fuzz v1
+[]byte("{\"ssh\":[{\"action\":\"check\",\"src\":[\"g\"],\"dst\":[\"t\"],\"users\":[\"u\"]}]}")
+[]byte("{\"ssh\":[{\"action\":\"accept\",\"src\":[\"g\"],\"dst\":[\"t\"],\"users\":[\"u\"]}]}")

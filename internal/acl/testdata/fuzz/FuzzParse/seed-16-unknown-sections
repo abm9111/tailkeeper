@@ -1,0 +1,2 @@
+go test fuzz v1
+[]byte("{\"nodeAttr\":[],\"futureSection\":{\"a\":[1,2,{\"b\":null}]},\"NodeAttrs\":[{\"target\":[\"*\"],\"attr\":[\"funnel\"]}]}")

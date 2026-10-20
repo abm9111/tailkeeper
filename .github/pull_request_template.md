@@ -14,3 +14,4 @@
 - [ ] No credential, real tailnet ID, device name, address, email address or login in code, tests, docs or this description
 - [ ] Generated files (`docs/tools.md`, `docs/scopes.md`, `docs/dependencies.md`) regenerated if affected
 - [ ] Output agents see: untrusted text stays escaped, capped and marked; personal data stays masked by default
+- [ ] A bump of `github.com/tailscale/hujson` keeps `TestCharacteriseHuJSON`, `TestCharacteriseHuJSONPatch` and `TestParseOffsetsPointAtTheirValues` green, or the engine changes in the same pull request

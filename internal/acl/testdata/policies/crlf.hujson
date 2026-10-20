@@ -1,0 +1,82 @@
+// Fixture policy for the engine's tests. Names are placeholders: example.com addresses,
+// documentation prefixes and tags no tailnet holds.
+{
+	// Groups are sets of users.
+	"groups": {
+		"group:eng":     ["amy@example.com", "bo@example.com"],
+		"group:ops":     ["cy@example.com"],
+		"group:finance team@example.com": [], // a synced group is not defined here
+	},
+
+	"tagOwners": {
+		"tag:web":    ["group:eng"],
+		"tag:db":     ["group:ops"],
+		"tag:ci":     [],
+		"tag:router": ["autogroup:admin"],
+	},
+
+	"hosts": {
+		"build-box": "192.0.2.10",
+		"lan":       "198.51.100.0/24",
+	},
+
+	"ipsets": {
+		"ipset:servers": ["host:build-box", "198.51.100.0/24", "remove 198.51.100.7"],
+	},
+
+	"postures": {
+		"posture:managed": ["node:os == 'macos'", "node:tsReleaseTrack == 'stable'"],
+		"posture:latest": {
+			"assertions": ["node:tsVersion >= '1.80'"],
+			"onFailure": "deny",
+		},
+	},
+
+	"defaultSrcPosture": ["posture:managed"],
+
+	"acls": [
+		{"action": "accept", "src": ["group:eng"], "dst": ["tag:web:80,443"], "proto": "tcp"},
+		{"action": "accept", "src": ["group:eng", "group:ops"], "dst": ["tag:db:5432"]},
+		{"action": "accept", "src": ["tag:ci"], "dst": ["build-box:22", "lan:*"]},
+		/* logstream is written by Tailscale when private log streaming is on */
+		{"action": "accept", "src": ["logstream@tailscale"], "dst": ["tag:ci:443"]},
+	],
+
+	"grants": [
+		{"src": ["group:ops"], "dst": ["tag:router"], "ip": ["tcp:22", "udp:53"], "srcPosture": ["posture:managed"]},
+		{"src": ["autogroup:member"], "dst": ["autogroup:self"], "ip": ["*"]},
+		{"src": ["group:eng"], "dst": ["tag:web"], "app": {"example.com/cap/web": [{"role": "admin"}]}},
+	],
+
+	"ssh": [
+		{"action": "check", "src": ["group:eng"], "dst": ["tag:web"], "users": ["autogroup:nonroot"], "checkPeriod": "12h"},
+		{"action": "accept", "src": ["group:ops"], "dst": ["tag:db"], "users": ["root"]},
+	],
+
+	"nodeAttrs": [
+		{"target": ["autogroup:member"], "attr": ["funnel"]},
+		{"target": ["tag:ci"], "attr": ["nextdns:abc123", "disable-hosts-file-updates"]},
+		{"target": ["tag:router"], "app": {"tailscale.com/app-connectors": [{"name": "example", "connectors": ["tag:router"], "domains": ["example.com"]}]}},
+	],
+
+	"autoApprovers": {
+		"routes":   {"198.51.100.0/24": ["tag:router"]},
+		"exitNode": ["tag:router"],
+	},
+
+	"extraDNSRecords": [
+		{"Name": "build.example.com", "Value": "192.0.2.10"},
+	],
+
+	"tests": [
+		{"src": "group:eng", "accept": ["tag:web:443"], "deny": ["tag:db:22"]},
+		{"src": "group:ops", "proto": "tcp", "accept": ["tag:db:5432"]},
+	],
+
+	"sshTests": [
+		{"src": "group:eng", "dst": ["tag:web"], "accept": ["alice"], "check": [], "deny": ["root"]},
+	],
+
+	"disableIPv4": false,
+	"randomizeClientPort": true,
+}

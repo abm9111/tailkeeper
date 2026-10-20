@@ -1,0 +1,2 @@
+go test fuzz v1
+[]byte("[{\"src\":\"tag:p\",\"accept\":[\"tag:p:22\"]}]")

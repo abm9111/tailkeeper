@@ -1,6 +1,8 @@
-# Fuzzes every target: 20 s each on pull requests and pushes to main, 5 minutes
-# each nightly. A failure uploads the crashing inputs (testdata/fuzz) so they can
-# be committed as regression seeds.
+# Fuzzes every target for 20 seconds on pull requests and pushes to main (the job named
+# fuzz, a required check: it keeps its name), and for 5 minutes each nightly, one package
+# to a job so that no job runs against its timeout and a failure names its package. A
+# failure uploads the crashing inputs (testdata/fuzz) so they can be committed as
+# regression seeds.
 name: fuzz
 
 on:
@@ -20,6 +22,9 @@ concurrency:
 
 jobs:
   fuzz:
+    # The nightly runs below, not this job: renaming this one would block every pull
+    # request, whose required check is called fuzz.
+    if: github.event_name != 'schedule'
     runs-on: ubuntu-24.04 # pinned: ubuntu-latest moves to each new Ubuntu release on GitHub's schedule
     timeout-minutes: 45
     steps:
@@ -30,14 +35,60 @@ jobs:
         with:
           go-version-file: go.mod
       - name: Fuzz
-        env:
-          FUZZTIME: ${{ github.event_name == 'schedule' && '5m' || '20s' }}
-        run: make fuzz FUZZTIME="$FUZZTIME"
+        run: make fuzz FUZZTIME=20s
       - name: Keep the failing inputs
         if: failure()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: fuzz-failures
+          path: "**/testdata/fuzz/**"
+          if-no-files-found: warn
+          retention-days: 14
+
+  nightly:
+    name: nightly (${{ matrix.pkg }})
+    if: github.event_name == 'schedule'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        # min is the number of fuzz targets the package holds: the run fails if fewer ran.
+        include:
+          - pkg: ./internal/acl
+            min: 3
+          - pkg: ./internal/guard
+            min: 1
+          - pkg: ./internal/sanitize
+            min: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+      # Go keeps the inputs a fuzz run found interesting in the build cache; carrying them
+      # from night to night means each night starts where the last one stopped and not from
+      # the committed seeds.
+      - name: Find the fuzz cache
+        id: cache
+        run: echo "dir=$(go env GOCACHE)/fuzz" >> "$GITHUB_OUTPUT"
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ${{ steps.cache.outputs.dir }}
+          key: fuzz-${{ matrix.pkg }}-${{ github.run_id }}
+          restore-keys: fuzz-${{ matrix.pkg }}-
+      - name: Fuzz
+        env:
+          PKG: ${{ matrix.pkg }}
+          MIN: ${{ matrix.min }}
+        run: make fuzz FUZZTIME=5m FUZZ_PKG="$PKG" FUZZ_MIN="$MIN"
+      - name: Keep the failing inputs
+        if: failure()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: fuzz-failures-${{ strategy.job-index }}
           path: "**/testdata/fuzz/**"
           if-no-files-found: warn
           retention-days: 14

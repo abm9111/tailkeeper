@@ -7,6 +7,7 @@ import (
 
 	"github.com/tailscale/hujson"
 
+	"github.com/abm9111/tailkeeper/internal/guard"
 	"github.com/abm9111/tailkeeper/internal/registry"
 	"github.com/abm9111/tailkeeper/internal/sanitize"
 	"github.com/abm9111/tailkeeper/internal/tkerr"
@@ -156,7 +157,7 @@ func checkSubjects(env *registry.Env, text, what string) error {
 	if env.ShowPersonalData() {
 		return nil
 	}
-	if nestsDeeperThan(text, maxHuJSONDepth) {
+	if guard.NestsDeeperThan(text, guard.MaxDepth) {
 		return tkerr.New(tkerr.ValidationFailed, what+" nests deeper than 1,000 levels, which no policy does", "")
 	}
 	// A line comment ends at a line feed, and one that ends the text has none: give it one, as
