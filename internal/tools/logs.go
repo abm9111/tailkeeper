@@ -403,7 +403,7 @@ func wholeRefs(env *registry.Env, values ...string) []string {
 		switch {
 		case v == "":
 		case env.ShowPersonalData():
-			out = append(out, env.Privacy.Pseudonym(v))
+			out = append(out, env.Privacy.APIPseudonym(v))
 		default:
 			out = append(out, env.PersonalRefs(v)...)
 		}

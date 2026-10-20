@@ -629,3 +629,248 @@ func TestAuditPreviewIsCappedAt256BytesAndSaysSo(t *testing.T) {
 		t.Errorf("800 multibyte bytes: preview is %d bytes, valid UTF-8 %v, ends %q", len(got), utf8.ValidString(got), got[len(got)-len(suffix):])
 	}
 }
+
+// Two owners, one of whose logins spells an escape, are two people: in the display, in a
+// pseudonym filter, and with masking off.
+func TestAPILoginsAreNamedWithoutDecodingEscapes(t *testing.T) {
+	f, reg, env := apiEnv(t)
+	kenv, k := keyed(t, env)
+	spelled := "am" + "\\" + "u0079@example.com"
+	b, _ := json.Marshal(spelled)
+	f.JSON("GET", tailnetPath+"/devices", 200, `{"devices":[
+		{"id":"1","nodeId":"nAAA1CNTRL","name":"a.example.ts.net","hostname":"a","user":`+string(b)+`},
+		{"id":"2","nodeId":"nBBB2CNTRL","name":"b.example.ts.net","hostname":"b","user":"amy@example.com"}]}`)
+	out := mustCall(t, reg, kenv, "devices_list", `{}`, nil)
+	for _, login := range []string{"amy@example.com", spelled} {
+		if n := strings.Count(out, privacy.Suffix(k.APIPseudonym(login))); n != 1 {
+			t.Errorf("%d devices show the pseudonym of %q, want 1: %s", n, login, out)
+		}
+	}
+	var got struct {
+		Devices []struct {
+			NodeID string `json:"nodeId"`
+		} `json:"devices"`
+	}
+	for name, e := range map[string]*registry.Env{"masked": kenv, "shown": show(kenv)} {
+		for login, want := range map[string]string{"amy@example.com": "nBBB2CNTRL", spelled: "nAAA1CNTRL"} {
+			mustCall(t, reg, e, "devices_list", `{"user":"`+k.APIPseudonym(login)+`"}`, &got)
+			if len(got.Devices) != 1 || got.Devices[0].NodeID != want {
+				t.Errorf("%s: user filter on the pseudonym of %q returned %+v, want only %s", name, login, got.Devices, want)
+			}
+		}
+	}
+}
+
+// The audit_log actor filter reads a login the API returned as it is: the actors amy@example.com
+// and the one that spells an escape are two people, whether the display is masked or shown.
+func TestAuditLogActorFilterNamesAPILoginsWithoutDecodingEscapes(t *testing.T) {
+	f, reg, env := apiEnv(t)
+	kenv, k := keyed(t, env)
+	spelled := "am" + "\\" + "u0079@example.com"
+	logins := []string{"amy@example.com", spelled}
+	var entries []string
+	for i, login := range logins {
+		b, err := json.Marshal(login)
+		if err != nil {
+			t.Fatal(err)
+		}
+		entries = append(entries, fmt.Sprintf(`{"eventTime":"2026-10-10T10:%02d:00Z","origin":"ADMIN_CONSOLE","action":"UPDATE",
+			"actor":{"id":"u%d","loginName":%s,"displayName":%s},"target":{"id":"t%d"}}`, i, i+1, b, b, i+1))
+	}
+	f.JSON("GET", tailnetPath+"/logging/configuration", 200, `{"logs":[`+strings.Join(entries, ",")+`]}`)
+	var log struct {
+		Entries []struct {
+			Actor struct {
+				ID        string `json:"id"`
+				LoginName string `json:"loginName"`
+			} `json:"actor"`
+		} `json:"entries"`
+	}
+	checked := 0
+	for mode, e := range map[string]*registry.Env{"masked": kenv, "shown": show(kenv)} {
+		for i, login := range logins {
+			checked++
+			out := mustCall(t, reg, e, "audit_log", `{"actor":[`+jsonString(k.APIPseudonym(login))+`]}`, &log)
+			if len(log.Entries) != 1 || log.Entries[0].Actor.ID != fmt.Sprintf("u%d", i+1) {
+				t.Errorf("%s: actor filter on the pseudonym of %q returned %+v, want only u%d: %s", mode, login, log.Entries, i+1, out)
+			}
+		}
+	}
+	if checked != 4 {
+		t.Fatalf("checked %d filters, want 4", checked)
+	}
+}
+
+// A policy whose only trace of masking is a marker it holds itself has its marker rewritten,
+// and the page says it was changed: masked is true, though no address was masked.
+func TestACLGetKeyedReadsMaskedForAPolicyThatOnlyHoldsAForgedMarker(t *testing.T) {
+	f, reg, env := apiEnv(t)
+	kenv, _ := keyed(t, env)
+	policy := "{\n  \"note\": \"[p:bbbbbbbbbb]\"\n}\n"
+	f.Raw("GET", tailnetPath+"/acl", 200, policy, map[string]string{"Content-Type": "application/hujson"})
+	f.JSON("GET", tailnetPath+"/settings", 200, `{}`)
+	var out struct {
+		Policy string `json:"policy"`
+		Masked bool   `json:"masked"`
+	}
+	mustCall(t, reg, kenv, "acl_get", `{}`, &out)
+	if strings.Contains(out.Policy, "[p:bbbbbbbbbb") {
+		t.Errorf("the forged marker is shown as it was written:\n%s", out.Policy)
+	}
+	if !out.Masked {
+		t.Errorf("masked = false for a page whose marker was rewritten:\n%s", out.Policy)
+	}
+	// Without a key nothing is rewritten, and nothing is masked.
+	mustCall(t, reg, env, "acl_get", `{}`, &out)
+	if out.Masked || !strings.Contains(out.Policy, "[p:bbbbbbbbbb]") {
+		t.Errorf("without a key the policy is shown as written and unmasked (masked %v):\n%s", out.Masked, out.Policy)
+	}
+}
+
+// With a key, every address of the policy carries its pseudonym, and a marker that the policy
+// itself holds (a comment, a name) is shown with its bracket spelled, so a marker in the
+// page is one acl_get appended.
+func TestACLGetKeyedNamesEveryAddressAndForgesNoMarker(t *testing.T) {
+	f, reg, env := apiEnv(t)
+	kenv, k := keyed(t, env)
+	policy := "// reviewed by a…@example.com [p:aaaaaaaaaa] and bob@example.com\n" +
+		"{\n  \"groups\": {\"group:eng\": [\"amy@example.com\", \"bo@example.com\"]},\n" +
+		"  \"note\": \"[p:bbbbbbbbbb]\"\n}\n"
+	f.Raw("GET", tailnetPath+"/acl", 200, policy, map[string]string{"Content-Type": "application/hujson"})
+	f.JSON("GET", tailnetPath+"/settings", 200, `{}`)
+	var out struct {
+		Policy string `json:"policy"`
+		Masked bool   `json:"masked"`
+	}
+	mustCall(t, reg, kenv, "acl_get", `{}`, &out)
+	for _, login := range []string{"amy@example.com", "bo@example.com", "bob@example.com"} {
+		if want := privacy.Suffix(k.Pseudonym(login)); strings.Count(out.Policy, want) != 1 {
+			t.Errorf("the page names %s %d times, want once:\n%s", login, strings.Count(out.Policy, want), out.Policy)
+		}
+	}
+	if n := strings.Count(out.Policy, "[p:"); n != 3 {
+		t.Errorf("the page holds %d markers, want the 3 acl_get appended:\n%s", n, out.Policy)
+	}
+	spelled := "\\" + "u{005B}p:" // a left bracket, spelled as String spells a character it cannot show
+	for _, forged := range []string{"aaaaaaaaaa", "bbbbbbbbbb"} {
+		if strings.Contains(out.Policy, "[p:"+forged) || !strings.Contains(out.Policy, spelled+forged+"]") {
+			t.Errorf("the forged marker %s is not rewritten:\n%s", forged, out.Policy)
+		}
+	}
+	if !out.Masked {
+		t.Error("masked = false for a page whose addresses were masked")
+	}
+	// Without a key nothing is named, so nothing is rewritten; with masking off the policy is as written.
+	mustCall(t, reg, env, "acl_get", `{}`, &out)
+	if strings.Contains(out.Policy, spelled) || !strings.Contains(out.Policy, "[p:aaaaaaaaaa]") || !strings.Contains(out.Policy, "a…@example.com [p:aaaaaaaaaa]") {
+		t.Errorf("without a key the policy is shown as written, masked:\n%s", out.Policy)
+	}
+	mustCall(t, reg, show(kenv), "acl_get", `{}`, &out)
+	if out.Policy != policy {
+		t.Errorf("with personalData show the policy is as written:\n%s", out.Policy)
+	}
+}
+
+// A model reads the pseudonym off a result and sends it back. Nothing below computes one from
+// the key: each is taken from the output of the same Env that the filter then runs in.
+func TestPseudonymsReadOffAResultFilterThroughOneEnv(t *testing.T) {
+	f, reg, env := apiEnv(t)
+	kenv, _ := keyed(t, env)
+	f.JSON("GET", tailnetPath+"/devices", 200, `{"devices":[
+		{"id":"1","nodeId":"nAAA1CNTRL","name":"box1.example.ts.net","hostname":"amy@example.com","user":"amy@example.com"},
+		{"id":"2","nodeId":"nBBB2CNTRL","name":"box2.example.ts.net","hostname":"bob@example.com","user":"bob@example.com"}]}`)
+	f.JSON("GET", tailnetPath+"/logging/configuration", 200, auditTwo)
+
+	type device struct {
+		NodeID   string `json:"nodeId"`
+		User     string `json:"user"`
+		Hostname string `json:"hostname"`
+	}
+	var listed struct {
+		Devices []device `json:"devices"`
+	}
+	nodes := func() string {
+		var ids []string
+		for _, d := range listed.Devices {
+			ids = append(ids, d.NodeID)
+		}
+		return strings.Join(ids, ",")
+	}
+	mustCall(t, reg, kenv, "devices_list", `{}`, &listed)
+	if len(listed.Devices) != 2 {
+		t.Fatalf("devices_list returned %d devices, want 2", len(listed.Devices))
+	}
+	shown := map[string]device{}
+	for _, d := range listed.Devices {
+		shown[d.NodeID] = d
+	}
+	// The owner as the result shows it: masked, with its pseudonym. Every spelling a model may
+	// send back names the one device.
+	user := shown["nAAA1CNTRL"].User
+	ref, ok := privacy.Ref(user)
+	if !ok || strings.Contains(user, "amy") {
+		t.Fatalf("the owner is shown as %q, want a masked value ending in a pseudonym", user)
+	}
+	for _, form := range []string{user, ref, "[" + ref + "]"} {
+		mustCall(t, reg, kenv, "devices_list", `{"user":`+jsonString(form)+`}`, &listed)
+		if got := nodes(); got != "nAAA1CNTRL" {
+			t.Errorf("devices_list user=%q returned %s, want nAAA1CNTRL", form, got)
+		}
+	}
+	// A name that is an address: nameContains reads the pseudonym off the hostname.
+	hostRef, ok := privacy.Ref(shown["nBBB2CNTRL"].Hostname)
+	if !ok {
+		t.Fatalf("the hostname is shown as %q, want a pseudonym", shown["nBBB2CNTRL"].Hostname)
+	}
+	mustCall(t, reg, kenv, "devices_list", `{"nameContains":`+jsonString("["+hostRef+"]")+`}`, &listed)
+	if got := nodes(); got != "nBBB2CNTRL" {
+		t.Errorf("devices_list nameContains=[%s] returned %s, want nBBB2CNTRL", hostRef, got)
+	}
+
+	// The audit log: an actor's login and a target's name, each read off the entries.
+	var log struct {
+		Entries []struct {
+			Actor  struct{ ID, LoginName string } `json:"actor"`
+			Target struct{ ID, Name string }      `json:"target"`
+		} `json:"entries"`
+	}
+	ids := func() string {
+		var s []string
+		for _, e := range log.Entries {
+			s = append(s, e.Actor.ID+">"+e.Target.ID)
+		}
+		return strings.Join(s, ",")
+	}
+	mustCall(t, reg, kenv, "audit_log", `{}`, &log)
+	if len(log.Entries) != 2 {
+		t.Fatalf("audit_log returned %d entries, want 2", len(log.Entries))
+	}
+	if log.Entries[0].Actor.ID != "u1" {
+		t.Fatalf("the first audit entry is by %q, want u1: the checks below name the first entry's actor and target", log.Entries[0].Actor.ID)
+	}
+	actorRef, ok := privacy.Ref(log.Entries[0].Actor.LoginName)
+	if !ok {
+		t.Fatalf("the actor is shown as %q, want a pseudonym", log.Entries[0].Actor.LoginName)
+	}
+	targetRef, ok := privacy.Ref(log.Entries[0].Target.Name)
+	if !ok {
+		t.Fatalf("the target is shown as %q, want a pseudonym", log.Entries[0].Target.Name)
+	}
+	mustCall(t, reg, kenv, "audit_log", `{"actor":[`+jsonString(log.Entries[0].Actor.LoginName)+`]}`, &log)
+	if got := ids(); got != "u1>t1" {
+		t.Errorf("audit_log actor=<the login as shown> returned %s, want u1>t1", got)
+	}
+	targetShown := log.Entries[0].Target.Name
+	// The target in each form a model may send back, as the user filter takes them: as shown,
+	// bare and bracketed.
+	for _, form := range []string{targetShown, targetRef, "[" + targetRef + "]"} {
+		mustCall(t, reg, kenv, "audit_log", `{"target":[`+jsonString(form)+`]}`, &log)
+		if got := ids(); got != "u1>t1" {
+			t.Errorf("audit_log target=%q returned %s, want u1>t1", form, got)
+		}
+	}
+	mustCall(t, reg, kenv, "audit_log", `{"actor":["`+actorRef+`"],"target":["`+targetRef+`"]}`, &log)
+	if got := ids(); got != "u1>t1" {
+		t.Errorf("audit_log actor and target returned %s, want u1>t1", got)
+	}
+}

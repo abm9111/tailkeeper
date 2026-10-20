@@ -76,10 +76,30 @@ func mac(key, msg []byte) []byte {
 
 var b32 = base32.StdEncoding.WithPadding(base32.NoPadding)
 
-// Pseudonym names value without revealing it: "p:" and the first ten base32
-// characters of its HMAC under the pseudonym key, after Normalize.
-func (k *Key) Pseudonym(value string) string {
-	return "p:" + strings.ToLower(b32.EncodeToString(k.ready().pseudonym(Normalize(value))[:7]))[:10]
+// Pseudonym names text without revealing it: "p:" and the first ten base32
+// characters of its HMAC under the pseudonym key, after Normalize. It is for text read
+// from a policy or from a result's free text, where a login may be spelled with JSON
+// escapes; a value the API returned is named by APIPseudonym.
+func (k *Key) Pseudonym(value string) string { return k.name(Normalize(value)) }
+
+// APIPseudonym names a value the Tailscale API returned (a login name, a display name)
+// as Pseudonym names text, except that it decodes nothing: such a value is not text, and
+// a login that holds a backslash sequence is not the address the sequence spells. An
+// address is lower-cased, so the pseudonym of a login is the one of the same address in a
+// policy.
+func (k *Key) APIPseudonym(value string) string { return k.name(foldAddress(value)) }
+
+// name is the pseudonym of an already normalized value.
+func (k *Key) name(normalized string) string {
+	return "p:" + strings.ToLower(b32.EncodeToString(k.ready().pseudonym(normalized)[:7]))[:10]
+}
+
+// foldAddress lower-cases a value that holds an at sign.
+func foldAddress(v string) string {
+	if strings.Contains(v, "@") {
+		return strings.ToLower(v)
+	}
+	return v
 }
 
 // Digest is a keyed digest of b, which confirms nothing to whoever lacks the key.
@@ -98,8 +118,10 @@ func (Key) Format(f fmt.State, _ rune) { _, _ = io.WriteString(f, "privacy key")
 // String is what a Key is called as text outside fmt.
 func (Key) String() string { return "privacy key" }
 
-// Normalize is what a pseudonym is computed over: JSON escapes decoded, since a
-// policy file may spell a login with them, and email addresses lower-cased.
+// Normalize is what the pseudonym of text is computed over: JSON escapes decoded, since a
+// policy file may spell a login with them, and email addresses lower-cased. It is applied
+// once, to text read from a policy; Pseudonym applies it itself, so a caller does not, and a
+// login the API returned never goes through it (see APIPseudonym).
 func Normalize(v string) string {
 	if strings.Contains(v, `\u`) {
 		var d string
@@ -107,10 +129,7 @@ func Normalize(v string) string {
 			v = d
 		}
 	}
-	if strings.Contains(v, "@") {
-		v = strings.ToLower(v)
-	}
-	return v
+	return foldAddress(v)
 }
 
 var (

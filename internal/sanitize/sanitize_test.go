@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"math/bits"
 	"reflect"
+	"runtime"
 	"sort"
 	"strconv"
 	"strings"
@@ -201,6 +202,24 @@ func TestStringEscapesInvisibleUnicode(t *testing.T) {
 	}
 }
 
+// allocated is the fewest bytes f allocates in any of three runs. Bytes do not depend on the
+// clock or the machine, so a bound on them cannot flake, and the fewest of several runs leaves
+// out an allocation that something else in the process made meanwhile.
+func allocated(f func()) uint64 {
+	best := ^uint64(0)
+	for range 3 {
+		var before, after runtime.MemStats
+		runtime.ReadMemStats(&before)
+		f()
+		runtime.ReadMemStats(&after)
+		best = min(best, after.TotalAlloc-before.TotalAlloc)
+	}
+	return best
+}
+
+// The bound on bytes allocated is a bound on independence from the input's size, not an
+// exact cut: a pre-cut that left a fixed few times the limit would still pass it, which is
+// what a pre-cut is allowed to do. The exact cut is TestStringAndTextNeverExceedTheirLimit's.
 func TestStringBoundsWorkByMax(t *testing.T) {
 	huge := strings.Repeat(r(0x1B), 1<<20)
 	got := String(huge, 64)
@@ -209,6 +228,20 @@ func TestStringBoundsWorkByMax(t *testing.T) {
 	}
 	if want := String(huge[:64], 64); got != want {
 		t.Errorf("prefix result %q, want %q", got, want)
+	}
+	// The output cannot show the work: it is the same text whether the input past 64 bytes is
+	// dropped before the escaping or after it, and the escaping of all of it, 8 MiB written for
+	// a 64-byte result, is what the cut is there to avoid. So the bound is on bytes allocated.
+	for name, f := range map[string]func(string, int) string{"String": String, "Text": Text} {
+		if n := allocated(func() { f(huge, 64) }); n > 64<<10 {
+			t.Errorf("%s of 1 MiB of escape characters with a limit of 64 allocated %d bytes, want at most %d", name, n, 64<<10)
+		}
+	}
+	// The measure must see the work it is there to bound: with no limit, 16 KiB of the same
+	// characters are written out whole, 128 KiB of escapes, twice the bound above. (A whole MiB
+	// would take minutes under the race detector.)
+	if n := allocated(func() { String(huge[:16<<10], 0) }); n < 128<<10 {
+		t.Errorf("String of 16 KiB of escape characters with no limit allocated %d bytes, want at least 128 KiB: the measure is blind", n)
 	}
 }
 
@@ -324,8 +357,8 @@ func TestStringNeverCutsInsideAPseudonymMarker(t *testing.T) {
 	whole, dropped := 0, 0
 	for pad := 0; pad <= 60; pad++ {
 		text := strings.Repeat("x", pad) + marker + " " + strings.Repeat("q", 60)
-		for _, max := range []int{40, 48, 64} {
-			cut := max - len(truncatedSuffix) // where the cap cuts the text
+		for _, limit := range []int{40, 48, 64} {
+			cut := limit - len(truncatedSuffix) // where the cap cuts the text
 			var want string
 			switch {
 			case cut <= pad:
@@ -337,8 +370,8 @@ func TestStringNeverCutsInsideAPseudonymMarker(t *testing.T) {
 			default:
 				want, whole = text[:cut], whole+1 // after the marker: it stays
 			}
-			if got := String(text, max); got != want+truncatedSuffix {
-				t.Errorf("String(%d x, a marker and more, %d) = %q, want %q", pad, max, got, want+truncatedSuffix)
+			if got := String(text, limit); got != want+truncatedSuffix {
+				t.Errorf("String(%d x, a marker and more, %d) = %q, want %q", pad, limit, got, want+truncatedSuffix)
 			}
 		}
 	}
@@ -360,6 +393,96 @@ func TestStringNeverCutsInsideAPseudonymMarker(t *testing.T) {
 		text := strings.Repeat("z", 16) + tail + strings.Repeat("q", 40)
 		if got, want := String(text, 30), strings.Repeat("z", 16)+truncatedSuffix; got != want {
 			t.Errorf("String(…%q…, 30) = %q, want %q", tail, got, want)
+		}
+	}
+}
+
+// The limit is a promise about size. Below the 14 bytes of the notice that marks a cut,
+// String and Text returned the whole notice: String(s, 1) was 14 bytes long.
+func TestStringAndTextNeverExceedTheirLimit(t *testing.T) {
+	inputs := map[string]string{
+		"ascii":      strings.Repeat("a", 100),
+		"escapes":    strings.Repeat(r(0x1B), 50),
+		"two bytes":  strings.Repeat(r(0xE9), 50),
+		"four bytes": strings.Repeat(r(0x1F680), 30),
+		"marker":     "x [p:abcdefghij] " + strings.Repeat("y", 40),
+		"line ends":  strings.Repeat("ab\r\n\t", 20),
+		"not UTF-8":  strings.Repeat(string([]byte{0xFF}), 40),
+		"short":      "ab",
+	}
+	funcs := map[string]func(string, int) string{"String": String, "Text": Text}
+	checked := 0
+	for name, in := range inputs {
+		for limit := 1; limit <= 40; limit++ {
+			for fn, f := range funcs {
+				got := f(in, limit)
+				checked++
+				if len(got) > limit || !utf8.ValidString(got) {
+					t.Errorf("%s(%s, %d) = %q: %d bytes, valid UTF-8 %v", fn, name, limit, got, len(got), utf8.ValidString(got))
+				}
+			}
+		}
+	}
+	// The denominator: a loop over nothing passes.
+	if want := len(inputs) * 40 * len(funcs); checked != want {
+		t.Fatalf("checked %d results, want %d", checked, want)
+	}
+	// Below the notice the text is cut to the limit; at 14 the notice stands alone; above it
+	// the text comes first, as before.
+	for limit, want := range map[int]string{1: "a", 5: "aaaaa", 13: strings.Repeat("a", 13), 14: truncatedSuffix, 15: "a" + truncatedSuffix} {
+		if got := String(inputs["ascii"], limit); got != want {
+			t.Errorf("String(ascii, %d) = %q, want %q", limit, got, want)
+		}
+	}
+	// A rune is never cut in half: 6 bytes hold one 4-byte rune, 3 hold none.
+	for limit, want := range map[int]string{6: r(0x1F680), 3: ""} {
+		if got := String(inputs["four bytes"], limit); got != want {
+			t.Errorf("String(four bytes, %d) = %q, want %q", limit, got, want)
+		}
+	}
+	// A cut never leaves part of a pseudonym marker, at any limit: below the notice the cut
+	// text loses the marker it cuts through, as it does above it. Every limit from 1 to 15 is
+	// read, not a sample: the round-one bug lived at limits no sample had reached.
+	markerWant := func(limit int) string {
+		switch {
+		case limit == 1:
+			return "x"
+		case limit == 2:
+			return "x "
+		case limit <= 13:
+			return "x"
+		case limit == 14:
+			return truncatedSuffix
+		}
+		return "x" + truncatedSuffix
+	}
+	markerChecked := 0
+	for limit := 1; limit <= 15; limit++ {
+		for fn, f := range funcs {
+			markerChecked++
+			if got, want := f(inputs["marker"], limit), markerWant(limit); got != want {
+				t.Errorf("%s(marker, %d) = %q, want %q", fn, limit, got, want)
+			}
+		}
+	}
+	// The denominator: 15 limits, two functions.
+	if markerChecked != 15*len(funcs) {
+		t.Fatalf("checked %d marker results, want %d", markerChecked, 15*len(funcs))
+	}
+}
+
+// An untagged field has the tag "", which splits into one empty option: HasTag(tag, "") was
+// true for it, and for the empty option in tk:"untrusted,,personal".
+func TestHasTagNeverFindsTheEmptyOption(t *testing.T) {
+	for _, tag := range []reflect.StructTag{``, `json:"x"`, `tk:""`, `tk:" "`, `tk:"untrusted"`, `tk:"untrusted,,personal"`} {
+		if HasTag(tag, "") {
+			t.Errorf("HasTag(%q, \"\") = true, want false", tag)
+		}
+	}
+	// The options that are there are still found, spaces around them ignored.
+	for option, want := range map[string]bool{"untrusted": true, "personal": true, "emails": false, "untrust": false} {
+		if got := HasTag(`tk:"untrusted, personal"`, option); got != want {
+			t.Errorf("HasTag(untrusted, personal; %q) = %v, want %v", option, got, want)
 		}
 	}
 }

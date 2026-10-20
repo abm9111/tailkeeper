@@ -7,6 +7,7 @@ import (
 	"os"
 	"regexp"
 	"runtime"
+	"slices"
 	"strconv"
 	"strings"
 	"testing"
@@ -238,12 +239,34 @@ func growth(by deadline, f func(n int) func(), n, factor int) (float64, error) {
 const maxFailedRows = 3
 
 const (
-	scaleN      = 16 << 10 // the smaller input: 16 KiB
-	scaleFactor = 8        // the larger: 128 KiB
+	scaleN      = 16 << 10  // the smaller input: 16 KiB
+	scaleFactor = 8         // the larger: 128 KiB
+	scaleN2     = 128 << 10 // the smaller input of the second pair, for the rows of pastFirstPair: the larger is 1 MiB
 	// maxGrowth sits halfway, in log scale, between linear (8) and quadratic
 	// (64), so neither noise nor an n·log n path reaches it.
 	maxGrowth = 24
 )
+
+// pastFirstPair are the rows also timed from 128 KiB to 1 MiB, since a quadratic term that
+// dominates only past 128 KiB reads as linear on the first pair. The second pair costs eight
+// times as much per run, so it is for some rows of the email scan, where the quadratic scan of
+// 0.3.0 was and where the work of this change is, and the cheap colon scan. Each name must be
+// a row of scalingCases.
+var pastFirstPair = []string{
+	"MaskEmails at signs", "MaskEmails escaped at signs", "MaskEmails chain", "MaskEmails long local part",
+	"MaskEmails control characters", "MaskEmails percent chain", "MaskEmails quoted local parts",
+	"MaskEmails words, dots, at signs", "MaskEmails brace escapes before at signs", "MaskEmails group names",
+	"MaskEmails group names, then local bytes", "MaskAddrs colons",
+}
+
+// rowSizes are the smaller sizes a row is timed from, each against one eight times larger:
+// the first pair for every row, the second also for the rows of pastFirstPair.
+func rowSizes(name string) []int {
+	if slices.Contains(pastFirstPair, name) {
+		return []int{scaleN, scaleN2}
+	}
+	return []int{scaleN}
+}
 
 // The guard must be able to fail: work that is quadratic in its input must read as
 // quadratic. This is proven on the fake clock, where the work costs what the model says
@@ -409,6 +432,12 @@ func emailPatterns(n int) map[string]string {
 		// Words read back from one at sign, and a domain as long as they are: the domain is
 		// scanned once for the at sign, not once for each word the walk crosses.
 		"words, then a long domain": strings.Repeat(`"a".`, n/8) + `"a"@` + strings.Repeat("d", n/2),
+		// A synced group's name is passed over whole: the text after it is scanned once.
+		"group names":                        strings.Repeat("group:a@d.example ", n/18),
+		"group names, then local bytes":      strings.Repeat("group:a@d!", n/10),
+		"group prefixes after a used domain": strings.Repeat("group:a@", n/8),
+		"group names, escaped tails":         strings.Repeat("group:a@d"+string(rune(92))+"u0020", n/16),
+		"group name, a long domain, tails":   "group:a@" + strings.Repeat("d", n/2) + strings.Repeat("!@", n/4),
 	}
 }
 
@@ -448,9 +477,9 @@ func collidingKeys(count int) map[string]string {
 	return keys
 }
 
-// Every path that walks untrusted text or result rows grows linearly with its
-// input. The 0.3.0 email scan grew with the square of it.
-func TestMaskingScalesLinearly(t *testing.T) {
+// scalingCases are the rows of the growth guard: each builds the work for an input of about
+// n bytes.
+func scalingCases(t testing.TB) map[string]func(n int) func() {
 	keyed, _ := keyedMasker(t)
 	cases := map[string]func(n int) func(){}
 	// The patterns of one size, built once: a string is only read, so every run of a case
@@ -583,10 +612,29 @@ func TestMaskingScalesLinearly(t *testing.T) {
 			keyed.Mask(&out)
 		}
 	}
+	return cases
+}
+
+// Every path that walks untrusted text or result rows grows linearly with its
+// input. The 0.3.0 email scan grew with the square of it.
+func TestMaskingScalesLinearly(t *testing.T) {
+	cases := scalingCases(t)
 	by := within(guardDeadline)
 	failed := 0
 	for name, f := range cases {
-		g, tries, err := rowGrowth(by, f)
+		reads, err := readRow(wallClock(), by, name, f)
+		for _, r := range reads {
+			if r.best > maxGrowth {
+				failed++
+				t.Errorf("%s from %d KiB: %.1f times slower on %d times the input, want at most %d (linear is about %d); %d measurements, each above it: %.1f",
+					name, r.n>>10, r.best, scaleFactor, maxGrowth, scaleFactor, len(r.tries), r.tries)
+				if failed == maxFailedRows {
+					t.Fatalf("%d rows failed: the code they time grew faster than linearly; stopping here rather than timing the rest", failed)
+				}
+			} else if len(r.tries) > 1 {
+				t.Logf("%s from %d KiB: first read %.1f, over %d; measured again: %.1f", name, r.n>>10, r.tries[0], maxGrowth, r.tries[1:])
+			}
+		}
 		if err != nil {
 			// Rows that really are quadratic are measured three times each and take long, so
 			// a regression can reach the deadline: then the rows already reported are the
@@ -596,31 +644,21 @@ func TestMaskingScalesLinearly(t *testing.T) {
 			}
 			t.Fatal(err)
 		}
-		if g > maxGrowth {
-			failed++
-			t.Errorf("%s: %.1f times slower on %d times the input, want at most %d (linear is about %d); %d measurements, each above it: %.1f",
-				name, g, scaleFactor, maxGrowth, scaleFactor, len(tries), tries)
-			if failed == maxFailedRows {
-				t.Fatalf("%d rows failed: the code they time grew faster than linearly; stopping here rather than timing the rest", failed)
-			}
-		} else if len(tries) > 1 {
-			t.Logf("%s: first read %.1f, over %d; measured again: %.1f", name, tries[0], maxGrowth, tries[1:])
-		}
 	}
 }
 
 // rowAttempts is how many times a row over the limit is measured before it fails.
 const rowAttempts = 3
 
-// rowGrowth measures a row, and measures it again when it reads over the limit, up to
-// rowAttempts times; it returns the lowest reading and all of them. A row fails only if
-// every measurement is over: noise that moves a linear row (a reading of 26 to 28 against
-// a limit of 24 turned up once in 10 runs with the race detector and once in 16 on Linux)
-// comes and goes between measurements, and a quadratic row reads over the limit every time
-// it is measured.
-func rowGrowth(by deadline, f func(n int) func()) (best float64, tries []float64, err error) {
+// rowGrowthOn measures a row from the size n to one scaleFactor times larger on the given
+// clock, and measures it again when it reads over the limit, up to rowAttempts times; it
+// returns the lowest reading and all of them. A row fails only if every measurement is
+// over: noise that moves a linear row (a reading of 26 to 28 against a limit of 24 turned
+// up once in 10 runs with the race detector and once in 16 on Linux) comes and goes
+// between measurements, and a quadratic row reads over the limit every time it is measured.
+func rowGrowthOn(now clock, by deadline, f func(n int) func(), n int) (best float64, tries []float64, err error) {
 	for range rowAttempts {
-		g, err := growth(by, f, scaleN, scaleFactor)
+		g, err := growthOn(now, by, f, n, scaleFactor)
 		if err != nil {
 			return 0, nil, err
 		}
@@ -635,10 +673,40 @@ func rowGrowth(by deadline, f func(n int) func()) (best float64, tries []float64
 	return best, tries, nil
 }
 
+// rowRead is what timing a row from one size read: the size it started from, the lowest
+// reading and every reading.
+type rowRead struct {
+	n     int
+	best  float64
+	tries []float64
+}
+
+// readRow times the row name from each size of rowSizes(name), one rowRead per size, on the
+// given clock. It is the one reader of a row, for the guard and for the proof that the second
+// pair can fail. It stops after the first size whose best reading is over maxGrowth: a row
+// that fails is not timed on a pair eight times larger, which the deadline (checked only
+// between batches) could not cut short, so a real regression cannot run past the go test
+// timeout and lose the guard's own message. On an error it returns the reads so far.
+func readRow(now clock, by deadline, name string, f func(n int) func()) ([]rowRead, error) {
+	var reads []rowRead
+	for _, n := range rowSizes(name) {
+		best, tries, err := rowGrowthOn(now, by, f, n)
+		if err != nil {
+			return reads, err
+		}
+		reads = append(reads, rowRead{n: n, best: best, tries: tries})
+		if best > maxGrowth {
+			break
+		}
+	}
+	return reads, nil
+}
+
 // The guard stops itself at its deadline, under the go test timeout of the platform's
 // job, and fails with a message that names it: a clock that steps by 15.6 ms (Windows)
-// makes it take near 175 s, which must pass there, and a run that overran would be ended
-// by the timeout with no word about the guard. Elsewhere it takes some 25 s.
+// makes it take much longer, which must pass there, and a run that overran would be ended
+// by the timeout with no word about the guard. Elsewhere, with the race detector, it took
+// 35 s at a load average of 5.6 to 10 (the second pair included).
 const (
 	guardDeadlineWindows = 600 * time.Second // under the Windows job's -timeout 900s
 	guardDeadlineOther   = 100 * time.Second // under make test's -timeout 180s
@@ -733,5 +801,61 @@ func TestGrowthGuardFailsAtItsDeadlineAndNamesTheClock(t *testing.T) {
 	}
 	if took := time.Since(start); took > guardDeadline/10 {
 		t.Errorf("one row took %v on the real clock, a tenth of the deadline", took)
+	}
+}
+
+// The first pair, 16 KiB and 128 KiB, cannot see a quadratic term that costs less than the
+// linear work up to 128 KiB. Cost n + n*n/131072 ns is 14.2 times as much at 128 KiB as at
+// 16 KiB, under the limit, and 36 times as much at 1 MiB as at 128 KiB, over it. The rows of
+// pastFirstPair are timed from both sizes, and this holds the second pair to the limit.
+func TestGrowthSeesAQuadraticTermThatOnlyDominatesPastTheFirstPair(t *testing.T) {
+	cost := func(n int) time.Duration { return time.Duration(n) + time.Duration(n)*time.Duration(n)/131072 }
+	const row = "MaskEmails at signs"
+	if sizes, want := rowSizes(row), []int{scaleN, scaleN2}; !slices.Equal(sizes, want) {
+		t.Fatalf("rowSizes(%q) = %v, want %v", row, sizes, want)
+	}
+	fc := &fakeClock{step: time.Nanosecond}
+	reads, err := readRow(fc.reading(), withinOn(fc.exact(), time.Minute), row, fc.work(cost))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(reads) != 2 || reads[0].n != scaleN || reads[1].n != scaleN2 {
+		t.Fatalf("readRow(%q) = %+v, want one read from %d and one from %d", row, reads, scaleN, scaleN2)
+	}
+	if reads[0].best >= maxGrowth || reads[1].best <= maxGrowth {
+		t.Errorf("growth from %d KiB reads %.1f and from %d KiB reads %.1f, want one under %d and one over it", scaleN>>10, reads[0].best, scaleN2>>10, reads[1].best, maxGrowth)
+	}
+	fc = &fakeClock{step: time.Nanosecond}
+	if got, err := readRow(fc.reading(), withinOn(fc.exact(), time.Minute), "MaskEmails dots", fc.work(cost)); err != nil || len(got) != 1 || got[0].n != scaleN {
+		t.Errorf("a row outside pastFirstPair read %+v (error %v), want exactly one read, from %d", got, err, scaleN)
+	}
+}
+
+// A row that reads over the limit on the first pair is not timed on the second: that pair
+// costs eight times as much per run, and the deadline is checked only between batches.
+func TestARowThatFailsItsFirstPairIsNotTimedOnTheSecond(t *testing.T) {
+	cost := func(n int) time.Duration { return time.Duration(n) * time.Duration(n) / 1024 }
+	const row = "MaskEmails at signs"
+	fc := &fakeClock{step: time.Nanosecond}
+	reads, err := readRow(fc.reading(), withinOn(fc.exact(), time.Minute), row, fc.work(cost))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(reads) != 1 || reads[0].n != scaleN || reads[0].best <= maxGrowth {
+		t.Fatalf("readRow(%q) = %+v, want exactly one read, from %d KiB, over %d", row, reads, scaleN>>10, maxGrowth)
+	}
+}
+
+// A name in pastFirstPair that is no row of the guard (a row renamed, a typo) would lose its
+// second size without a word.
+func TestEveryRowPastTheFirstPairIsARowOfTheGuard(t *testing.T) {
+	cases := scalingCases(t)
+	for _, name := range pastFirstPair {
+		if cases[name] == nil {
+			t.Errorf("pastFirstPair names %q, which is no row of the guard", name)
+		}
+	}
+	if len(pastFirstPair) < 12 {
+		t.Errorf("pastFirstPair has %d rows, want at least 12", len(pastFirstPair))
 	}
 }

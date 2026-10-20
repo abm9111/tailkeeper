@@ -4,10 +4,21 @@ What each release of tailkeeper changed. Versions follow semantic versioning; un
 
 ## 0.6.0 — unreleased
 
+### Added
+
+- Library code for pseudonym subjects, used by no tool yet: a resolver that turns a pseudonym into the one user it names (`GET /users`, held for one call), a reverse map that masks a resolved login, and any word glued to it, out of Tailscale's reply, and the subject rule over a policy text and over patch operations.
+- `TestMaskingScalesLinearly` also times some rows of the guard (the email scan and the colon scan) from 128 KiB to 1 MiB, and the bound on the work of `sanitize.String` is tested by bytes allocated, not by its output (#13).
+
 ### Fixed
 
 - The release notes now come from this file. `.goreleaser.yaml` disabled GoReleaser's changelog stage, which is the stage that reads the notes the release job cuts from this file, so 0.5.0 was published with only its footer. The stage stays on. A test fails if it is disabled while the release workflow passes the notes, and `make release-check` and the manual snapshot run now run the release path with a notes fixture and fail unless GoReleaser read it.
 - The release workflow verifies the cosign signature of `checksums.txt`, as the README tells a reader to, before it publishes a draft release.
+- Masking leaves the name of a synced group, `group:engineering@example.com`, as written and names nothing for it, where `group:` begins a word (at the start, or after a space, a quote, an opening bracket or a separator). A group is masked as an address when its name is quoted, escaped or holds `=` or `?`, when it is glued to the word before it, when it is written after //, or when it is followed by another address; an at sign written as `%40` or a JSON escape keeps the name whole. It had been shown as `group:e…@example.com`, which made two groups with one initial look alike.
+- Masking hides a quoted local part (`"amy"@example.com`) when a control character stands between the closing quote and the at sign, whether the character is a raw byte, `%01` or a brace escape such as the one `acl_get` writes for a control character. The quoted name had been shown.
+- The pseudonym of an address that text glues to a word with `=` or `?` (`user=amy@example.com`, `?u=amy@example.com`) is the address's own, as `users_list` shows it. It had been the pseudonym of the whole run, so a filter given it matched nothing. A login whose local part holds `=` or `?` (`a=b@example.com`) is named in text by the part after it.
+- A login or display name that the API returns and that holds a backslash sequence is no longer given the pseudonym of the address the sequence spells. Pseudonyms of values from the API decode no JSON escapes; text from a policy or free text still does.
+- With a privacy key, `acl_get` shows a `[p:` that the policy itself holds with its bracket spelled out, as free text does, so a marker on the page is one tailkeeper appended. `masked` is true for a page whose only change is such a marker.
+- `sanitize.String` and `Text` return at most the limit they are given: below 14 bytes they returned the 14-byte truncation notice. `HasTag` finds no empty option in an untagged field. Nothing called either with such arguments.
 
 ### Changed
 
