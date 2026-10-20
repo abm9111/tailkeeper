@@ -7,6 +7,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/abm9111/tailkeeper/internal/guard"
 	"github.com/abm9111/tailkeeper/internal/tkerr"
 )
 
@@ -72,6 +73,32 @@ func TestParseRejects(t *testing.T) {
 		if !ok || e.Code != tkerr.ConfigInvalid {
 			t.Errorf("%s: err = %v, want config_invalid", name, err)
 		}
+	}
+}
+
+// HuJSON's parser recurses once for each level of nesting and has no bound, and a Go stack
+// overflow ends the process, so text nested deeper than any configuration is refused before it
+// is parsed. A configuration of exactly the deepest allowed nesting is read as before.
+func TestParseRefusesNestingBeyondTheGuard(t *testing.T) {
+	nested := func(depth int) []byte {
+		return []byte(`{"contexts": {}, "x": ` + strings.Repeat("[", depth) + strings.Repeat("]", depth) + `}`)
+	}
+	for _, depth := range []int{guard.MaxDepth, 5 * guard.MaxDepth, 1_000_000} {
+		_, err := Parse(nested(depth))
+		e, ok := tkerr.As(err)
+		if !ok || e.Code != tkerr.ConfigInvalid {
+			t.Fatalf("depth %d: err = %v, want config_invalid", depth, err)
+		}
+		deep := strings.Contains(e.Message, "nested")
+		// The object around the value is one more level, so MaxDepth levels of array make
+		// MaxDepth+1 levels in all.
+		if want := depth >= guard.MaxDepth; deep != want {
+			t.Errorf("depth %d: the error says it is too deep = %v, want %v: %v", depth, deep, want, err)
+		}
+	}
+	_, err := Parse(nested(guard.MaxDepth - 1))
+	if e, ok := tkerr.As(err); !ok || strings.Contains(e.Message, "nested") {
+		t.Errorf("the deepest nesting allowed was refused as too deep: %v", err)
 	}
 }
 

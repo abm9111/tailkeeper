@@ -8,6 +8,9 @@ What each release of tailkeeper changed. Versions follow semantic versioning; un
 
 - Library code for pseudonym subjects, used by no tool yet: a resolver that turns a pseudonym into the one user it names (`GET /users`, held for one call), a reverse map that masks a resolved login, and any word glued to it, out of Tailscale's reply, and the subject rule over a policy text and over patch operations.
 - `TestMaskingScalesLinearly` also times some rows of the guard (the email scan and the colon scan) from 128 KiB to 1 MiB, and the bound on the work of `sanitize.String` is tested by bytes allocated, not by its output (#13).
+- Fuzzing runs nightly one package to a job, with the inputs a night finds carried to the next, so a long package cannot time out the others. `make fuzz FUZZ_PKG=./internal/acl` fuzzes one package, and `FUZZ_MIN` is the number of targets that must run. The pull-request job named `fuzz` is unchanged.
+- `make mutate` changes a package's code one listed mutant at a time (the `mutants.txt` beside the package; `MUTATE_PKG` picks one package) and fails if a test does not notice. It is not part of `make verify`.
+- `make cover` also requires 95% statement coverage for `internal/acl` and `internal/guard`, measured from each package's own tests.
 
 ### Fixed
 

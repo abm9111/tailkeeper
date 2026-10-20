@@ -1,0 +1,2 @@
+go test fuzz v1
+[]byte("{\"tests\":[{\"src\":\"group:eng\",\"accept\":[\"tag:web:443\"],\"deny\":[\"tag:db:22\"]}],\"sshTests\":[{\"src\":\"a\",\"dst\":[\"b\"],\"accept\":[\"root\"]}]}")

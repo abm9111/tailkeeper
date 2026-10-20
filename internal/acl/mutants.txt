@@ -1,0 +1,618 @@
+# Mutants of internal/acl: each is a change to the code that a test must notice.
+# scripts/mutate.go says what the format is and what the three outcomes mean. The list
+# holds one mutant for each class of defect the tests of the engine were written to
+# catch: names read without regard to case, ordered and unordered lists, the lines of
+# a change, the counts, the caps, the order of the guard and the parser, and the
+# classes a change is reported in.
+
+mutant: section-name case folding dropped
+file: sections.go
+old: func sectionKey(name string) string { return foldKey(name) }
+new: func sectionKey(name string) string { return name }
+kill: TestSectionByNameIgnoresCaseButNotSpelling
+
+mutant: ipsets operation lists compared order-insensitively
+file: shapes.go
+old: "tagOwners":        {sets: true},
+new: "tagOwners":        {sets: true}, "ipsets": {sets: true},
+kill: TestKeyedSectionsCompareKeyByKey
+
+mutant: Locate lists only the first source match
+file: locate.go
+old: listSrc, listDst := len(bySrc) < MaxLocations, toDst && len(byDst) < MaxLocations
+new: listSrc, listDst := len(bySrc) < 1, toDst && len(byDst) < MaxLocations
+kill: TestLocateMatchesSourceAndDestination
+
+mutant: Locate lists only the first destination match
+file: locate.go
+old: listSrc, listDst := len(bySrc) < MaxLocations, toDst && len(byDst) < MaxLocations
+new: listSrc, listDst := len(bySrc) < MaxLocations, toDst && len(byDst) < 1
+kill: TestLocateMatchesSourceAndDestination
+
+mutant: unknown sections are not compared
+file: diff.go
+old: if err := d.unknown(); err != nil {
+new: if err := error(nil); err != nil {
+kill: TestSemanticChangesNameWhatChanged
+
+mutant: old and new lines swapped
+file: diff_text.go
+old: ch.OldPointer, ch.OldLine = d.pointerLine(d.oa, *oldAt)
+new: ch.OldPointer, ch.OldLine = d.pointerLine(d.ob, *oldAt)
+kill: TestChangesCarryTheLineOfEachSide
+
+mutant: the multiset count is skipped
+file: shapes.go
+old: ms.entries[i].n++
+new: ms.entries[i].n += 0
+kill: TestTestsAreAssertions
+
+mutant: null is read as an empty array for acls
+file: normal.go
+old: lit, ok := lv.Value.(hujson.Literal); ok && lit.Kind() == 'n' {\n\t\ts.null = true\n\t\treturn s, nil
+new: lit, ok := lv.Value.(hujson.Literal); ok && lit.Kind() == 'n' {\n\t\ts.null = true\n\t\tif sec.Name == "acls" {\n\t\t\ts.state = StateEmpty\n\t\t}\n\t\treturn s, nil
+kill: TestAbsentNullAndEmptyAreStates
+
+mutant: a move is counted as no change
+file: diff.go
+old: if same {\n\t\t\t\tf++
+new: if same {\n\t\t\t\tf += 0
+kill: TestRewritesAreCountedNotListed
+
+mutant: node cap removed
+file: parse.go
+old: if r.NodeBound > MaxNodes {
+new: if false {
+kill: TestParseRefusesMoreValuesThanTheCap
+
+mutant: the depth pre-scan runs after Parse
+file: parse.go
+old: if err := checkShape(src); err != nil {\n\t\treturn nil, err\n\t}\n\td := &Doc{src: bytes.Clone(src)}\n\troot, err := hujson.Parse(d.src)\n\tif err != nil {
+new: d := &Doc{src: bytes.Clone(src)}\n\troot, err := hujson.Parse(d.src)\n\tif e := checkShape(src); e != nil {\n\t\treturn nil, e\n\t}\n\tif err != nil {
+kill: TestEveryEntryPointRefusesAMillionLevelsCleanly
+
+mutant: the guard of the text transforms checks no depth
+file: transform.go
+old: nodes, e = scanShape(text)
+new: nodes, _ = scanShape(text)
+kill: TestEveryEntryPointRefusesAMillionLevelsCleanly
+
+mutant: fields the engine does not model are dropped from a rule
+file: atoms.go
+old: extra: string(extra), src: srcSet,
+new: extra: string(extra[:0]), src: srcSet,
+kill: TestARuleChangedInAnyFieldIsAChange
+
+mutant: the defaults class is never reported
+file: diff.go
+old: d.na.AccessState(), d.nb.AccessState(); a != b {
+new: d.na.AccessState(), d.nb.AccessState(); a != b && false {
+kill: TestDefaultsAreTheirOwnClassAndCome
+
+mutant: a removed test is a plain change
+file: diff.go
+old: if op == oRemoved {\n\t\t\tclass = cTestsReduced
+new: if op == oRemoved {\n\t\t\tclass = cSemantic
+kill: TestRemovedTestsAreAReductionAndAddedOnesAreNot
+
+mutant: an atom's identity does not quote its destination, protocol and action
+file: atoms.go
+old: b = appendJSONString(b, f)
+new: b = append(b, f...)
+kill: TestNoTextCanJoinTwoRules
+
+mutant: the ports an atom copies are not weighted
+file: atoms.go
+old: const rangeCopyWeight = 4
+new: const rangeCopyWeight = 0
+kill: TestPortRangesTimesDestinationsCostWhatIsStated|TestPortRangesTimesDestinationsAreRefusedCheaplyAtTheDefaultBudget
+
+mutant: a map entry written twice keeps what the earlier one held
+file: canon.go
+old: out[j].layers = out[j].layers[:0]\n\t\t\t\tout[j].names = out[j].names[:0]
+new: _ = j
+kill: TestAMapEntryWrittenTwiceReadsAsTheLaterOne|TestCanonicalMapEntriesReplaceAndStructFieldsMerge
+
+mutant: the nodes of a derpMap region do not fold case
+file: shapes.go
+old: "nodes": {elem: &canonOpts{fold: true}},
+new: "nodes": {elem: &canonOpts{}},
+kill: TestDerpMapNestedStructsFoldCase
+
+mutant: a repeated map entry is reported as merged
+file: walk.go
+old: if a && b && fold {
+new: if a && b {
+kill: TestAMapEntryWrittenTwiceKeepsTheLaterNotAMerge
+
+mutant: a wide SSH source is not remembered as the counterpart of its destinations
+file: widening.go
+old: srcOf[e.sshDst.id+e.sshUsers.id] |= e.sshSrc.wide
+new: srcOf[e.sshDst.id+e.sshUsers.id] |= 0
+kill: TestAWideSelectorIsAWideningOnlyWhereItIsAdded
+
+mutant: a rule with a protocol is read as the one Tailscale writes
+file: tailscale_written.go
+old: a.act == "" && a.proto == "" &&
+new: a.act == "" &&
+kill: TestOnlyTheShapeTailscaleWritesIsTailscaleWritten
+
+mutant: an app connector entry with domains is read as a preset
+file: tailscale_written.go
+old: var presetAllowed = map[string]bool{"name": true,
+new: var presetAllowed = map[string]bool{"domains": true, "name": true,
+kill: TestOnlyTheShapeTailscaleWritesIsTailscaleWritten
+
+mutant: atom identity ignores the rule's action
+file: atoms.go
+old: for _, f := range []string{a.dst, a.proto, a.act} {
+new: for _, f := range []string{a.dst, a.proto} {
+kill: TestActionIsPartOfAnAtom
+
+mutant: an SSH test that expects check is read as one that expects accept
+file: shapes.go
+old: {"check", "check"}
+new: {"check", "accept"}
+kill: TestSSHTestsCheckVersusAccept
+
+mutant: a node attribute's ipPool is read from the wrong field
+file: shapes.go
+old: targets, attrs, pool := list("target"), list("attr"), list("ipPool")
+new: targets, attrs, pool := list("target"), list("attr"), list("ip")
+kill: TestIPPoolOrderIsNotAChange
+
+mutant: a null grants section is read as an empty one
+file: normal.go
+old: \ts.null = true\n\t\treturn s, nil\n\t}\n\tswitch sec.Shape {
+new: \ts.null = true\n\t\tif sec.Name == "grants" {\n\t\t\ts.state = StateEmpty\n\t\t}\n\t\treturn s, nil\n\t}\n\tswitch sec.Shape {
+kill: TestGrantsNullIsNotEmpty
+
+mutant: the legacy autogroup:members alias is not counted as wide
+file: normal.go
+old: switch canonSelector(sel) {
+new: switch sel {
+kill: TestSSHLegacyMembersAliasIsWide
+
+mutant: an old wide source cancels a new one it differs from
+file: widening.go
+old: if a.src.wide&w.bit != 0 && srcOf[a.dst]&w.bit == 0 {
+new: if a.src.wide&w.bit != 0 && srcOf[a.dst] == 0 {
+kill: TestMemberToStarIsAWidening
+
+mutant: the last old atom overwrites the wide bit of the earlier ones
+file: widening.go
+old: srcOf[o.dst] |= o.src.wide
+new: srcOf[o.dst] = o.src.wide
+kill: TestAWildcardAlreadyThereForADestinationIsNotNewWhateverTheOldRuleOrder
+
+mutant: an autogroup is no longer wild when selectors are compared for overlap
+file: widening.go
+old: s == "*" || strings.HasPrefix(s, "autogroup:") ||
+new: s == "*" ||
+kill: TestCheckToAcceptWithAnAutogroupSource
+
+mutant: an empty selector set does not overlap
+file: widening.go
+old: if len(a) == 0 || len(b) == 0 {\n\t\treturn true, nil
+new: if len(a) == 0 || len(b) == 0 {\n\t\treturn false, nil
+kill: TestCheckToAcceptWithNoUsers
+
+mutant: unreadable ports do not overlap
+file: widening.go
+old: if len(p.raw) > 0 || len(q.raw) > 0 {\n\t\treturn true
+new: if len(p.raw) > 0 || len(q.raw) > 0 {\n\t\treturn false
+kill: TestPostureRemovedWithUnreadablePorts
+
+mutant: port ranges that meet at one port do not overlap
+file: widening.go
+old: case p.ranges[i].hi < q.ranges[j].lo:
+new: case p.ranges[i].hi <= q.ranges[j].lo:
+kill: TestPostureRemovedWherePortRangesTouchAtOnePort
+
+mutant: a check rule for everyone no longer covers an accept
+file: widening.go
+old: if slices.Contains(p[1].items, "*") {\n\t\t\tcontinue
+new: if slices.Contains(p[1].items, "*") && false {\n\t\t\tcontinue
+kill: TestACheckRuleForEveryoneCoversTheAcceptThatReplacesACheck
+
+mutant: IgnoreTailscaleWritten hides the other classes too
+file: diff.go
+old: if ignore && c.class == cWritten {
+new: if ignore && c.class != cSemantic {
+kill: TestIgnoreTailscaleWrittenKeepsEveryOtherClassListed
+
+mutant: a log-stream rule to a wildcard destination counts as Tailscale-written
+file: tailscale_written.go
+old: a.pkey != "*" && wideBit(a.dst) == 0
+new: a.pkey != "*"
+kill: TestLogStreamToAWildcardDestinationIsNotTailscalesRule
+
+mutant: a log-stream source beside other sources counts as Tailscale-written
+file: normal.go
+old: written: len(items) == 1 && items[0] == logStreamSource}
+new: written: len(items) >= 1 && items[0] == logStreamSource}
+kill: TestLogStreamBesideOtherSourcesIsNotTailscalesRule
+
+mutant: an app connector entry needs no preset to count as Tailscale-written
+file: tailscale_written.go
+old: if !named {\n\t\t\treturn false, nil
+new: if false && !named {\n\t\t\treturn false, nil
+kill: TestPresetShapeIsStructural
+
+mutant: a preset entry may carry unknown fields
+file: shapes.go
+old: if f := by["app"]; f != nil && extra == nil {
+new: if f := by["app"]; f != nil {
+kill: TestPresetShapeIsStructural
+
+mutant: the key of an assertion is charged as one operation, not by its size
+file: shapes.go
+old: if emitErr = m.tick(len(src) + len(proto) + len(dst) + len(item)); emitErr != nil {
+new: if emitErr = m.tick(1); emitErr != nil {
+kill: TestALongTestSourceTimesManyItemsIsCharged
+
+mutant: the overlap of two source sets is charged as one operation, not by its size
+file: widening.go
+old: func selectorsOverlap(m *meter, a, b []string) (bool, error) {\n\tif err := m.tick(len(a) + len(b) + 1); err != nil {
+new: func selectorsOverlap(m *meter, a, b []string) (bool, error) {\n\tif err := m.tick(1); err != nil {
+kill: TestOverlapOfLargeSourceSetsIsCharged
+
+mutant: the subset test of two posture sets is charged as one operation, not by its size
+file: widening.go
+old: func subset(m *meter, a, b []string, strict bool) (bool, error) {\n\tif err := m.tick(len(a) + len(b) + 1); err != nil {
+new: func subset(m *meter, a, b []string, strict bool) (bool, error) {\n\tif err := m.tick(1); err != nil {
+kill: TestSubsetOfLargePostureSetsIsCharged
+
+mutant: MaxFindings is 101
+file: walk.go
+old: const MaxFindings = 100
+new: const MaxFindings = 101
+kill: TestTheCapsAreTheDocumentedValues
+
+mutant: MaxAtoms is one more than documented
+file: normal.go
+old: const MaxAtoms = 1 << 18
+new: const MaxAtoms = 1<<18 + 1
+kill: TestTheCapsAreTheDocumentedValues
+
+mutant: the atom cap admits one atom too many
+file: atoms.go
+old: if len(ab.order) >= MaxAtoms {
+new: if len(ab.order) > MaxAtoms {
+kill: TestTheAtomCapIsExactlyMaxAtoms
+
+mutant: the expansion of one rule is refused at exactly MaxAtoms
+file: atoms.go
+old: if len(dsts)*len(protos) > MaxAtoms {
+new: if len(dsts)*len(protos) >= MaxAtoms {
+kill: TestTheExpansionOfOneRuleIsCappedAtMaxAtoms
+
+mutant: the expansion of one test is capped at twice MaxAtoms
+file: shapes.go
+old: if n > MaxAtoms {\n\t\treturn nil, tooComplex("a test expands
+new: if n > MaxAtoms*2 {\n\t\treturn nil, tooComplex("a test expands
+kill: TestATestExpandsToAtMostMaxAtomsAssertions
+
+mutant: a text of exactly MaxBytes is refused by Parse
+file: parse.go
+old: if len(src) > MaxBytes {
+new: if len(src) >= MaxBytes {
+kill: TestTheSizeCapIsExactlyMaxBytes
+
+mutant: a text one byte over MaxBytes is read by Parse
+file: parse.go
+old: if len(src) > MaxBytes {
+new: if len(src) > MaxBytes+1 {
+kill: TestTheSizeCapIsExactlyMaxBytes
+
+mutant: MaxFormatted is five times MaxBytes
+file: transform.go
+old: const MaxFormatted = 4 * MaxBytes
+new: const MaxFormatted = 5 * MaxBytes
+kill: TestTheCapsAreTheDocumentedValues
+
+mutant: the text cap is 1025 bytes
+file: walk.go
+old: const maxPointer = 1 << 10
+new: const maxPointer = 1<<10 + 1
+kill: TestTheTextCapIsExactlyOneKiB
+
+mutant: a text of exactly 1 KiB is cut
+file: diff_text.go
+old: if len(s) <= maxPointer {\n\t\treturn Text{Text: s, Len: len(s)}
+new: if len(s) < maxPointer {\n\t\treturn Text{Text: s, Len: len(s)}
+kill: TestTheTextCapIsExactlyOneKiB
+
+mutant: a text of exactly 1 KiB is cut when it is built piece by piece
+file: diff_text.go
+old: if t.full > maxPointer {
+new: if t.full >= maxPointer {
+kill: TestTheTextCapIsExactlyOneKiB
+
+mutant: maxDeltaItems is 51
+file: diff_text.go
+old: const maxDeltaItems = 50
+new: const maxDeltaItems = 51
+kill: TestTheCapsAreTheDocumentedValues
+
+mutant: a message of exactly 512 bytes is cut
+file: errors.go
+old: if len(s) <= maxMessage {
+new: if len(s) < maxMessage {
+kill: TestTheTextCapIsExactlyOneKiB
+
+mutant: a patch of exactly MaxPatchOps operations is refused
+file: transform.go
+old: if len(arr.Elements) > MaxPatchOps {
+new: if len(arr.Elements) >= MaxPatchOps {
+kill: TestThePatchCapIsExactlyMaxPatchOps
+
+mutant: the append cap ignores SSH tests
+file: transform.go
+old: if len(tests) > MaxAppended || len(sshTests) > MaxAppended {
+new: if len(tests) > MaxAppended {
+kill: TestTheAppendCapAppliesToSSHTestsToo
+
+mutant: a text of exactly MaxBytes is refused by the transforms
+file: transform.go
+old: case len(text) > MaxBytes:
+new: case len(text) >= MaxBytes:
+kill: TestTheSizeCapIsExactlyMaxBytes
+
+mutant: a page may hold twice MaxPage changes
+file: diff.go
+old: size = min(size, MaxPage)
+new: size = min(size, MaxPage*2)
+kill: TestAPageIsDefaultPageAndAtMostMaxPage
+
+mutant: DefaultPage is 51
+file: diff.go
+old: DefaultPage = 50
+new: DefaultPage = 51
+kill: TestTheCapsAreTheDocumentedValues
+
+mutant: StripTests charges one operation for all its removals
+file: transform.go
+old: \tif err := chargePatch(m, len(ops), nodes); err != nil {
+new: \tif err := chargePatch(m, 1, nodes); err != nil {
+kill: TestStripTestsChargesEveryRemovalByTheSizeOfTheDocument
+
+mutant: the bound on an escaped tests name is too small
+file: transform.go
+old: if !ok || len(lit) > maxTestsNameLit {
+new: if !ok || len(lit) > maxTestsNameLit-12 {
+kill: TestStripTestsRemovesEscapedNames
+
+mutant: the bound on a tests name literal is too small
+file: transform.go
+old: const maxTestsNameLit = 8*6 + 2
+new: const maxTestsNameLit = 8*3 + 2
+kill: TestStripTestsRemovesEscapedNames
+
+mutant: AppendTests with nothing to add returns the caller's buffer
+file: transform.go
+old: \tif adds == 0 {\n\t\treturn bytes.Clone(text), nil\n\t}
+new: \tif adds == 0 {\n\t\treturn text, nil\n\t}
+kill: TestAppendTestsReturnsItsOwnCopyWhenThereIsNothingToAdd
+
+mutant: the page size is not bounded
+file: diff.go
+old: \tsize = min(size, MaxPage)
+new: \t_ = MaxPage
+kill: TestAPageIsDefaultPageAndAtMostMaxPage
+
+mutant: every defined name counts as a defined group
+file: summary.go
+old: \t\t\tif sec.name == "groups" {\n\t\t\t\tdefined[name] = true\n\t\t\t}
+new: \t\t\tdefined[name] = true
+kill: TestAHostNamedLikeAGroupDoesNotDefineTheGroup
+
+mutant: a summarised scalar is not cut
+file: summary.go
+old: \t\tif sec.known && sec.sec.Shape == ShapeScalar && len(sec.entries) > 0 {\n\t\t\trow.Scalar = capText(sec.entries[0].val)
+new: \t\tif sec.known && sec.sec.Shape == ShapeScalar && len(sec.entries) > 0 {\n\t\t\trow.Scalar = sec.entries[0].val
+kill: TestASummarisedScalarIsCutAtOneKiB
+
+mutant: autoApprovers and derpMap are not read as structs for repeated keys
+file: shapes.go
+old: \t\to.fold = true\n\t\treturn o
+new: \t\to.fold = false\n\t\treturn o
+kill: TestCaseCollisionInAutoApproversIsFound
+
+mutant: unknown sections are ordered by spelling, not by folded name
+file: normal.go
+old: \tsort.Slice(unknown, func(i, j int) bool {\n\t\tb.m.used++\n\t\treturn unknown[i].fold < unknown[j].fold
+new: \tsort.Slice(unknown, func(i, j int) bool {\n\t\tb.m.used++\n\t\treturn unknown[i].name < unknown[j].name
+kill: TestUnknownSectionsAreOrderedByTheirFoldedName
+
+mutant: the normal form drops the sources of an atom
+file: normal.go
+old: \t\tline("atom", a.dst, a.proto, a.act, a.posture, a.via, a.app, a.extra, a.ports.String(), a.src.id)
+new: \t\tline("atom", a.dst, a.proto, a.act, a.posture, a.via, a.app, a.extra, a.ports.String())
+kill: TestDigestKnowsWhichSourcesGoWithWhichDestination
+
+mutant: the normal form names every section alike
+file: normal.go
+old: \t\t\tline("section", s.name)\n\t\t}
+new: \t\t\tline("section", "x")\n\t\t}
+kill: TestDigestKnowsWhichSectionAnEntryBelongsTo
+
+mutant: nodeAttrs elements are not read as structs for repeated keys
+file: sections.go
+old: \t{"nodeAttrs", ShapeNodeAttrs, OrderInsensitive, true},
+new: \t{"nodeAttrs", ShapeNodeAttrs, OrderInsensitive, false},
+kill: TestCaseCollisionInsideARuleIsFoundInEverySection
+
+mutant: node attribute targets are compared by count
+file: diff.go
+old: if oe[i].targets.id != ne[j].targets.id {
+new: if len(oe[i].targets.items) != len(ne[j].targets.items) {
+kill: TestANodeAttributeGivenToOtherTargetsIsAChange
+
+mutant: synced groups are listed unsorted
+file: summary.go
+old: \tsort.Strings(names)\n
+new: \t_ = sort.Strings\n
+kill: TestSyncedGroupsAreListedSorted
+
+mutant: the expansion of one grant is capped at twice MaxAtoms
+file: atoms.go
+old: if len(dsts)*len(protoOrder) > MaxAtoms {
+new: if len(dsts)*len(protoOrder) > MaxAtoms*2 {
+kill: TestTheExpansionOfOneGrantIsCappedAtMaxAtoms
+
+mutant: the first occurrence of a repeated section is read, not the last
+file: normal.go
+old: \tlast := occ[len(occ)-1]\n\ts.top = last
+new: \tlast := occ[0]\n\ts.top = last
+kill: TestAPointerNamesTheOccurrenceOfARepeatedSectionThatWasRead
+
+mutant: acls elements are not read as structs for repeated keys
+file: sections.go
+old: {"acls", ShapeRules, OrderInsensitive, true},
+new: {"acls", ShapeRules, OrderInsensitive, false},
+kill: TestCaseCollisionInsideARuleIsFoundInEverySection
+
+mutant: grants elements are not read as structs for repeated keys
+file: sections.go
+old: {"grants", ShapeRules, OrderInsensitive, true},
+new: {"grants", ShapeRules, OrderInsensitive, false},
+kill: TestCaseCollisionInsideARuleIsFoundInEverySection
+
+mutant: ssh elements are not read as structs for repeated keys
+file: sections.go
+old: {"ssh", ShapeSet, OrderInsensitive, true},
+new: {"ssh", ShapeSet, OrderInsensitive, false},
+kill: TestCaseCollisionInsideARuleIsFoundInEverySection
+
+mutant: sshTests elements are not read as structs for repeated keys
+file: sections.go
+old: {"sshTests", ShapeTests, OrderInsensitive, true},
+new: {"sshTests", ShapeTests, OrderInsensitive, false},
+kill: TestCaseCollisionInsideARuleIsFoundInEverySection
+
+mutant: extraDNSRecords elements are not read as structs for repeated keys
+file: sections.go
+old: {"extraDNSRecords", ShapeSet, OrderInsensitive, true},
+new: {"extraDNSRecords", ShapeSet, OrderInsensitive, false},
+kill: TestCaseCollisionInsideARuleIsFoundInEverySection
+
+mutant: one access section written as [] where it was absent is not a defaults change
+file: diff.go
+old: \t\t\tif s.was == s.now {
+new: \t\t\tif true || s.was == s.now {
+kill: TestAnAclsOrGrantsSectionMovingBetweenAbsentAndEmptyIsADefaultsChange
+
+mutant: the normal form does not say which access section is written as []
+file: normal.go
+old: \tif empty {\n\t\treturn "empty"\n\t}\n\treturn "-"
+new: \tif false {\n\t\treturn "empty"\n\t}\n\treturn "-"
+kill: TestAnAclsOrGrantsSectionMovingBetweenAbsentAndEmptyIsADefaultsChange|TestWriteToWritesTheCanonicalBytes
+
+mutant: an access section is reported on its own as well as with the pool
+file: diff.go
+old: \t} else {\n\t\toldAcls, oldGrants := d.na.writtenEmpty()
+new: \t}\n\t{\n\t\toldAcls, oldGrants := d.na.writtenEmpty()
+kill: TestDefaultsAreTheirOwnClassAndCome
+
+mutant: Parse does not look into the nodes of a derpMap region
+file: shapes.go
+old: "nodes": {elem: &canonOpts{fold: true}},
+new: "nodes": {},
+kill: TestParseFindsACaseCollisionInsideEveryNestedStruct
+
+mutant: Parse reads the entries of a keyed section as maps
+file: shapes.go
+old: \t\to := keyedOpts[sec.Name]\n\t\treturn canonOpts{elem: &o}
+new: \t\treturn canonOpts{}
+kill: TestParseFindsACaseCollisionInsideEveryNestedStruct
+
+mutant: the table calls an order-insensitive section order-sensitive
+file: sections.go
+old: {"postures", ShapeMap, OrderInsensitive, false},
+new: {"postures", ShapeMap, OrderSensitive, false},
+kill: TestSectionOrderIsWhatTheReadersDo
+
+mutant: the entries of groups are read as ordered lists
+file: shapes.go
+old: "groups":           {sets: true},
+new: "groups":           {},
+kill: TestSectionOrderIsWhatTheReadersDo
+
+mutant: Sections hands out the table itself
+file: sections.go
+old: func Sections() []Section { return slices.Clone(sections) }
+new: func Sections() []Section { _ = slices.Clone(sections); return sections }
+kill: TestSectionsHandsOutACopyOfTheTable
+
+mutant: Locate does not count the source matches it leaves out
+file: locate.go
+old: return bySrc, nSrc - len(bySrc)
+new: return bySrc, 0
+kill: TestLocateIsBounded
+
+mutant: Locate counts the destination matches it leaves out as source matches
+file: locate.go
+old: return byDst, nDst - len(byDst)
+new: return byDst, nSrc - len(byDst)
+kill: TestLocateIsBounded
+
+mutant: a summary lists every unknown section
+file: summary.go
+old: if len(unknown) >= MaxNames {
+new: if len(unknown) >= 2*MaxNames {
+kill: TestSummaryBoundsTheUnknownSectionsAndListsThemAsItsRowsDo
+
+mutant: the unknown sections of a summary are listed by name, not in the order written
+file: summary.go
+old: return unknown[i].first < unknown[j].first
+new: return unknown[i].name < unknown[j].name
+kill: TestSummaryBoundsTheUnknownSectionsAndListsThemAsItsRowsDo|TestSummaryListsSyncedGroupsAndUnknownSections
+
+mutant: a struct's undescribed field takes the options of the elements
+file: canon.go
+old: \tif o.fold {\n\t\tc = o.fields[name]\n\t} else if o.elem != nil {\n\t\tc = *o.elem\n\t}
+new: \tif o.fold {\n\t\tc = o.fields[name]\n\t}\n\tif o.elem != nil {\n\t\tc = *o.elem\n\t}
+kill: TestCanonicalNestedStructsAreDescribedByTheCaller
+
+mutant: a funnel attribute counts as Tailscale-written whatever its entry carries
+file: tailscale_written.go
+old: return preset || (attr == funnelAttr && bare) }
+new: return preset || attr == funnelAttr }
+kill: TestFunnelIsTailscaleWrittenOnlyInTheShapeTheConsoleWrites
+
+mutant: a funnel entry with other attributes counts as Tailscale-written
+file: shapes.go
+old: bare := len(attrs) == 1 && len(targets) > 0
+new: bare := len(targets) > 0
+kill: TestFunnelIsTailscaleWrittenOnlyInTheShapeTheConsoleWrites
+
+mutant: a funnel entry with no target counts as Tailscale-written
+file: shapes.go
+old: len(targets) > 0 && app == ""
+new: app == ""
+kill: TestFunnelIsTailscaleWrittenOnlyInTheShapeTheConsoleWrites
+
+mutant: a funnel entry with an app counts as Tailscale-written
+file: shapes.go
+old: len(targets) > 0 && app == "" && len(pool) == 0
+new: len(targets) > 0 && len(pool) == 0
+kill: TestFunnelIsTailscaleWrittenOnlyInTheShapeTheConsoleWrites
+
+mutant: a funnel entry with an ip pool counts as Tailscale-written
+file: shapes.go
+old: app == "" && len(pool) == 0 && extra == nil
+new: app == "" && extra == nil
+kill: TestFunnelIsTailscaleWrittenOnlyInTheShapeTheConsoleWrites
+
+mutant: a funnel entry with an unknown field counts as Tailscale-written
+file: shapes.go
+old: len(pool) == 0 && extra == nil
+new: len(pool) == 0
+kill: TestFunnelIsTailscaleWrittenOnlyInTheShapeTheConsoleWrites
+
+mutant: an atom of several entries is Tailscale-written when the first is
+file: shapes.go
+old: a.written = a.written && p.written
+new: a.written = a.written
+kill: TestFunnelIsTailscaleWrittenOnlyInTheShapeTheConsoleWrites

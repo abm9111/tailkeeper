@@ -17,6 +17,7 @@ import (
 
 	"github.com/tailscale/hujson"
 
+	"github.com/abm9111/tailkeeper/internal/guard"
 	"github.com/abm9111/tailkeeper/internal/tkerr"
 )
 
@@ -88,6 +89,11 @@ var (
 
 // Parse decodes HuJSON configuration bytes strictly and validates them.
 func Parse(data []byte) (Config, error) {
+	// HuJSON's parser recurses once for each level of nesting and has no bound, and a Go stack
+	// overflow ends the process: text nested deeper than any configuration is refused unread.
+	if guard.NestsDeeperThan(data, guard.MaxDepth) {
+		return Config{}, tkerr.New(tkerr.ConfigInvalid, fmt.Sprintf("configuration is nested more than %d levels deep", guard.MaxDepth), configHint)
+	}
 	std, err := hujson.Standardize(data)
 	if err != nil {
 		return Config{}, tkerr.Wrap(tkerr.ConfigInvalid, err, "configuration is not valid HuJSON: "+err.Error(), "")

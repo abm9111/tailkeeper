@@ -1,0 +1,26 @@
+# Mutants of internal/guard: each is a change to the code that a test must notice.
+# scripts/mutate.go says what the format is and what the three outcomes mean.
+
+mutant: depth cap off by one
+file: guard.go
+old: if depth++; depth > limit {
+new: if depth++; depth >= limit {
+kill: TestNestsDeeperThanBoundary
+
+mutant: an escaped quote ends a string
+file: guard.go
+old: if t[i] == '\\\\' {
+new: if false {
+kill: TestNestsDeeperThanBoundary
+
+mutant: commas are not counted as values
+file: guard.go
+old: \t\tcase ',', ':':
+new: \t\tcase ':':
+kill: TestScanNodeBoundCoversEveryValueTheParserBuilds
+
+mutant: a line comment ends at a carriage return, not a line feed
+file: guard.go
+old: for j < n && t[j] != '\\n' {
+new: for j < n && t[j] != '\\r' {
+kill: TestNestsDeeperThanBoundary

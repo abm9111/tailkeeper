@@ -1,0 +1,2 @@
+go test fuzz v1
+[]byte("{\"grants\":[{\"src\":[\"group:eng\"],\"dst\":[\"tag:web\"],\"ip\":[\"tcp:443\"]}]}")

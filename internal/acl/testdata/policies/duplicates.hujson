@@ -1,0 +1,18 @@
+{
+	"groups": {
+		"group:a": ["a@example.com"],
+		"group:b": [],
+		"group:a": ["b@example.com"],
+	},
+	"Groups": {"group:c": []},
+	"hosts": {"Build": "192.0.2.1", "build": "192.0.2.2"},
+	"acls": [{"action": "accept", "src": ["*"], "dst": ["*:*"]}],
+	"acls": [{"action": "accept", "src": ["tag:p"], "dst": ["tag:p:22"]}],
+	"tests": [
+		{"src": "tag:p", "src": "tag:q", "Src": "tag:r", "accept": ["tag:p:22"]},
+	],
+	"autoApprovers": {"routes": {"192.0.2.0/24": ["tag:p"], "192.0.2.0/24": ["tag:q"]}},
+	"nodeAttr": [],
+	"NodeAttr": [],
+	"futureSection": {"a": 1},
+}

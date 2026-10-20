@@ -4,7 +4,7 @@ tailkeeper is a read-only Tailscale CLI and stdio MCP server in Go. The design a
 
 ## The gate
 
-- `make verify` passes before and after every change, and before every commit. It runs gofmt, vet (including a Windows build), staticcheck, golangci-lint (gosec, errcheck, errorlint, bodyclose, misspell, ineffassign, unused), race tests (with the growth guard on the masking paths), the generated-docs and dependency checks, govulncheck and `go mod verify`. CI runs the same target, then `make actionlint` (the workflow files and, with shellcheck, `scripts/`) and `make cover` (statement coverage including the end-to-end runs; it fails below 90%).
+- `make verify` passes before and after every change, and before every commit. It runs gofmt, vet (including a Windows build), staticcheck, golangci-lint (gosec, errcheck, errorlint, bodyclose, misspell, ineffassign, unused), race tests (with the growth guard on the masking paths), the generated-docs and dependency checks, govulncheck and `go mod verify`. CI runs the same target, then `make actionlint` (the workflow files and, with shellcheck, `scripts/`) and `make cover` (statement coverage including the end-to-end runs; it fails below 90%, and below 95% for `internal/acl` and `internal/guard` measured from their own tests).
 - `docs/tools.md`, `docs/scopes.md`, `docs/dependencies.md` and `THIRD_PARTY_LICENSES` are generated. After changing a tool, run `make docs`; after changing dependencies, review the diff of `make deps`; commit the results.
 - Commit messages are `type: description`. Stage files by name, never `git add <directory>`.
 - Never `--no-verify`. If a hook blocks, report what it says and stop.

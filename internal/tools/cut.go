@@ -9,6 +9,8 @@ import (
 	"unicode"
 
 	"github.com/tailscale/hujson"
+
+	"github.com/abm9111/tailkeeper/internal/guard"
 )
 
 // urlRE finds an http or https URL in free text, in the spellings JSON gives it:
@@ -124,7 +126,7 @@ func redactNested(s string, depth int) (string, bool) {
 		// recurses once for each level of nesting and has no bound: some 700,000 levels of
 		// text from the tailnet end the process. So text nested deeper than any policy file
 		// is, is removed unread, as text that nests deeper than a string can is.
-		if nestsDeeperThan(t, maxHuJSONDepth) {
+		if guard.NestsDeeperThan(t, guard.MaxDepth) {
 			return removedValue, true
 		}
 		std, err := hujson.Standardize([]byte(t + "\n"))
@@ -159,58 +161,6 @@ func redactNested(s string, depth int) (string, bool) {
 		return text, true
 	}
 	return removedValue, true
-}
-
-// maxHuJSONDepth is how many levels of braces and brackets HuJSON text may nest before
-// it is removed unread (see redactNested). A policy file is a few levels deep.
-const maxHuJSONDepth = 1000
-
-// nestsDeeperThan reports whether the braces and brackets in t, outside its strings and
-// comments, nest more than limit levels deep, in one pass over t. It reads t as the HuJSON
-// parser does: a string ends at its first quote that no backslash escapes, a line
-// comment at the next line feed, and a block comment at the first "*/" after its "/*".
-// A comment that does not end ends the text for it, as an error does for the parser.
-// Closing a level that was never opened counts for nothing, so the depth reached is
-// never less than the parser's.
-func nestsDeeperThan(t string, limit int) bool {
-	depth := 0
-	for i := 0; i < len(t); i++ {
-		switch t[i] {
-		case '"':
-			for i++; i < len(t) && t[i] != '"'; i++ {
-				if t[i] == '\\' {
-					i++
-				}
-			}
-		case '/':
-			if i+1 == len(t) {
-				break
-			}
-			switch t[i+1] {
-			case '/':
-				j := strings.IndexByte(t[i:], '\n')
-				if j < 0 {
-					return false
-				}
-				i += j
-			case '*':
-				j := strings.Index(t[i+2:], "*/")
-				if j < 0 {
-					return false
-				}
-				i += 2 + j + 1
-			}
-		case '{', '[':
-			if depth++; depth > limit {
-				return true
-			}
-		case '}', ']':
-			if depth > 0 {
-				depth--
-			}
-		}
-	}
-	return false
 }
 
 // scrub removes credential-named values from a decoded document in place and
