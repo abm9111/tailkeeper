@@ -1,0 +1,565 @@
+{
+  "observedOn": "2026-10-20",
+  "probe": "A-9",
+  "title": "The verdict grammar, one destination kind at a time",
+  "sends": "Tests mode against live, one test per destination kind, each accepting and denying the same destination so exactly one assertion fails whatever live allows; `src` a tag or user from live held in memory. Kinds: tag, host alias, IPv4, bracketed IPv6, user, `svc:`, ICMP port 0, with and without `proto`; and CIDR and `autogroup:internet` as kinds tests refuse; plus the canary in policy mode",
+  "expected": "Every accepted kind yields one line in the validate grammar; CIDR and `autogroup:internet` come back unevaluable; the canary yields one `assertion_failed` line with its `src`",
+  "branch": "The verdict grammar's golden set; the kinds `doctor --probe` uses; the canary's shape",
+  "observations": [
+    {
+      "label": "a tag, accepted and denied together",
+      "expect": "one line in the verdict grammar",
+      "request": "POST validate, application/json, a body built from the live policy",
+      "result": {
+        "status": 200,
+        "body": "json",
+        "paths": [
+          {
+            "path": "$",
+            "type": "object"
+          },
+          {
+            "path": "data",
+            "type": "array"
+          },
+          {
+            "path": "data[]",
+            "type": "object"
+          },
+          {
+            "path": "data[].errors",
+            "type": "array"
+          },
+          {
+            "path": "data[].errors[]",
+            "type": "string"
+          },
+          {
+            "path": "data[].user",
+            "type": "string"
+          },
+          {
+            "path": "message",
+            "type": "string"
+          }
+        ],
+        "texts": [
+          "<s>:<s>",
+          "[acl test error]: address \"<s>:<s>:<n>\" (protocol \"<s>\"): want: Accept, got: Drop",
+          "test(s) failed"
+        ]
+      }
+    },
+    {
+      "label": "a host alias, accepted and denied together",
+      "expect": "one line in the verdict grammar",
+      "request": "POST validate, application/json, a body built from the live policy",
+      "result": {
+        "status": 200,
+        "body": "json",
+        "paths": [
+          {
+            "path": "$",
+            "type": "object"
+          },
+          {
+            "path": "data",
+            "type": "array"
+          },
+          {
+            "path": "data[]",
+            "type": "object"
+          },
+          {
+            "path": "data[].errors",
+            "type": "array"
+          },
+          {
+            "path": "data[].errors[]",
+            "type": "string"
+          },
+          {
+            "path": "data[].user",
+            "type": "string"
+          },
+          {
+            "path": "message",
+            "type": "string"
+          }
+        ],
+        "texts": [
+          "<s>:<s>",
+          "[acl test error]: address \"<s>:<n>\" (protocol \"<s>\"): want: Accept, got: Drop",
+          "test(s) failed"
+        ]
+      }
+    },
+    {
+      "label": "an IPv4 address, no proto, accepted and denied together",
+      "expect": "one line in the verdict grammar",
+      "request": "POST validate, application/json, a body built from the live policy",
+      "result": {
+        "status": 200,
+        "body": "json",
+        "paths": [
+          {
+            "path": "$",
+            "type": "object"
+          },
+          {
+            "path": "data",
+            "type": "array"
+          },
+          {
+            "path": "data[]",
+            "type": "object"
+          },
+          {
+            "path": "data[].errors",
+            "type": "array"
+          },
+          {
+            "path": "data[].errors[]",
+            "type": "string"
+          },
+          {
+            "path": "data[].user",
+            "type": "string"
+          },
+          {
+            "path": "message",
+            "type": "string"
+          }
+        ],
+        "texts": [
+          "<s>:<s>",
+          "[acl test error]: address \"<n>.<n>.<n>.<n>:<n>\" (protocol \"<s>\"): want: Accept, got: Drop",
+          "test(s) failed"
+        ]
+      }
+    },
+    {
+      "label": "an IPv4 address, proto tcp, accepted and denied together",
+      "expect": "one line in the verdict grammar",
+      "request": "POST validate, application/json, a body built from the live policy",
+      "result": {
+        "status": 200,
+        "body": "json",
+        "paths": [
+          {
+            "path": "$",
+            "type": "object"
+          },
+          {
+            "path": "data",
+            "type": "array"
+          },
+          {
+            "path": "data[]",
+            "type": "object"
+          },
+          {
+            "path": "data[].errors",
+            "type": "array"
+          },
+          {
+            "path": "data[].errors[]",
+            "type": "string"
+          },
+          {
+            "path": "data[].user",
+            "type": "string"
+          },
+          {
+            "path": "message",
+            "type": "string"
+          }
+        ],
+        "texts": [
+          "<s>:<s>",
+          "[acl test error]: address \"<n>.<n>.<n>.<n>:<n>\" (protocol \"<s>\"): want: Accept, got: Drop",
+          "test(s) failed"
+        ]
+      }
+    },
+    {
+      "label": "a bracketed IPv6 address, accepted and denied together",
+      "expect": "one line in the verdict grammar",
+      "request": "POST validate, application/json, a body built from the live policy",
+      "result": {
+        "status": 200,
+        "body": "json",
+        "paths": [
+          {
+            "path": "$",
+            "type": "object"
+          },
+          {
+            "path": "data",
+            "type": "array"
+          },
+          {
+            "path": "data[]",
+            "type": "object"
+          },
+          {
+            "path": "data[].errors",
+            "type": "array"
+          },
+          {
+            "path": "data[].errors[]",
+            "type": "string"
+          },
+          {
+            "path": "data[].user",
+            "type": "string"
+          },
+          {
+            "path": "message",
+            "type": "string"
+          }
+        ],
+        "texts": [
+          "<s>:<s>",
+          "[acl test error]: address \"[<n>:<s>::<n>]:<n>\" (protocol \"<s>\"): want: Accept, got: Drop",
+          "test(s) failed"
+        ]
+      }
+    },
+    {
+      "label": "ICMP, port 0, proto icmp, accepted and denied together",
+      "expect": "one line in the verdict grammar",
+      "request": "POST validate, application/json, a body built from the live policy",
+      "result": {
+        "status": 200,
+        "body": "json",
+        "paths": [
+          {
+            "path": "$",
+            "type": "object"
+          },
+          {
+            "path": "data",
+            "type": "array"
+          },
+          {
+            "path": "data[]",
+            "type": "object"
+          },
+          {
+            "path": "data[].errors",
+            "type": "array"
+          },
+          {
+            "path": "data[].errors[]",
+            "type": "string"
+          },
+          {
+            "path": "data[].user",
+            "type": "string"
+          },
+          {
+            "path": "message",
+            "type": "string"
+          }
+        ],
+        "texts": [
+          "<s>:<s>",
+          "[acl test error]: address \"<n>.<n>.<n>.<n>:<n>\" (protocol \"<s>\"): want: Accept, got: Drop",
+          "test(s) failed"
+        ]
+      }
+    },
+    {
+      "label": "ICMP, port 0, no proto, accepted and denied together",
+      "expect": "one line in the verdict grammar",
+      "request": "POST validate, application/json, a body built from the live policy",
+      "result": {
+        "status": 200,
+        "body": "json",
+        "paths": [
+          {
+            "path": "$",
+            "type": "object"
+          },
+          {
+            "path": "data",
+            "type": "array"
+          },
+          {
+            "path": "data[]",
+            "type": "object"
+          },
+          {
+            "path": "data[].errors",
+            "type": "array"
+          },
+          {
+            "path": "data[].errors[]",
+            "type": "string"
+          },
+          {
+            "path": "data[].user",
+            "type": "string"
+          },
+          {
+            "path": "message",
+            "type": "string"
+          }
+        ],
+        "texts": [
+          "<s>:<s>",
+          "[acl test error]: address \"<n>.<n>.<n>.<n>:<n>\" (protocol \"<s>\"): want: Accept, got: Drop",
+          "test(s) failed"
+        ]
+      }
+    },
+    {
+      "label": "a CIDR (a kind tests refuse), accepted and denied together",
+      "expect": "unevaluable: an error that is not in the verdict grammar",
+      "request": "POST validate, application/json, a body built from the live policy",
+      "result": {
+        "status": 200,
+        "body": "json",
+        "paths": [
+          {
+            "path": "$",
+            "type": "object"
+          },
+          {
+            "path": "data",
+            "type": "array"
+          },
+          {
+            "path": "data[]",
+            "type": "object"
+          },
+          {
+            "path": "data[].errors",
+            "type": "array"
+          },
+          {
+            "path": "data[].errors[]",
+            "type": "string"
+          },
+          {
+            "path": "data[].user",
+            "type": "string"
+          },
+          {
+            "path": "message",
+            "type": "string"
+          }
+        ],
+        "texts": [
+          "<s>:<s>",
+          "[acl test error]: user or host is invalid: <s> user <s> <s>: \"<n>.<n>.<n>.<n>/<n>\"",
+          "test(s) failed"
+        ]
+      }
+    },
+    {
+      "label": "autogroup:internet (a kind tests refuse), accepted and denied together",
+      "expect": "unevaluable: an error that is not in the verdict grammar",
+      "request": "POST validate, application/json, a body built from the live policy",
+      "result": {
+        "status": 200,
+        "body": "json",
+        "paths": [
+          {
+            "path": "$",
+            "type": "object"
+          },
+          {
+            "path": "data",
+            "type": "array"
+          },
+          {
+            "path": "data[]",
+            "type": "object"
+          },
+          {
+            "path": "data[].errors",
+            "type": "array"
+          },
+          {
+            "path": "data[].errors[]",
+            "type": "string"
+          },
+          {
+            "path": "data[].user",
+            "type": "string"
+          },
+          {
+            "path": "message",
+            "type": "string"
+          }
+        ],
+        "texts": [
+          "<s>:<s>",
+          "[acl test error]: address <s>:<s>:<n>: <s> <s> <s> <s> address",
+          "test(s) failed"
+        ]
+      }
+    },
+    {
+      "label": "the canary, acls absent (allow-all)",
+      "expect": "exactly one failed assertion, whose src is the canary tag",
+      "request": "POST validate, application/hujson, 150 bytes",
+      "result": {
+        "status": 200,
+        "body": "json",
+        "paths": [
+          {
+            "path": "$",
+            "type": "object"
+          },
+          {
+            "path": "data",
+            "type": "array"
+          },
+          {
+            "path": "data[]",
+            "type": "object"
+          },
+          {
+            "path": "data[].errors",
+            "type": "array"
+          },
+          {
+            "path": "data[].errors[]",
+            "type": "string"
+          },
+          {
+            "path": "data[].user",
+            "type": "string"
+          },
+          {
+            "path": "message",
+            "type": "string"
+          }
+        ],
+        "texts": [
+          "<s>:<s>-<s>-<s>",
+          "[acl test error]: address \"<n>.<n>.<n>.<n>:<n>\" (protocol \"<s>\"): want: Drop, got: Accept",
+          "test(s) failed"
+        ]
+      }
+    },
+    {
+      "label": "the canary, acls [] (deny-all)",
+      "expect": "exactly one failed assertion, whose src is the canary tag",
+      "request": "POST validate, application/hujson, 160 bytes",
+      "result": {
+        "status": 200,
+        "body": "json",
+        "paths": [
+          {
+            "path": "$",
+            "type": "object"
+          },
+          {
+            "path": "data",
+            "type": "array"
+          },
+          {
+            "path": "data[]",
+            "type": "object"
+          },
+          {
+            "path": "data[].errors",
+            "type": "array"
+          },
+          {
+            "path": "data[].errors[]",
+            "type": "string"
+          },
+          {
+            "path": "data[].user",
+            "type": "string"
+          },
+          {
+            "path": "message",
+            "type": "string"
+          }
+        ],
+        "texts": [
+          "<s>:<s>-<s>-<s>",
+          "[acl test error]: address \"<n>.<n>.<n>.<n>:<n>\" (protocol \"<s>\"): want: Accept, got: Drop",
+          "test(s) failed"
+        ]
+      }
+    }
+  ],
+  "checks": [
+    {
+      "name": "a tag yields one line in the verdict grammar",
+      "want": true,
+      "got": true
+    },
+    {
+      "name": "a host alias yields one line in the verdict grammar",
+      "want": true,
+      "got": true
+    },
+    {
+      "name": "an IPv4 address, no proto yields one line in the verdict grammar",
+      "want": true,
+      "got": true
+    },
+    {
+      "name": "an IPv4 address, proto tcp yields one line in the verdict grammar",
+      "want": true,
+      "got": true
+    },
+    {
+      "name": "a bracketed IPv6 address yields one line in the verdict grammar",
+      "want": true,
+      "got": true
+    },
+    {
+      "name": "ICMP, port 0, proto icmp yields one line in the verdict grammar",
+      "want": true,
+      "got": true
+    },
+    {
+      "name": "ICMP, port 0, no proto yields one line in the verdict grammar",
+      "want": true,
+      "got": true
+    },
+    {
+      "name": "a CIDR (a kind tests refuse) comes back unevaluable",
+      "want": true,
+      "got": true
+    },
+    {
+      "name": "autogroup:internet (a kind tests refuse) comes back unevaluable",
+      "want": true,
+      "got": true
+    },
+    {
+      "name": "the canary, acls absent (allow-all) yields one line in the verdict grammar",
+      "want": true,
+      "got": true
+    },
+    {
+      "name": "the canary, acls absent (allow-all) names the canary tag as its src",
+      "want": true,
+      "got": true
+    },
+    {
+      "name": "the canary, acls [] (deny-all) yields one line in the verdict grammar",
+      "want": true,
+      "got": true
+    },
+    {
+      "name": "the canary, acls [] (deny-all) names the canary tag as its src",
+      "want": true,
+      "got": true
+    }
+  ],
+  "skipped": [
+    "the live policy has no group member written as an address",
+    "the live policy names no svc: service"
+  ]
+}

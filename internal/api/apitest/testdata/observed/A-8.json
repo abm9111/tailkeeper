@@ -1,0 +1,140 @@
+{
+  "observedOn": "2026-10-20",
+  "probe": "A-8",
+  "title": "details=true, Accept and If-None-Match",
+  "sends": "`details=true` with and without `Accept: application/hujson`; compare decoded `acl` and ETag with the plain GET; then `If-None-Match`",
+  "expected": "Decoded text equals the plain body; ETags equal; `If-None-Match` answers 304 (low confidence)",
+  "branch": "One-call `acl_get`; the re-check after POST",
+  "observations": [
+    {
+      "label": "plain, Accept: application/hujson",
+      "expect": "the policy text and an ETag",
+      "request": "GET policy, Accept application/hujson",
+      "result": {
+        "status": 200,
+        "body": "text"
+      },
+      "etag": "quoted-hex64"
+    },
+    {
+      "label": "details=true, Accept: application/hujson",
+      "expect": "the details object, or the plain text",
+      "request": "GET policy, details=true, Accept application/hujson",
+      "result": {
+        "status": 200,
+        "body": "json",
+        "paths": [
+          {
+            "path": "$",
+            "type": "object"
+          },
+          {
+            "path": "acl",
+            "type": "string"
+          },
+          {
+            "path": "errors",
+            "type": "null"
+          },
+          {
+            "path": "warnings",
+            "type": "null"
+          }
+        ]
+      },
+      "etag": "quoted-hex64"
+    },
+    {
+      "label": "details=true, no Accept",
+      "expect": "the details object",
+      "request": "GET policy, details=true",
+      "result": {
+        "status": 200,
+        "body": "json",
+        "paths": [
+          {
+            "path": "$",
+            "type": "object"
+          },
+          {
+            "path": "acl",
+            "type": "string"
+          },
+          {
+            "path": "errors",
+            "type": "null"
+          },
+          {
+            "path": "warnings",
+            "type": "null"
+          }
+        ]
+      },
+      "etag": "quoted-hex64"
+    },
+    {
+      "label": "plain, If-None-Match: the plain ETag",
+      "expect": "304 (low confidence)",
+      "request": "GET policy, Accept application/hujson, If-None-Match set",
+      "result": {
+        "status": 200,
+        "body": "text"
+      },
+      "etag": "quoted-hex64"
+    },
+    {
+      "label": "details=true, If-None-Match: the plain ETag",
+      "expect": "304 (low confidence)",
+      "request": "GET policy, details=true, If-None-Match set",
+      "result": {
+        "status": 200,
+        "body": "json",
+        "paths": [
+          {
+            "path": "$",
+            "type": "object"
+          },
+          {
+            "path": "acl",
+            "type": "string"
+          },
+          {
+            "path": "errors",
+            "type": "null"
+          },
+          {
+            "path": "warnings",
+            "type": "null"
+          }
+        ]
+      },
+      "etag": "quoted-hex64"
+    }
+  ],
+  "checks": [
+    {
+      "name": "details with Accept decodes to the plain body",
+      "want": true,
+      "got": true
+    },
+    {
+      "name": "details without Accept decodes to the plain body",
+      "want": true,
+      "got": true
+    },
+    {
+      "name": "the ETags are equal",
+      "want": true,
+      "got": true
+    },
+    {
+      "name": "If-None-Match answers 304",
+      "want": true,
+      "got": false
+    }
+  ],
+  "facts": {
+    "If-None-Match with details answers 304": false,
+    "details with Accept is a JSON object": true
+  }
+}

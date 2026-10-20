@@ -1,0 +1,66 @@
+{
+  "observedOn": "2026-10-20",
+  "probe": "A-7",
+  "title": "Warnings: details=true against policy mode",
+  "sends": "`details=true` GET, then POST the same text in policy mode",
+  "expected": "The same warning set both ways",
+  "branch": "The warnings baseline; if they differ, the baseline comes from a POST of live",
+  "observations": [
+    {
+      "label": "live policy (details=true), held in memory for the probes that need it",
+      "expect": "200 with acl, warnings, errors and an ETag",
+      "request": "GET policy, details=true",
+      "result": {
+        "status": 200,
+        "body": "json",
+        "paths": [
+          {
+            "path": "$",
+            "type": "object"
+          },
+          {
+            "path": "acl",
+            "type": "string"
+          },
+          {
+            "path": "errors",
+            "type": "null"
+          },
+          {
+            "path": "warnings",
+            "type": "null"
+          }
+        ]
+      },
+      "etag": "quoted-hex64"
+    },
+    {
+      "label": "the live text, validated in policy mode",
+      "expect": "the same warning set as details=true",
+      "request": "POST validate, application/hujson, a body built from the live policy",
+      "result": {
+        "status": 200,
+        "body": "json",
+        "paths": [
+          {
+            "path": "$",
+            "type": "object"
+          }
+        ]
+      }
+    }
+  ],
+  "checks": [
+    {
+      "name": "the same warning set both ways",
+      "want": true,
+      "got": true
+    }
+  ],
+  "counts": {
+    "details errors": 0,
+    "details warnings": 0,
+    "policy-mode error lines": 0,
+    "policy-mode warnings": 0
+  }
+}

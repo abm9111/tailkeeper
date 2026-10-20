@@ -1,0 +1,69 @@
+{
+  "observedOn": "2026-10-20",
+  "probe": "A-6",
+  "title": "The 500 for an autogroup:self target",
+  "sends": "Policy mode: a `nodeAttrs` entry whose target is `autogroup:self` (a third-party capture of the SaaS, 7 May 2026, returned 500), sent twice",
+  "expected": "500 both times",
+  "branch": "The retry-once rule and its hint",
+  "observations": [
+    {
+      "label": "the first send",
+      "expect": "HTTP 500",
+      "request": "POST validate, application/hujson, 103 bytes",
+      "result": {
+        "status": 500,
+        "body": "json",
+        "paths": [
+          {
+            "path": "$",
+            "type": "object"
+          },
+          {
+            "path": "message",
+            "type": "string"
+          }
+        ],
+        "texts": [
+          "<s> <s> <s>"
+        ]
+      }
+    },
+    {
+      "label": "the second send",
+      "expect": "HTTP 500",
+      "request": "POST validate, application/hujson, 103 bytes",
+      "result": {
+        "status": 500,
+        "body": "json",
+        "paths": [
+          {
+            "path": "$",
+            "type": "object"
+          },
+          {
+            "path": "message",
+            "type": "string"
+          }
+        ],
+        "texts": [
+          "<s> <s> <s>"
+        ]
+      }
+    }
+  ],
+  "checks": [
+    {
+      "name": "the first send answers 500",
+      "want": true,
+      "got": true
+    },
+    {
+      "name": "the second send answers 500",
+      "want": true,
+      "got": true
+    }
+  ],
+  "facts": {
+    "both sends have the same skeleton": true
+  }
+}

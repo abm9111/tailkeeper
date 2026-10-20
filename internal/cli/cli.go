@@ -19,6 +19,7 @@ import (
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
+	"github.com/abm9111/tailkeeper/internal/api"
 	"github.com/abm9111/tailkeeper/internal/app"
 	"github.com/abm9111/tailkeeper/internal/audit"
 	"github.com/abm9111/tailkeeper/internal/config"
@@ -44,6 +45,13 @@ type Runner struct {
 	// ServeMCP serves srv until the client goes away (stdio in production).
 	ServeMCP func(ctx context.Context, srv *mcp.Server) error
 	Now      func() time.Time
+	// Probe runs `probe-acl`, the owner's live probes of the validate endpoint. It
+	// is nil in every build but one made with -tags probe, which only `make probe-acl` makes;
+	// with it nil the command does not exist: it is not in the help and answers as an unknown
+	// area.
+	Probe func(ctx context.Context, c *api.Client, args []string, stdout, stderr io.Writer) int
+	// Getenv reads the environment; os.Getenv when nil.
+	Getenv func(string) string
 }
 
 // flagOutput is where a FlagSet writes its errors and usage text. The flag
@@ -89,6 +97,10 @@ func (r *Runner) Run(ctx context.Context, args []string) int {
 		return r.mcp(ctx, g, rest[1:])
 	case "doctor":
 		return r.doctor(ctx, g, rest[1:])
+	case "probe-acl":
+		if r.Probe != nil {
+			return r.probeACL(ctx, g, rest[1:])
+		}
 	case "audit":
 		if len(rest) > 1 && (rest[1] == "verify" || rest[1] == "tail" || rest[1] == "rotate") {
 			return r.audit(ctx, g, rest[1], rest[2:])
@@ -498,6 +510,42 @@ func (r *Runner) doctor(ctx context.Context, g globals, args []string) int {
 		}
 	}
 	return tkerr.ExitCode(rep.Err())
+}
+
+// probeACL runs the live probes. They send documents to Tailscale for validation and read
+// the tailnet's policy, so the command refuses to start unless TAILKEEPER_LIVE=1 is set,
+// which only `make probe-acl` does; the check comes before the configuration is read and
+// before the credential wrapper runs. The run is audited like a tool call.
+func (r *Runner) probeACL(ctx context.Context, g globals, args []string) int {
+	getenv := r.Getenv
+	if getenv == nil {
+		getenv = os.Getenv
+	}
+	if getenv("TAILKEEPER_LIVE") != "1" {
+		return r.fail(tkerr.New(tkerr.Usage, "probe-acl reads the configured tailnet and sends documents to its validate endpoint, so it is opt-in",
+			"run it with `make probe-acl`, which sets TAILKEEPER_LIVE=1"), false)
+	}
+	a, err := r.Build(ctx, g.context)
+	if err != nil {
+		return r.fail(err, false)
+	}
+	if code, done := r.reexecIfNeeded(a); done {
+		return code
+	}
+	if a.Env.API == nil {
+		return r.fail(a.Env.APIErr, false)
+	}
+	start := r.now()
+	code := r.Probe(ctx, a.Env.API, args, r.Stdout, r.Stderr)
+	status := "ok"
+	if code != 0 {
+		status = "error"
+	}
+	if aerr := a.Record(map[string]any{"tool": "probe_acl", "tier": string(registry.TierRead), "requester": map[string]any{"kind": "cli"},
+		"ms": r.now().Sub(start).Milliseconds(), "status": status, "bytes": 0}); aerr != nil {
+		_, _ = fmt.Fprintf(r.Stderr, "tailkeeper: warning: this run was not audited: %s\n", sanitize.String(tkerr.From(aerr).Message, sanitize.DefaultMax))
+	}
+	return code
 }
 
 func (r *Runner) audit(ctx context.Context, g globals, verb string, args []string) int {

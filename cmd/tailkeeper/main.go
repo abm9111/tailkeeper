@@ -41,6 +41,7 @@ func main() {
 			return creds.Reexec(p.Command, self, os.Args[1:])
 		},
 		ServeMCP: serveStdio,
+		Probe:    probeCommand,
 	}
 	code := r.Run(ctx, os.Args[1:])
 	stop()

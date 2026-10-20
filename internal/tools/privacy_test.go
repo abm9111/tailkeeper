@@ -344,9 +344,9 @@ func TestErrorsEchoingAnAddressNeverCarryAPseudonym(t *testing.T) {
 func TestACLTestEchoOfACallersGuessCarriesNoPseudonym(t *testing.T) {
 	f, reg, env := apiEnv(t)
 	kenv, _ := keyed(t, env)
-	f.Raw("POST", "/api/v2/tailnet/T1234CNTRL/acl/validate", 200,
-		`{"message":"test(s) failed","data":[{"user":"amy@example.com","errors":["address \"203.0.113.9:22\": want: Accept, got: Drop for amy@example.com"],"warnings":["amy@example.com has no rule"]}]}`,
-		map[string]string{"Content-Type": "application/json"})
+	f.ServeValidate(apitest.TestsFailed(apitest.Entry{User: "amy@example.com",
+		Errors:   []string{`address "203.0.113.9:22": want: Accept, got: Drop for amy@example.com`},
+		Warnings: []string{"amy@example.com has no rule"}}))
 	s := mustCall(t, reg, kenv, "acl_test", `{"src":"amy@example.com","accept":["203.0.113.9:22"]}`, nil)
 	absent(t, s, "amy@", "[p:")
 	if !strings.Contains(s, "a…@example.com") {

@@ -1,0 +1,81 @@
+{
+  "observedOn": "2026-10-20",
+  "probe": "A-10",
+  "title": "sshTests in policy mode",
+  "sends": "Policy mode: a synthetic document with an `ssh` rule and a failing and a passing `sshTests` entry; if refused, the live text plus a test built from its first `ssh` rule (printed as booleans only)",
+  "expected": "`sshTests` run; the failure has the SSH form",
+  "branch": "SSH tests in 0.6.0, or out",
+  "observations": [
+    {
+      "label": "a failing and a passing sshTests entry",
+      "expect": "the failure has the SSH form",
+      "request": "POST validate, application/hujson, 281 bytes",
+      "result": {
+        "status": 200,
+        "body": "json",
+        "paths": [
+          {
+            "path": "$",
+            "type": "object"
+          },
+          {
+            "path": "data",
+            "type": "array"
+          },
+          {
+            "path": "data[]",
+            "type": "object"
+          },
+          {
+            "path": "data[].errors",
+            "type": "array"
+          },
+          {
+            "path": "data[].errors[]",
+            "type": "string"
+          },
+          {
+            "path": "data[].user",
+            "type": "string"
+          },
+          {
+            "path": "message",
+            "type": "string"
+          }
+        ],
+        "texts": [
+          "<s>:<s>",
+          "[ssh test error]: src \"<s>:<s>\" at \"<n>.<n>.<n>.<n>\", dst \"<s>:<s>\" at \"<n>.<n>.<n>.<n>\", ssh user \"<s>\": want: \"accept\" got: \"deny\"",
+          "test(s) failed"
+        ]
+      }
+    },
+    {
+      "label": "the passing sshTests entry alone",
+      "expect": "passes",
+      "request": "POST validate, application/hujson, 229 bytes",
+      "result": {
+        "status": 200,
+        "body": "json",
+        "paths": [
+          {
+            "path": "$",
+            "type": "object"
+          }
+        ]
+      }
+    }
+  ],
+  "checks": [
+    {
+      "name": "sshTests run: the failure has the SSH form",
+      "want": true,
+      "got": true
+    },
+    {
+      "name": "the passing entry alone passes",
+      "want": true,
+      "got": true
+    }
+  ]
+}

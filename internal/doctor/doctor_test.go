@@ -407,24 +407,26 @@ func TestExpiredKeyFails(t *testing.T) {
 // The acl_test canary cannot pass under any policy: a pass means the validate
 // response is misread, which doctor --probe must report as a failure.
 func TestACLTestCanary(t *testing.T) {
+	canaryFailure := apitest.Entry{User: "tag:tailkeeper-canary", Errors: []string{"want: Drop, got: Accept"}}
 	for _, c := range []struct {
-		name   string
-		status int
-		body   string
-		want   Status
+		name  string
+		shape apitest.Shape
+		want  Status
 	}{
-		{"read as failed", 200, `{"message":"test(s) failed","data":[{"user":"tag:tailkeeper-canary","errors":["want: Drop, got: Accept"]}]}`, OK},
-		{"misread as passed", 200, ``, Fail},
-		{"refused as invalid", 400, `{"message":"tag not found"}`, Warn},
-		{"failures in a 400", 400, `{"message":"test(s) failed","data":[{"user":"tag:tailkeeper-canary","errors":["want: Drop, got: Accept"]}]}`, OK},
-		{"warnings only", 200, `{"message":"warning(s) found","data":[{"user":"tag:tailkeeper-canary","warnings":["tag:tailkeeper-canary is not defined"]}]}`, Warn},
-		{"an unrecognised pass", 200, `{"errors":["tag not found"]}`, Warn},
-		{"scope missing", 403, `{"message":"forbidden"}`, Warn},
+		{"read as failed", apitest.TestsFailed(canaryFailure), OK},
+		{"misread as passed", apitest.TestsPass(), Fail},
+		{"refused as invalid", apitest.Rejected400("tag not found"), Warn},
+		{"failures in a 400", apitest.TestsFailedIn400(canaryFailure), OK},
+		{"warnings only", apitest.TestsWarned(apitest.Entry{User: "tag:tailkeeper-canary", Warnings: []string{"tag:tailkeeper-canary is not defined"}}), Warn},
+		{"an unrecognised pass", apitest.ErrorsListAt200("tag not found"), Warn},
+		{"refused with a bare message at 200, as the live API refuses a document", apitest.PolicyTagNotFound("tag:tailkeeper-canary"), Warn},
+		{"a source the policy does not define, as the live API answers it", apitest.TestUnevaluable("tag:tailkeeper-canary"), OK},
+		{"scope missing", apitest.Forbidden403(), Warn},
 	} {
 		f, a := newApp(t, allReadScopes(t))
 		f.JSON("GET", keyPath, 200, `{"id":"test-client-id","keyType":"client"}`)
 		f.Raw("GET", "/api/v2/tailnet/T1234CNTRL/acl", 200, "{\"acls\": []}\n", nil)
-		f.Raw("POST", "/api/v2/tailnet/T1234CNTRL/acl/validate", c.status, c.body, nil)
+		f.ServeValidate(c.shape)
 		r := Run(context.Background(), Input{App: a, Now: now, Probe: true})
 		if got := status(r, "probe acl_test"); len(got) != 1 || got[0] != c.want {
 			t.Errorf("%s: probe acl_test = %v, want %s", c.name, got, c.want)

@@ -1,0 +1,99 @@
+{
+  "observedOn": "2026-10-20",
+  "probe": "A-5",
+  "title": "Which section names the server knows",
+  "sends": "Policy mode: `{\"nodeAttr\":[]}`, `{\"attrConfig\":{}}`, `{\"extraDNSRecords\":[]}`, `{\"sshTests\":[]}`",
+  "expected": "`nodeAttr` rejected as unknown field; the other three accepted",
+  "branch": "The known-sections table",
+  "observations": [
+    {
+      "label": "nodeAttr (singular)",
+      "expect": "rejected: json: unknown field",
+      "request": "POST validate, application/hujson, 15 bytes",
+      "result": {
+        "status": 200,
+        "body": "json",
+        "paths": [
+          {
+            "path": "$",
+            "type": "object"
+          },
+          {
+            "path": "message",
+            "type": "string"
+          }
+        ],
+        "texts": [
+          "json: unknown field \"<s>\""
+        ]
+      }
+    },
+    {
+      "label": "attrConfig",
+      "expect": "accepted",
+      "request": "POST validate, application/hujson, 17 bytes",
+      "result": {
+        "status": 200,
+        "body": "json",
+        "paths": [
+          {
+            "path": "$",
+            "type": "object"
+          }
+        ]
+      }
+    },
+    {
+      "label": "extraDNSRecords",
+      "expect": "accepted",
+      "request": "POST validate, application/hujson, 22 bytes",
+      "result": {
+        "status": 200,
+        "body": "json",
+        "paths": [
+          {
+            "path": "$",
+            "type": "object"
+          }
+        ]
+      }
+    },
+    {
+      "label": "sshTests",
+      "expect": "accepted",
+      "request": "POST validate, application/hujson, 15 bytes",
+      "result": {
+        "status": 200,
+        "body": "json",
+        "paths": [
+          {
+            "path": "$",
+            "type": "object"
+          }
+        ]
+      }
+    }
+  ],
+  "checks": [
+    {
+      "name": "nodeAttr is rejected as an unknown field",
+      "want": true,
+      "got": false
+    },
+    {
+      "name": "attrConfig is accepted",
+      "want": true,
+      "got": true
+    },
+    {
+      "name": "extraDNSRecords is accepted",
+      "want": true,
+      "got": true
+    },
+    {
+      "name": "sshTests is accepted",
+      "want": true,
+      "got": true
+    }
+  ]
+}

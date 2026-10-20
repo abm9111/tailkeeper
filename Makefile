@@ -9,7 +9,7 @@ ACTIONLINT  := github.com/rhysd/actionlint/cmd/actionlint@v1.7.12
 GORELEASER  := github.com/goreleaser/goreleaser/v2@v2.18.2
 BINDIR      ?= $(HOME)/.local/bin
 
-.PHONY: build install test cover cover-pkg bench fuzz mutate live vet fmt-check lint lint-extra actionlint vuln docs docs-check deps deps-check release-notes-check release-check verify
+.PHONY: build install test cover cover-pkg bench fuzz mutate live probe-acl vet fmt-check lint lint-extra actionlint vuln docs docs-check deps deps-check release-notes-check release-check verify
 
 # Every go command a recipe runs refuses to change go.mod or go.sum, whatever GOFLAGS the
 # environment or the command line carries (a stray -mod=mod) and even if a vendor/
@@ -165,6 +165,26 @@ live:
 	@log="$$(mktemp)" || exit 1; trap 'rm -f "$$log"' EXIT; \
 	TAILKEEPER_LIVE=1 $(GO) test -count=1 -timeout 1500s -run '^TestLive' -v ./cmd/tailkeeper > "$$log" 2>&1; status=$$?; \
 	./scripts/live-check.sh "$$log" "$$status"
+
+# The live probes of the validate endpoint: about 50 POSTs to .../acl/validate, each a
+# synthetic document or one built in memory from the tailnet's own policy and sent back to
+# its own validate endpoint, which changes nothing, and up to ten reads (the policy and the
+# configuration audit log, which needs the logs:configuration:read scope), one request
+# every 2 s, through the read client and your real configuration and credential. Owner-run
+# only, like make live: the target is never run in CI (a test in cmd/tailkeeper builds the
+# tagged binary only to prove that it stops without a configuration and sends nothing), it is
+# not part of verify, and the command is never in a release, because it exists only in a
+# binary built with -tags probe, which this target builds into a temporary directory and removes. It prints statuses, key paths, error texts reduced to
+# templates, counts and booleans, never a value from the tailnet, and writes one skeleton
+# file per probe into PROBE_OUT, for you to read, scan with both secret scanners, and commit.
+# PROBE_ARGS passes more flags on, such as --only A-9 to run one probe again.
+PROBE_OUT ?= internal/api/apitest/testdata/observed
+PROBE_ARGS ?=
+
+probe-acl:
+	@dir="$$(mktemp -d)" || exit 1; trap 'rm -rf "$$dir"' EXIT INT TERM; \
+	CGO_ENABLED=0 $(GO) build -tags probe -trimpath -o "$$dir/tailkeeper-probe" ./cmd/tailkeeper || exit 1; \
+	TAILKEEPER_LIVE=1 "$$dir/tailkeeper-probe" probe-acl --out "$(PROBE_OUT)" $(PROBE_ARGS)
 
 # Strict mode, re-exec and log locking have Windows-only files: vet them too.
 # scripts/mutate.go has `//go:build ignore`, so ./... never loads it; naming the file

@@ -1,0 +1,32 @@
+{
+  "observedOn": "2026-10-20",
+  "probe": "A-12",
+  "title": "Stored tests in tests mode",
+  "sends": "Tests mode with one passing test",
+  "expected": "No other results on a healthy tailnet (not decidable unless a stored test fails)",
+  "branch": "Nothing; the `otherTests` filter ships regardless, tested on the fake",
+  "observations": [
+    {
+      "label": "one test that should pass",
+      "expect": "no results for any other source",
+      "request": "POST validate, application/json, a body built from the live policy",
+      "result": {
+        "status": 200,
+        "body": "empty"
+      }
+    }
+  ],
+  "checks": [
+    {
+      "name": "no entry names another source",
+      "want": true,
+      "got": true
+    }
+  ],
+  "facts": {
+    "the live policy has stored tests": true
+  },
+  "counts": {
+    "data entries for another source": 0
+  }
+}

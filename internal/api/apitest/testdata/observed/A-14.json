@@ -1,0 +1,127 @@
+{
+  "observedOn": "2026-10-20",
+  "probe": "A-14",
+  "title": "Does validate leak whether a login exists",
+  "sends": "Policy mode: a login that cannot exist (`nobody-<random>@example.com`) placed in turn in `groups`, `tagOwners`, an `acls` `src`, an `ssh` `src`, a test `src`, and as an object key",
+  "expected": "Every position yields either the same rejection or a pass that does not depend on the user existing",
+  "branch": "If a position distinguishes existing from absent users, the subject rule already covers it (keys and values); the guide names the positions",
+  "observations": [
+    {
+      "label": "a login that cannot exist, in groups",
+      "expect": "the same rejection, or a pass that does not depend on the user existing",
+      "request": "POST validate, application/hujson, 64 bytes",
+      "result": {
+        "status": 200,
+        "body": "json",
+        "paths": [
+          {
+            "path": "$",
+            "type": "object"
+          }
+        ]
+      }
+    },
+    {
+      "label": "a login that cannot exist, in tagOwners",
+      "expect": "the same rejection, or a pass that does not depend on the user existing",
+      "request": "POST validate, application/hujson, 65 bytes",
+      "result": {
+        "status": 200,
+        "body": "json",
+        "paths": [
+          {
+            "path": "$",
+            "type": "object"
+          }
+        ]
+      }
+    },
+    {
+      "label": "a login that cannot exist, as an acls src",
+      "expect": "the same rejection, or a pass that does not depend on the user existing",
+      "request": "POST validate, application/hujson, 112 bytes",
+      "result": {
+        "status": 200,
+        "body": "json",
+        "paths": [
+          {
+            "path": "$",
+            "type": "object"
+          }
+        ]
+      }
+    },
+    {
+      "label": "a login that cannot exist, as an ssh src",
+      "expect": "the same rejection, or a pass that does not depend on the user existing",
+      "request": "POST validate, application/hujson, 135 bytes",
+      "result": {
+        "status": 200,
+        "body": "json",
+        "paths": [
+          {
+            "path": "$",
+            "type": "object"
+          }
+        ]
+      }
+    },
+    {
+      "label": "a login that cannot exist, as a test src",
+      "expect": "the same rejection, or a pass that does not depend on the user existing",
+      "request": "POST validate, application/hujson, 104 bytes",
+      "result": {
+        "status": 200,
+        "body": "json",
+        "paths": [
+          {
+            "path": "$",
+            "type": "object"
+          }
+        ]
+      }
+    },
+    {
+      "label": "a login that cannot exist, as an object key (in hosts)",
+      "expect": "the same rejection, or a pass that does not depend on the user existing",
+      "request": "POST validate, application/hujson, 63 bytes",
+      "result": {
+        "status": 200,
+        "body": "json",
+        "paths": [
+          {
+            "path": "$",
+            "type": "object"
+          },
+          {
+            "path": "message",
+            "type": "string"
+          }
+        ],
+        "texts": [
+          "<s>[\"<s>-<s>@<s>.<s>\"]: <s> <s> <s> <s> <s> <s>, <s>, <s>, <s> <s> <s> <s>"
+        ]
+      }
+    }
+  ],
+  "checks": [
+    {
+      "name": "an accepted position exists and none carries a warning about the login",
+      "want": true,
+      "got": true
+    },
+    {
+      "name": "acceptance does not vary across the six positions",
+      "want": true,
+      "got": false
+    },
+    {
+      "name": "every rejection is the same rejection",
+      "want": true,
+      "got": false
+    }
+  ],
+  "counts": {
+    "distinct answers across the six positions": 2
+  }
+}
