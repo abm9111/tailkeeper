@@ -3,7 +3,10 @@ package workflows
 import (
 	"errors"
 	"fmt"
+	"go/ast"
 	"go/build"
+	"go/parser"
+	"go/token"
 	"io/fs"
 	"os"
 	"os/exec"
@@ -269,8 +272,9 @@ func TestWindowsSkipCheckJudgesALog(t *testing.T) {
 		"- `TestTwo` (`pkg/b`): no strict mode.\n" +
 		"<!-- windows-skipped:end -->\n\n<!-- windows-excluded:begin -->\n- `TestThree` (`pkg/c`): not compiled.\n<!-- windows-excluded:end -->\n"
 	const pass = "=== RUN   TestPassing\n--- PASS: TestPassing (0.00s)\n"
-	const one = "=== RUN   TestOne\n    a_test.go:9: a shell script\n--- SKIP: TestOne (0.00s)\n"
-	const two = "=== RUN   TestTwo\n--- SKIP: TestTwo (0.00s)\n"
+	// The log names a skip's package only on the "ok" line that ends the package's output.
+	const one = "=== RUN   TestOne\n    a_test.go:9: a shell script\n--- SKIP: TestOne (0.00s)\nok  \tgithub.com/example/mod/pkg/a\t0.1s\n"
+	const two = "=== RUN   TestTwo\n--- SKIP: TestTwo (0.00s)\nok  \tgithub.com/example/mod/pkg/b\t0.1s\n"
 	docPath := write("doc.md", doc)
 
 	for _, c := range []struct {
@@ -282,10 +286,10 @@ func TestWindowsSkipCheckJudgesALog(t *testing.T) {
 	}{
 		{"exactly the listed tests", pass + one + two + "ok  \tpkg/a\t0.1s\n", docPath, 0, "2 tests skipped, exactly the 2"},
 		{"the same, with CRLF line ends as on Windows", strings.ReplaceAll(pass+one+two, "\n", "\r\n"), docPath, 0, "2 tests skipped, exactly the 2"},
-		{"a skip line with no duration and a CR, as a stripped CR leaves \"TestOne\\r\"", strings.ReplaceAll("--- PASS: TestPassing (0.00s)\n--- SKIP: TestOne\n--- SKIP: TestTwo\n", "\n", "\r\n"), docPath, 0, "2 tests skipped, exactly the 2"},
+		{"a skip line with no duration and a CR, as a stripped CR leaves \"TestOne\\r\"", strings.ReplaceAll("--- PASS: TestPassing (0.00s)\n--- SKIP: TestOne\nok  \tpkg/a\t0.1s\n--- SKIP: TestTwo\nok  \tpkg/b\t0.1s\n", "\n", "\r\n"), docPath, 0, "2 tests skipped, exactly the 2"},
 		{"a document with CRLF line ends, whose markers are only found without the CR", pass + one + two, write("crlf.md", strings.ReplaceAll(doc, "\n", "\r\n")), 0, "2 tests skipped, exactly the 2"},
-		{"a subtest skip alone is a skip, not the test", pass + one + two + "    --- SKIP: TestTwo/sub (0.00s)\n", docPath, 1, "TestTwo/sub skipped"},
-		{"a test skipped that is not listed", pass + one + two + "--- SKIP: TestNew (0.00s)\n", docPath, 1, "TestNew skipped and"},
+		{"a subtest skip alone is a skip, not the test", pass + one + two + "    --- SKIP: TestTwo/sub (0.00s)\nok  \tpkg/b\t0.1s\n", docPath, 1, "TestTwo/sub skipped"},
+		{"a test skipped that is not listed", pass + one + two + "--- SKIP: TestNew (0.00s)\nok  \tpkg/c\t0.1s\n", docPath, 1, "TestNew skipped and"},
 		{"a listed test did not skip", pass + one, docPath, 1, "TestTwo, which did not skip"},
 		{"a listed test passed", pass + one + "--- PASS: TestTwo (0.00s)\n", docPath, 1, "TestTwo, which did not skip"},
 		{"nothing skipped, so the whole list is wrong", pass, docPath, 1, "TestOne, which did not skip"},
@@ -323,10 +327,24 @@ func TestWindowsSkipCheckJudgesALog(t *testing.T) {
 		names = append(names, name)
 	}
 	sort.Strings(names)
+	// Each package's skips, then the "ok" line that ends the package.
+	listed := windowsList(t, string(real), "windows-skipped")
+	byPkg := map[string][]string{}
+	for _, name := range names {
+		byPkg[listed[name]] = append(byPkg[listed[name]], name)
+	}
+	pkgs := make([]string, 0, len(byPkg))
+	for pkg := range byPkg {
+		pkgs = append(pkgs, pkg)
+	}
+	sort.Strings(pkgs)
 	var log strings.Builder
 	log.WriteString(pass)
-	for _, name := range names {
-		log.WriteString("--- SKIP: " + name + " (0.00s)\n")
+	for _, pkg := range pkgs {
+		for _, name := range byPkg[pkg] {
+			log.WriteString("--- SKIP: " + name + " (0.00s)\n")
+		}
+		log.WriteString("ok  \tgithub.com/abm9111/tailkeeper/" + pkg + "\t0.1s\n")
 	}
 	realDoc, err := filepath.Abs(windowsDoc)
 	if err != nil {
@@ -335,7 +353,7 @@ func TestWindowsSkipCheckJudgesALog(t *testing.T) {
 	if code, out := runSkipCheck(t, script, write("real.txt", log.String()), realDoc); code != 0 {
 		t.Errorf("the real list, all skipped: exit %d:\n%s", code, out)
 	}
-	if code, out := runSkipCheck(t, script, write("real-extra.txt", log.String()+"--- SKIP: TestUnlistedExtra (0.00s)\n"), realDoc); code != 1 || !strings.Contains(out, "TestUnlistedExtra skipped") {
+	if code, out := runSkipCheck(t, script, write("real-extra.txt", log.String()+"--- SKIP: TestUnlistedExtra (0.00s)\nok  \tgithub.com/abm9111/tailkeeper/internal/app\t0.1s\n"), realDoc); code != 1 || !strings.Contains(out, "TestUnlistedExtra skipped") {
 		t.Errorf("the real list plus an extra skip: exit %d:\n%s", code, out)
 	}
 	dropped := strings.Replace(log.String(), "--- SKIP: "+names[0]+" (0.00s)\n", "", 1)
@@ -439,4 +457,339 @@ func contains(list []string, s string) bool {
 		}
 	}
 	return false
+}
+
+// skipFacts is what one function of a _test.go file does about skipping, found without
+// running it: whether it skips on Windows (a t.Skip, t.Skipf or t.SkipNow under an
+// "if runtime.GOOS == \"windows\"" or one of the named predicates below) and whether it
+// skips at all, each directly or through a helper of the same package that it calls.
+type skipFacts struct {
+	windows, any bool
+	callees      []string
+}
+
+// windowsPredicates are conditions other than runtime.GOOS that are true only on
+// Windows in this tree: audit.RotateSupported() is false only there. A skip under
+// "!audit.RotateSupported()" is a Windows skip.
+var windowsPredicates = []string{"RotateSupported"}
+
+// windowsSkipHelpers are helpers that skip for a reason that is a Windows one but is not
+// written as a test of the platform: controlCharDir skips when the file system refuses a
+// control character in a name, which Windows does. A renamed helper shows as listed
+// tests that no longer skip on Windows.
+var windowsSkipHelpers = []string{"controlCharDir"}
+
+// isWindowsCondition reports whether an if condition names Windows: runtime.GOOS ==
+// "windows" anywhere in it, or a call of one of windowsPredicates.
+func isWindowsCondition(cond ast.Expr) bool {
+	found := false
+	ast.Inspect(cond, func(n ast.Node) bool {
+		switch n := n.(type) {
+		case *ast.BinaryExpr:
+			if n.Op != token.EQL {
+				return true
+			}
+			for _, pair := range [][2]ast.Expr{{n.X, n.Y}, {n.Y, n.X}} {
+				sel, isSel := pair[0].(*ast.SelectorExpr)
+				lit, isLit := pair[1].(*ast.BasicLit)
+				if !isSel || !isLit {
+					continue
+				}
+				if pkg, isID := sel.X.(*ast.Ident); isID && pkg.Name == "runtime" && sel.Sel.Name == "GOOS" && lit.Value == `"windows"` {
+					found = true
+				}
+			}
+		case *ast.CallExpr:
+			if sel, isSel := n.Fun.(*ast.SelectorExpr); isSel {
+				for _, p := range windowsPredicates {
+					if sel.Sel.Name == p {
+						found = true
+					}
+				}
+			}
+		}
+		return true
+	})
+	return found
+}
+
+// isSkipCall reports whether n is a call of a method named Skip, Skipf or SkipNow.
+func isSkipCall(n ast.Node) bool {
+	call, ok := n.(*ast.CallExpr)
+	if !ok {
+		return false
+	}
+	sel, ok := call.Fun.(*ast.SelectorExpr)
+	return ok && (sel.Sel.Name == "Skip" || sel.Sel.Name == "Skipf" || sel.Sel.Name == "SkipNow")
+}
+
+// scanSkips reads one function body. A function literal is not entered: a skip inside a
+// t.Run closure skips the subtest, which the Windows job reports as "Test/sub", not as the
+// test, so it does not make the test a skipped one.
+func scanSkips(body *ast.BlockStmt) skipFacts {
+	var f skipFacts
+	ast.Inspect(body, func(n ast.Node) bool {
+		switch n := n.(type) {
+		case *ast.FuncLit:
+			return false
+		case *ast.IfStmt:
+			if isWindowsCondition(n.Cond) {
+				ast.Inspect(n.Body, func(m ast.Node) bool {
+					if _, lit := m.(*ast.FuncLit); lit {
+						return false
+					}
+					if isSkipCall(m) {
+						f.windows = true
+					}
+					return true
+				})
+			}
+		case *ast.CallExpr:
+			if isSkipCall(n) {
+				f.any = true
+			}
+			if id, ok := n.Fun.(*ast.Ident); ok {
+				f.callees = append(f.callees, id.Name)
+			}
+		}
+		return true
+	})
+	return f
+}
+
+// skippingTests parses every _test.go file under root's cmd and internal (whatever its
+// build constraints) and returns, keyed "package.Test" with the package slash-separated
+// from root, the tests that skip on Windows and the tests that skip at all, each directly
+// or through a helper function of the same directory (any depth). The forms that occur in
+// the tree are: an "if runtime.GOOS == \"windows\" { t.Skip(...) }" in the test or in a
+// helper (stubBinary, newFakeCLI, fakeCLI), "if !audit.RotateSupported() { t.Skip(...) }",
+// the helper controlCharDir, and the unconditional-on-Windows skips for a missing
+// environment variable (liveOnly, the OpenAPI comparison). A skip written some other way
+// is not found; the Windows job then reports it and the list must name it.
+func skippingTests(t *testing.T, root string) (onWindows, anywhere map[string]bool) {
+	t.Helper()
+	onWindows, anywhere = map[string]bool{}, map[string]bool{}
+	fset := token.NewFileSet()
+	for _, top := range []string{"cmd", "internal"} {
+		err := filepath.WalkDir(filepath.Join(root, top), func(dir string, d fs.DirEntry, err error) error {
+			if err != nil || !d.IsDir() {
+				return err
+			}
+			entries, err := os.ReadDir(dir)
+			if err != nil {
+				return err
+			}
+			facts := map[string]*skipFacts{}
+			for _, e := range entries {
+				if e.IsDir() || !strings.HasSuffix(e.Name(), "_test.go") {
+					continue
+				}
+				file, err := parser.ParseFile(fset, filepath.Join(dir, e.Name()), nil, parser.SkipObjectResolution)
+				if err != nil {
+					return err
+				}
+				for _, decl := range file.Decls {
+					fn, ok := decl.(*ast.FuncDecl)
+					if !ok || fn.Recv != nil || fn.Body == nil {
+						continue
+					}
+					f := scanSkips(fn.Body)
+					facts[fn.Name.Name] = &f
+				}
+			}
+			if len(facts) == 0 {
+				return nil
+			}
+			for _, name := range windowsSkipHelpers {
+				if f, ok := facts[name]; ok && f.any {
+					f.windows = true
+				}
+			}
+			for changed := true; changed; {
+				changed = false
+				for _, f := range facts {
+					for _, c := range f.callees {
+						if g, ok := facts[c]; ok {
+							if g.windows && !f.windows {
+								f.windows, changed = true, true
+							}
+							if g.any && !f.any {
+								f.any, changed = true, true
+							}
+						}
+					}
+				}
+			}
+			rel, err := filepath.Rel(root, dir)
+			if err != nil {
+				return err
+			}
+			for name, f := range facts {
+				if !strings.HasPrefix(name, "Test") && !strings.HasPrefix(name, "Fuzz") {
+					continue
+				}
+				key := filepath.ToSlash(rel) + "." + name
+				if f.windows {
+					onWindows[key] = true
+				}
+				if f.any {
+					anywhere[key] = true
+				}
+			}
+			return nil
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+	}
+	return onWindows, anywhere
+}
+
+// windowsReasons maps each listed test's name to the reason on its line of the document.
+func windowsReasons(doc string) map[string]string {
+	out := map[string]string{}
+	for _, line := range strings.Split(doc, "\n") {
+		if m := listLine.FindStringSubmatch(strings.TrimRight(line, "\r")); m != nil {
+			out[m[1]] = m[3]
+		}
+	}
+	return out
+}
+
+// skipListProblems compares docs/windows.md's list of skipped tests with the tests found
+// to skip. A line whose reason says the test is "skipped on every platform" is not a
+// Windows skip: it must exist and skip somewhere. Every other line must be a test that
+// skips on Windows, and every test that skips on Windows must have its line.
+func skipListProblems(skipped, reasons map[string]string, onWindows, anywhere map[string]bool) []string {
+	var out []string
+	add := func(format string, args ...any) { out = append(out, fmt.Sprintf(format, args...)) }
+	listed := map[string]bool{}
+	for name, pkg := range skipped {
+		key := pkg + "." + name
+		if strings.Contains(reasons[name], "skipped on every platform") {
+			if !anywhere[key] {
+				add("docs/windows.md lists %s (%s) as skipped on every platform, but no skip call was found in it", name, pkg)
+			}
+			continue
+		}
+		listed[key] = true
+		if !onWindows[key] {
+			add("docs/windows.md lists %s (%s) as skipped on Windows, but it has no skip under a test for Windows", name, pkg)
+		}
+	}
+	for key := range onWindows {
+		if !listed[key] {
+			add("%s skips on Windows and docs/windows.md does not list it", key)
+		}
+	}
+	sort.Strings(out)
+	return out
+}
+
+// The Windows job compares the tests that report SKIP with the list, and fails on a
+// difference; the Linux gate could not see that, and a skipping test added without its
+// line failed only on the first Windows run. This reads the same fact from the source:
+// every test whose body (or a helper it calls) skips under a test of the platform is on
+// the list, and every listed test, but those the list says skip on every platform, is one.
+func TestWindowsDocListsEveryTestThatSkipsThere(t *testing.T) {
+	data, err := os.ReadFile(windowsDoc)
+	if err != nil {
+		t.Fatal(err)
+	}
+	doc := string(data)
+	skipped := windowsList(t, doc, "windows-skipped")
+	onWindows, anywhere := skippingTests(t, "../..")
+	if len(onWindows) < 50 || len(anywhere) < len(onWindows) {
+		t.Fatalf("found %d tests that skip on Windows and %d that skip at all: the walk found too little to judge", len(onWindows), len(anywhere))
+	}
+	for _, problem := range skipListProblems(skipped, windowsReasons(doc), onWindows, anywhere) {
+		t.Error(problem)
+	}
+}
+
+// The reader is held to the forms it claims: a skip in the test, in a helper, behind a
+// named predicate, in a closure (which skips only a subtest and so does not count), and a
+// skip that is not for Windows.
+func TestTheSkipReaderSeesEachWayATestSkipsOnWindows(t *testing.T) {
+	root := t.TempDir()
+	dir := filepath.Join(root, "internal", "x")
+	if err := os.MkdirAll(dir, 0o750); err != nil || os.Mkdir(filepath.Join(root, "cmd"), 0o750) != nil {
+		t.Fatal(err)
+	}
+	src := `package x
+
+import ("runtime"; "testing")
+
+func helper(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("shell script")
+	}
+}
+func outer(t *testing.T) { helper(t) }
+func controlCharDir(t *testing.T) { t.Skip("refused") }
+
+func TestDirect(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skipf("direct")
+	}
+}
+func TestViaHelper(t *testing.T) { outer(t) }
+func TestViaNamedHelper(t *testing.T) { controlCharDir(t) }
+func TestNamedPredicate(t *testing.T) {
+	if !audit.RotateSupported() {
+		t.SkipNow()
+	}
+}
+func TestOnlyInASubtest(t *testing.T) {
+	t.Run("a", func(t *testing.T) {
+		if runtime.GOOS == "windows" {
+			t.Skip("subtest")
+		}
+	})
+}
+func TestNotWindows(t *testing.T) {
+	if runtime.GOOS != "windows" {
+		t.Skip("not here")
+	}
+	if os.Getenv("X") == "" {
+		t.Skip("env")
+	}
+}
+func TestNeverSkips(t *testing.T) {}
+`
+	if err := os.WriteFile(filepath.Join(dir, "x_test.go"), []byte(src), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	onWindows, anywhere := skippingTests(t, root)
+	for _, name := range []string{"TestDirect", "TestViaHelper", "TestViaNamedHelper", "TestNamedPredicate"} {
+		if !onWindows["internal/x."+name] {
+			t.Errorf("%s skips on Windows and was not found: %v", name, onWindows)
+		}
+	}
+	for _, name := range []string{"TestOnlyInASubtest", "TestNotWindows", "TestNeverSkips"} {
+		if onWindows["internal/x."+name] {
+			t.Errorf("%s does not skip on Windows and was found: %v", name, onWindows)
+		}
+	}
+	if !anywhere["internal/x.TestNotWindows"] || anywhere["internal/x.TestNeverSkips"] {
+		t.Errorf("the tests that skip at all are wrong: %v", anywhere)
+	}
+	// And the comparison: a list that misses TestDirect, lists TestNeverSkips as a Windows
+	// skip, and marks TestNeverSkips as skipping everywhere, is refused each way.
+	problems := strings.Join(skipListProblems(
+		map[string]string{"TestNeverSkips": "internal/x", "TestViaHelper": "internal/x"},
+		map[string]string{"TestNeverSkips": "x", "TestViaHelper": "x"},
+		onWindows, anywhere), "\n")
+	for _, want := range []string{"internal/x.TestDirect skips on Windows and docs/windows.md does not list it", "lists TestNeverSkips (internal/x) as skipped on Windows"} {
+		if !strings.Contains(problems, want) {
+			t.Errorf("problems lack %q:\n%s", want, problems)
+		}
+	}
+	every := strings.Join(skipListProblems(
+		map[string]string{"TestNeverSkips": "internal/x"},
+		map[string]string{"TestNeverSkips": "reads a tailnet; skipped on every platform unless asked"},
+		onWindows, anywhere), "\n")
+	if !strings.Contains(every, "lists TestNeverSkips (internal/x) as skipped on every platform, but no skip call was found") {
+		t.Errorf("a test that never skips, listed as skipping everywhere, is not refused:\n%s", every)
+	}
 }

@@ -76,5 +76,7 @@ release:
   footer: |
     Verify a download before you run it: see "Verify a release" in README.md.
 
-changelog:
-  disable: true
+# No changelog: block, and never `disable: true`. The release job passes the notes it cut
+# from CHANGELOG.md with --release-notes, and GoReleaser reads that file in its changelog
+# stage: disabling the stage skips the file, and v0.5.0 was published with only the footer
+# above. GoReleaser leaves the stage out of a snapshot by itself.

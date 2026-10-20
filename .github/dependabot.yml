@@ -26,3 +26,10 @@ updates:
       default-days: 7
     commit-message:
       prefix: ci
+    # init, analyze and upload-sarif of github/codeql-action are versions of one release
+    # and move together: a bump of init alone failed the analyze job. One group, one pull
+    # request.
+    groups:
+      codeql-action:
+        patterns:
+          - "github/codeql-action/*"

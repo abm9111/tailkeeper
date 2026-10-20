@@ -38,9 +38,10 @@ func TestToolVersionsAgreeAcrossFiles(t *testing.T) {
 			}
 		}
 	}
-	// Makefile 1, README 1, release.yml: release (two steps) and reproduce.
+	// Makefile 1, README 1, release.yml: the release job's Release (draft) step, the
+	// snapshot job's Snapshot step and the reproduce job's rebuild.
 	if len(versions) != 5 {
-		t.Errorf("found GoReleaser versions in %d places (%v), want 5: the Makefile, the README, and three release.yml steps", len(versions), versions)
+		t.Errorf("found GoReleaser versions in %d places (%v), want 5: the Makefile, the README, and three release.yml steps (Release (draft), Snapshot and the rebuild)", len(versions), versions)
 	}
 	var first string
 	for where, v := range versions {
@@ -62,10 +63,13 @@ func TestToolVersionsAgreeAcrossFiles(t *testing.T) {
 		}
 	}
 	m := regexp.MustCompile(`signed with (\d+\.\d+\.\d+)`).FindStringSubmatch(readme)
-	if len(cosign) != 1 || m == nil {
-		t.Fatalf("found %d cosign-release values in release.yml and the README's \"signed with\": %v %v", len(cosign), cosign, m)
+	// Two installs: the release job signs with cosign and the publish job verifies with it.
+	if len(cosign) != 2 || m == nil {
+		t.Fatalf("found %d cosign-release values in release.yml (want 2: release and publish) and the README's \"signed with\": %v %v", len(cosign), cosign, m)
 	}
-	if cosign[0] != "v"+m[1] {
-		t.Errorf("release.yml installs cosign %s but the README says the release is signed with %s", cosign[0], m[1])
+	for _, v := range cosign {
+		if v != "v"+m[1] {
+			t.Errorf("release.yml installs cosign %s but the README says the release is signed with %s", v, m[1])
+		}
 	}
 }

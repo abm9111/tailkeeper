@@ -9,7 +9,7 @@ ACTIONLINT  := github.com/rhysd/actionlint/cmd/actionlint@v1.7.12
 GORELEASER  := github.com/goreleaser/goreleaser/v2@v2.18.2
 BINDIR      ?= $(HOME)/.local/bin
 
-.PHONY: build install test cover bench fuzz live vet fmt-check lint lint-extra actionlint vuln docs docs-check deps deps-check release-check verify
+.PHONY: build install test cover bench fuzz live vet fmt-check lint lint-extra actionlint vuln docs docs-check deps deps-check release-notes-check release-check verify
 
 # Every go command a recipe runs refuses to change go.mod or go.sum, whatever GOFLAGS the
 # environment or the command line carries (a stray -mod=mod) and even if a vendor/
@@ -156,11 +156,13 @@ lint-extra:
 #
 # actionlint checks the shell in run: steps by calling shellcheck, and without shellcheck
 # on PATH it checks none and still exits 0 (a planted SC2086 gave 1 with it, 0 without).
-# So the target fails closed without it. The shellcheck CI installs is the authoritative
-# one; versions differ (an older one reports SC2015 where a newer does not), so a clean
-# local run is not a clean CI run.
+# So the target fails closed without it. CI uses the shellcheck on its runner image
+# (ubuntu-24.04); no workflow step installs or pins one. Versions differ (an older one
+# reports SC2015 where a newer does not), so a clean local run is not always a clean CI
+# run. The target prints the version it judged with, so the log of either run says which.
 actionlint:
 	@command -v shellcheck >/dev/null || { echo "actionlint needs shellcheck on PATH: without it the shell in the workflow steps and scripts/ is not checked"; exit 1; }
+	shellcheck --version
 	$(GO) run $(ACTIONLINT)
 	shellcheck scripts/*.sh
 
@@ -201,11 +203,30 @@ deps-check:
 	diff -u THIRD_PARTY_LICENSES "$$lic" || { echo "deps-check: THIRD_PARTY_LICENSES is stale; review the change, then run make deps"; rc=1; }; \
 	exit $$rc
 
-# Validates .goreleaser.yaml and builds every archive into dist/ without
-# publishing, signing or writing SBOMs (cosign and syft run only in the release
-# workflow). Not in verify: it builds five targets and downloads GoReleaser.
+# What a release does with the notes it is given, before any tag exists. The release job
+# passes the notes it cut from CHANGELOG.md with --release-notes, and GoReleaser reads
+# that file in its changelog stage; v0.5.0 was published with only the footer because the
+# stage was disabled. A snapshot leaves the stage out, so this is a run of the release
+# path with nothing published: no --snapshot, no signing, no SBOM, validation off (the
+# tree is not at a tag) and publishing skipped. Its debug log goes to
+# scripts/release-notes-check.sh, which fails unless the stage ran and read the fixture.
+# GoReleaser takes the nearest tag as the version, so what this builds is not for use;
+# the snapshot that follows in release-check starts by cleaning dist/.
+RELEASE_NOTES_FIXTURE := scripts/testdata/release-notes.md
+
+release-notes-check:
+	@log="$$(mktemp)" || exit 1; trap 'rm -f "$$log"' EXIT; \
+	$(GO) run $(GORELEASER) --verbose release --clean --skip=publish,sign,sbom,validate,announce --release-notes $(RELEASE_NOTES_FIXTURE) > "$$log" 2>&1 \
+		|| { tail -n 40 "$$log"; echo "release-notes-check: GoReleaser failed"; exit 1; }; \
+	./scripts/release-notes-check.sh $(RELEASE_NOTES_FIXTURE) "$$log"
+
+# Validates .goreleaser.yaml, runs the release-notes check above, and builds every
+# archive into dist/ as a snapshot without publishing, signing or writing SBOMs (cosign
+# and syft run only in the release workflow). Not in verify: it builds five targets
+# twice and downloads GoReleaser.
 release-check:
 	$(GO) run $(GORELEASER) check
+	$(MAKE) release-notes-check
 	$(GO) run $(GORELEASER) release --snapshot --clean --skip=sign,sbom,publish
 
 verify: fmt-check vet lint lint-extra test docs-check deps-check vuln

@@ -4,10 +4,17 @@ What each release of tailkeeper changed. Versions follow semantic versioning; un
 
 ## 0.6.0 — unreleased
 
+### Fixed
+
+- The release notes now come from this file. `.goreleaser.yaml` disabled GoReleaser's changelog stage, which is the stage that reads the notes the release job cuts from this file, so 0.5.0 was published with only its footer. The stage stays on. A test fails if it is disabled while the release workflow passes the notes, and `make release-check` and the manual snapshot run now run the release path with a notes fixture and fail unless GoReleaser read it.
+- The release workflow verifies the cosign signature of `checksums.txt`, as the README tells a reader to, before it publishes a draft release.
+
 ### Changed
 
 - The pin of Tailscale's OpenAPI document (`internal/api/openapi`) is refreshed to the document of 18 Oct 2026. It differs from the pin of 12 Oct by one response field, `adminConsoleSessionTimeoutMinutes` on the tailnet settings, which `settings_get` does not return. The pin now also records the parameters and request content types of every read operation and of the validate call, and the error fields of the validate call, so a change to the `details` parameter of the policy file or to the content types of the validate call fails the weekly drift check.
 - The weekly drift check retries its download of the document three times.
+- The manual snapshot run of the release workflow builds in a job of its own that holds read access only.
+- `docs/design.md` states the contract of 0.6.0, the read side of the ACL engine: the tools, the rules of the engine, the error and exit codes, the tests, and the live probes whose results decide what is still open.
 
 ## 0.5.0 — 2026-10-16
 

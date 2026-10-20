@@ -35,7 +35,8 @@ func permissionsOf(t *testing.T, where string, v any) map[string]string {
 
 // release.yml is the one workflow that writes: its permissions are pinned job by job.
 // The workflow reads only; verify and reproduce inherit that; release creates the draft,
-// signs keylessly and attests; publish only publishes the draft. A job that gained write
+// signs keylessly and attests; snapshot, the manual run, reads and nothing else; publish
+// only publishes the draft. A job that gained write
 // or id-token access, or a workflow that did at the top (where every job, and any job
 // added later, inherits it), would keep every other test green.
 func TestReleaseWorkflowPinsEveryPermission(t *testing.T) {
@@ -46,6 +47,7 @@ func TestReleaseWorkflowPinsEveryPermission(t *testing.T) {
 	want := map[string]map[string]string{
 		"verify":    nil,
 		"release":   {"contents": "write", "id-token": "write", "attestations": "write"},
+		"snapshot":  {"contents": "read"},
 		"reproduce": nil,
 		"publish":   {"contents": "write"},
 	}
