@@ -1,5 +1,5 @@
 # Generated from Tailscale's OpenAPI document by TestLiveDocumentMatchesThePin (go test ./internal/api/openapi -update); do not edit by hand.
-# Document sha256 6eb59d4e6e0c45f2d791dc5597e31a1f19077a12cd78198d12b9b542b38676e0, fetched 2026-10-12.
+# Document sha256 b3532da71b7bc5f37fd030f324aaaa1e59df72ac025e7d15b4e3d268ea15ac38, fetched 2026-10-18.
 GET /device-invites/{deviceInviteId}
 GET /device-invites/{deviceInviteId} 200 accepted boolean
 GET /device-invites/{deviceInviteId} 200 acceptedBy object
@@ -16,6 +16,7 @@ GET /device-invites/{deviceInviteId} 200 lastEmailSentAt string
 GET /device-invites/{deviceInviteId} 200 multiUse boolean
 GET /device-invites/{deviceInviteId} 200 sharerId integer
 GET /device-invites/{deviceInviteId} 200 tailnetId integer
+GET /device-invites/{deviceInviteId} param deviceInviteId path
 GET /device/{deviceId}
 GET /device/{deviceId} 200 addresses array
 GET /device/{deviceId} 200 addresses[] string
@@ -76,11 +77,14 @@ GET /device/{deviceId} 200 tailnetLockError string
 GET /device/{deviceId} 200 tailnetLockKey string
 GET /device/{deviceId} 200 updateAvailable boolean
 GET /device/{deviceId} 200 user string
+GET /device/{deviceId} param deviceId path
+GET /device/{deviceId} param fields query
 GET /device/{deviceId}/attributes
 GET /device/{deviceId}/attributes 200 attributes object
 GET /device/{deviceId}/attributes 200 attributes{}
 GET /device/{deviceId}/attributes 200 expiries object
 GET /device/{deviceId}/attributes 200 expiries{} string
+GET /device/{deviceId}/attributes param deviceId path
 GET /device/{deviceId}/device-invites
 GET /device/{deviceId}/device-invites 200 [] object
 GET /device/{deviceId}/device-invites 200 [].accepted boolean
@@ -98,11 +102,13 @@ GET /device/{deviceId}/device-invites 200 [].lastEmailSentAt string
 GET /device/{deviceId}/device-invites 200 [].multiUse boolean
 GET /device/{deviceId}/device-invites 200 [].sharerId integer
 GET /device/{deviceId}/device-invites 200 [].tailnetId integer
+GET /device/{deviceId}/device-invites param deviceId path
 GET /device/{deviceId}/routes
 GET /device/{deviceId}/routes 200 advertisedRoutes array
 GET /device/{deviceId}/routes 200 advertisedRoutes[] string
 GET /device/{deviceId}/routes 200 enabledRoutes array
 GET /device/{deviceId}/routes 200 enabledRoutes[] string
+GET /device/{deviceId}/routes param deviceId path
 GET /organizations/{organization}/tailnets
 GET /organizations/{organization}/tailnets 200 cursor string
 GET /organizations/{organization}/tailnets 200 tailnets array
@@ -112,6 +118,9 @@ GET /organizations/{organization}/tailnets 200 tailnets[].displayName string
 GET /organizations/{organization}/tailnets 200 tailnets[].id string
 GET /organizations/{organization}/tailnets 200 tailnets[].orgId string
 GET /organizations/{organization}/tailnets 200 totalCount integer
+GET /organizations/{organization}/tailnets param cursor query
+GET /organizations/{organization}/tailnets param limit query
+GET /organizations/{organization}/tailnets param organization path
 GET /posture/integrations/{id}
 GET /posture/integrations/{id} 200 clientId string
 GET /posture/integrations/{id} 200 clientSecret string
@@ -126,7 +135,11 @@ GET /posture/integrations/{id} 200 status.matchedCount integer
 GET /posture/integrations/{id} 200 status.possibleMatchedCount integer
 GET /posture/integrations/{id} 200 status.providerHostCount integer
 GET /posture/integrations/{id} 200 tenantId string
+GET /posture/integrations/{id} param id path
 GET /tailnet/{tailnet}/acl
+GET /tailnet/{tailnet}/acl param Accept header
+GET /tailnet/{tailnet}/acl param details query
+GET /tailnet/{tailnet}/acl param tailnet path
 GET /tailnet/{tailnet}/contacts
 GET /tailnet/{tailnet}/contacts 200 account object
 GET /tailnet/{tailnet}/contacts 200 account.email string
@@ -140,6 +153,7 @@ GET /tailnet/{tailnet}/contacts 200 support object
 GET /tailnet/{tailnet}/contacts 200 support.email string
 GET /tailnet/{tailnet}/contacts 200 support.fallbackEmail string
 GET /tailnet/{tailnet}/contacts 200 support.needsVerification boolean
+GET /tailnet/{tailnet}/contacts param tailnet path
 GET /tailnet/{tailnet}/devices
 GET /tailnet/{tailnet}/devices 200 devices array
 GET /tailnet/{tailnet}/devices 200 devices[] object
@@ -202,6 +216,9 @@ GET /tailnet/{tailnet}/devices 200 devices[].tailnetLockError string
 GET /tailnet/{tailnet}/devices 200 devices[].tailnetLockKey string
 GET /tailnet/{tailnet}/devices 200 devices[].updateAvailable boolean
 GET /tailnet/{tailnet}/devices 200 devices[].user string
+GET /tailnet/{tailnet}/devices param <field>=<value> filters query
+GET /tailnet/{tailnet}/devices param fields query
+GET /tailnet/{tailnet}/devices param tailnet path
 GET /tailnet/{tailnet}/dns/configuration
 GET /tailnet/{tailnet}/dns/configuration 200 nameservers array
 GET /tailnet/{tailnet}/dns/configuration 200 nameservers[] object
@@ -217,17 +234,22 @@ GET /tailnet/{tailnet}/dns/configuration 200 splitDNS{} array|null
 GET /tailnet/{tailnet}/dns/configuration 200 splitDNS{}[] object
 GET /tailnet/{tailnet}/dns/configuration 200 splitDNS{}[].address string
 GET /tailnet/{tailnet}/dns/configuration 200 splitDNS{}[].useWithExitNode boolean
+GET /tailnet/{tailnet}/dns/configuration param tailnet path
 GET /tailnet/{tailnet}/dns/nameservers
 GET /tailnet/{tailnet}/dns/nameservers 200 dns array
 GET /tailnet/{tailnet}/dns/nameservers 200 dns[] string
+GET /tailnet/{tailnet}/dns/nameservers param tailnet path
 GET /tailnet/{tailnet}/dns/preferences
 GET /tailnet/{tailnet}/dns/preferences 200 magicDNS boolean
+GET /tailnet/{tailnet}/dns/preferences param tailnet path
 GET /tailnet/{tailnet}/dns/searchpaths
 GET /tailnet/{tailnet}/dns/searchpaths 200 searchPaths array
 GET /tailnet/{tailnet}/dns/searchpaths 200 searchPaths[] string
+GET /tailnet/{tailnet}/dns/searchpaths param tailnet path
 GET /tailnet/{tailnet}/dns/split-dns
 GET /tailnet/{tailnet}/dns/split-dns 200 {} array|null
 GET /tailnet/{tailnet}/dns/split-dns 200 {}[] string
+GET /tailnet/{tailnet}/dns/split-dns param tailnet path
 GET /tailnet/{tailnet}/keys
 GET /tailnet/{tailnet}/keys 200 keys array
 GET /tailnet/{tailnet}/keys 200 keys[] object
@@ -259,6 +281,8 @@ GET /tailnet/{tailnet}/keys 200 keys[].tags array
 GET /tailnet/{tailnet}/keys 200 keys[].tags[] string
 GET /tailnet/{tailnet}/keys 200 keys[].updated string
 GET /tailnet/{tailnet}/keys 200 keys[].userId string
+GET /tailnet/{tailnet}/keys param all query
+GET /tailnet/{tailnet}/keys param tailnet path
 GET /tailnet/{tailnet}/keys/{keyId}
 GET /tailnet/{tailnet}/keys/{keyId} 200 audience string
 GET /tailnet/{tailnet}/keys/{keyId} 200 capabilities object
@@ -288,6 +312,8 @@ GET /tailnet/{tailnet}/keys/{keyId} 200 tags array
 GET /tailnet/{tailnet}/keys/{keyId} 200 tags[] string
 GET /tailnet/{tailnet}/keys/{keyId} 200 updated string
 GET /tailnet/{tailnet}/keys/{keyId} 200 userId string
+GET /tailnet/{tailnet}/keys/{keyId} param keyId path
+GET /tailnet/{tailnet}/keys/{keyId} param tailnet path
 GET /tailnet/{tailnet}/logging/configuration
 GET /tailnet/{tailnet}/logging/configuration 200 logs array
 GET /tailnet/{tailnet}/logging/configuration 200 logs[] object
@@ -318,6 +344,12 @@ GET /tailnet/{tailnet}/logging/configuration 200 logs[].target.type string
 GET /tailnet/{tailnet}/logging/configuration 200 logs[].type string
 GET /tailnet/{tailnet}/logging/configuration 200 tailnet string
 GET /tailnet/{tailnet}/logging/configuration 200 version string
+GET /tailnet/{tailnet}/logging/configuration param actor query
+GET /tailnet/{tailnet}/logging/configuration param end query
+GET /tailnet/{tailnet}/logging/configuration param event query
+GET /tailnet/{tailnet}/logging/configuration param start query
+GET /tailnet/{tailnet}/logging/configuration param tailnet path
+GET /tailnet/{tailnet}/logging/configuration param target query
 GET /tailnet/{tailnet}/logging/network
 GET /tailnet/{tailnet}/logging/network 200 logs array
 GET /tailnet/{tailnet}/logging/network 200 logs[] object
@@ -361,6 +393,9 @@ GET /tailnet/{tailnet}/logging/network 200 logs[].virtualTraffic[].rxPkts intege
 GET /tailnet/{tailnet}/logging/network 200 logs[].virtualTraffic[].src string
 GET /tailnet/{tailnet}/logging/network 200 logs[].virtualTraffic[].txBytes integer
 GET /tailnet/{tailnet}/logging/network 200 logs[].virtualTraffic[].txPkts integer
+GET /tailnet/{tailnet}/logging/network param end query
+GET /tailnet/{tailnet}/logging/network param start query
+GET /tailnet/{tailnet}/logging/network param tailnet path
 GET /tailnet/{tailnet}/logging/{logType}/stream
 GET /tailnet/{tailnet}/logging/{logType}/stream 200 compressionFormat string
 GET /tailnet/{tailnet}/logging/{logType}/stream 200 destinationType string
@@ -382,6 +417,8 @@ GET /tailnet/{tailnet}/logging/{logType}/stream 200 token string
 GET /tailnet/{tailnet}/logging/{logType}/stream 200 uploadPeriodMinutes integer
 GET /tailnet/{tailnet}/logging/{logType}/stream 200 url string
 GET /tailnet/{tailnet}/logging/{logType}/stream 200 user string
+GET /tailnet/{tailnet}/logging/{logType}/stream param logType path
+GET /tailnet/{tailnet}/logging/{logType}/stream param tailnet path
 GET /tailnet/{tailnet}/logging/{logType}/stream/status
 GET /tailnet/{tailnet}/logging/{logType}/stream/status 200 lastActivity string
 GET /tailnet/{tailnet}/logging/{logType}/stream/status 200 lastError string
@@ -395,6 +432,8 @@ GET /tailnet/{tailnet}/logging/{logType}/stream/status 200 rateBytesSent number
 GET /tailnet/{tailnet}/logging/{logType}/stream/status 200 rateEntriesSent number
 GET /tailnet/{tailnet}/logging/{logType}/stream/status 200 rateFailedRequests number
 GET /tailnet/{tailnet}/logging/{logType}/stream/status 200 rateTotalRequests number
+GET /tailnet/{tailnet}/logging/{logType}/stream/status param logType path
+GET /tailnet/{tailnet}/logging/{logType}/stream/status param tailnet path
 GET /tailnet/{tailnet}/oauth-apps
 GET /tailnet/{tailnet}/oauth-apps 200 oauthApps array
 GET /tailnet/{tailnet}/oauth-apps 200 oauthApps[] object
@@ -410,6 +449,7 @@ GET /tailnet/{tailnet}/oauth-apps 200 oauthApps[].redirectURIs[] string
 GET /tailnet/{tailnet}/oauth-apps 200 oauthApps[].scopes array
 GET /tailnet/{tailnet}/oauth-apps 200 oauthApps[].scopes[] string
 GET /tailnet/{tailnet}/oauth-apps 200 oauthApps[].updated string
+GET /tailnet/{tailnet}/oauth-apps param tailnet path
 GET /tailnet/{tailnet}/oauth-apps/{appId}
 GET /tailnet/{tailnet}/oauth-apps/{appId} 200 allowedNodeAttributes array
 GET /tailnet/{tailnet}/oauth-apps/{appId} 200 allowedNodeAttributes[] string
@@ -423,6 +463,8 @@ GET /tailnet/{tailnet}/oauth-apps/{appId} 200 redirectURIs[] string
 GET /tailnet/{tailnet}/oauth-apps/{appId} 200 scopes array
 GET /tailnet/{tailnet}/oauth-apps/{appId} 200 scopes[] string
 GET /tailnet/{tailnet}/oauth-apps/{appId} 200 updated string
+GET /tailnet/{tailnet}/oauth-apps/{appId} param appId path
+GET /tailnet/{tailnet}/oauth-apps/{appId} param tailnet path
 GET /tailnet/{tailnet}/posture/integrations
 GET /tailnet/{tailnet}/posture/integrations 200 integrations array
 GET /tailnet/{tailnet}/posture/integrations 200 integrations[] object
@@ -439,6 +481,7 @@ GET /tailnet/{tailnet}/posture/integrations 200 integrations[].status.matchedCou
 GET /tailnet/{tailnet}/posture/integrations 200 integrations[].status.possibleMatchedCount integer
 GET /tailnet/{tailnet}/posture/integrations 200 integrations[].status.providerHostCount integer
 GET /tailnet/{tailnet}/posture/integrations 200 integrations[].tenantId string
+GET /tailnet/{tailnet}/posture/integrations param tailnet path
 GET /tailnet/{tailnet}/services
 GET /tailnet/{tailnet}/services 200 vipServices array
 GET /tailnet/{tailnet}/services 200 vipServices[] object
@@ -451,6 +494,7 @@ GET /tailnet/{tailnet}/services 200 vipServices[].ports array
 GET /tailnet/{tailnet}/services 200 vipServices[].ports[] string
 GET /tailnet/{tailnet}/services 200 vipServices[].tags array
 GET /tailnet/{tailnet}/services 200 vipServices[].tags[] string
+GET /tailnet/{tailnet}/services param tailnet path
 GET /tailnet/{tailnet}/services/{serviceName}
 GET /tailnet/{tailnet}/services/{serviceName} 200 addrs array
 GET /tailnet/{tailnet}/services/{serviceName} 200 addrs[] string
@@ -461,18 +505,26 @@ GET /tailnet/{tailnet}/services/{serviceName} 200 ports array
 GET /tailnet/{tailnet}/services/{serviceName} 200 ports[] string
 GET /tailnet/{tailnet}/services/{serviceName} 200 tags array
 GET /tailnet/{tailnet}/services/{serviceName} 200 tags[] string
+GET /tailnet/{tailnet}/services/{serviceName} param serviceName path
+GET /tailnet/{tailnet}/services/{serviceName} param tailnet path
 GET /tailnet/{tailnet}/services/{serviceName}/device/{deviceId}/approved
 GET /tailnet/{tailnet}/services/{serviceName}/device/{deviceId}/approved 200 approved boolean
 GET /tailnet/{tailnet}/services/{serviceName}/device/{deviceId}/approved 200 autoApproved boolean
+GET /tailnet/{tailnet}/services/{serviceName}/device/{deviceId}/approved param deviceId path
+GET /tailnet/{tailnet}/services/{serviceName}/device/{deviceId}/approved param serviceName path
+GET /tailnet/{tailnet}/services/{serviceName}/device/{deviceId}/approved param tailnet path
 GET /tailnet/{tailnet}/services/{serviceName}/devices
 GET /tailnet/{tailnet}/services/{serviceName}/devices 200 hosts array
 GET /tailnet/{tailnet}/services/{serviceName}/devices 200 hosts[] object
 GET /tailnet/{tailnet}/services/{serviceName}/devices 200 hosts[].approvalLevel string
 GET /tailnet/{tailnet}/services/{serviceName}/devices 200 hosts[].configured string
 GET /tailnet/{tailnet}/services/{serviceName}/devices 200 hosts[].stableNodeID string
+GET /tailnet/{tailnet}/services/{serviceName}/devices param serviceName path
+GET /tailnet/{tailnet}/services/{serviceName}/devices param tailnet path
 GET /tailnet/{tailnet}/settings
 GET /tailnet/{tailnet}/settings 200 aclsExternalLink string
 GET /tailnet/{tailnet}/settings 200 aclsExternallyManagedOn boolean|null
+GET /tailnet/{tailnet}/settings 200 adminConsoleSessionTimeoutMinutes integer
 GET /tailnet/{tailnet}/settings 200 devicesApprovalOn boolean|null
 GET /tailnet/{tailnet}/settings 200 devicesAutoUpdatesOn boolean|null
 GET /tailnet/{tailnet}/settings 200 devicesKeyDurationDays integer
@@ -483,6 +535,7 @@ GET /tailnet/{tailnet}/settings 200 regionalRoutingOn boolean|null
 GET /tailnet/{tailnet}/settings 200 routeSelection string
 GET /tailnet/{tailnet}/settings 200 usersApprovalOn boolean|null
 GET /tailnet/{tailnet}/settings 200 usersRoleAllowedToJoinExternalTailnets string
+GET /tailnet/{tailnet}/settings param tailnet path
 GET /tailnet/{tailnet}/user-invites
 GET /tailnet/{tailnet}/user-invites 200 [] object
 GET /tailnet/{tailnet}/user-invites 200 [].email string
@@ -492,6 +545,7 @@ GET /tailnet/{tailnet}/user-invites 200 [].inviterId integer
 GET /tailnet/{tailnet}/user-invites 200 [].lastEmailSentAt string
 GET /tailnet/{tailnet}/user-invites 200 [].role string
 GET /tailnet/{tailnet}/user-invites 200 [].tailnetId integer
+GET /tailnet/{tailnet}/user-invites param tailnet path
 GET /tailnet/{tailnet}/users
 GET /tailnet/{tailnet}/users 200 users array
 GET /tailnet/{tailnet}/users 200 users[] object
@@ -507,6 +561,9 @@ GET /tailnet/{tailnet}/users 200 users[].role string
 GET /tailnet/{tailnet}/users 200 users[].status string
 GET /tailnet/{tailnet}/users 200 users[].tailnetId string
 GET /tailnet/{tailnet}/users 200 users[].type string
+GET /tailnet/{tailnet}/users param role query
+GET /tailnet/{tailnet}/users param tailnet path
+GET /tailnet/{tailnet}/users param type query
 GET /tailnet/{tailnet}/webhooks
 GET /tailnet/{tailnet}/webhooks 200 webhooks array
 GET /tailnet/{tailnet}/webhooks 200 webhooks[] object
@@ -519,6 +576,7 @@ GET /tailnet/{tailnet}/webhooks 200 webhooks[].providerType string
 GET /tailnet/{tailnet}/webhooks 200 webhooks[].secret string
 GET /tailnet/{tailnet}/webhooks 200 webhooks[].subscriptions array
 GET /tailnet/{tailnet}/webhooks 200 webhooks[].subscriptions[] string
+GET /tailnet/{tailnet}/webhooks param tailnet path
 GET /user-invites/{userInviteId}
 GET /user-invites/{userInviteId} 200 email string
 GET /user-invites/{userInviteId} 200 id string
@@ -527,6 +585,7 @@ GET /user-invites/{userInviteId} 200 inviterId integer
 GET /user-invites/{userInviteId} 200 lastEmailSentAt string
 GET /user-invites/{userInviteId} 200 role string
 GET /user-invites/{userInviteId} 200 tailnetId integer
+GET /user-invites/{userInviteId} param userInviteId path
 GET /users/{userId}
 GET /users/{userId} 200 created string
 GET /users/{userId} 200 currentlyConnected boolean
@@ -540,6 +599,7 @@ GET /users/{userId} 200 role string
 GET /users/{userId} 200 status string
 GET /users/{userId} 200 tailnetId string
 GET /users/{userId} 200 type string
+GET /users/{userId} param userId path
 GET /webhooks/{endpointId}
 GET /webhooks/{endpointId} 200 created string
 GET /webhooks/{endpointId} 200 creatorLoginName string
@@ -550,7 +610,14 @@ GET /webhooks/{endpointId} 200 providerType string
 GET /webhooks/{endpointId} 200 secret string
 GET /webhooks/{endpointId} 200 subscriptions array
 GET /webhooks/{endpointId} 200 subscriptions[] string
+GET /webhooks/{endpointId} param endpointId path
 POST /tailnet/{tailnet}/acl/validate
 POST /tailnet/{tailnet}/acl/validate 200 data array
 POST /tailnet/{tailnet}/acl/validate 200 data[] object
 POST /tailnet/{tailnet}/acl/validate 200 message string
+POST /tailnet/{tailnet}/acl/validate 400 message string
+POST /tailnet/{tailnet}/acl/validate 403 message string
+POST /tailnet/{tailnet}/acl/validate 404 message string
+POST /tailnet/{tailnet}/acl/validate param tailnet path
+POST /tailnet/{tailnet}/acl/validate req application/hujson
+POST /tailnet/{tailnet}/acl/validate req application/json

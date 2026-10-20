@@ -1,5 +1,5 @@
 # Generated from Tailscale's OpenAPI document by TestOperationsMatchTheDocument (go test ./internal/api/openapi -update); do not edit by hand.
-# Document sha256 6eb59d4e6e0c45f2d791dc5597e31a1f19077a12cd78198d12b9b542b38676e0, fetched 2026-10-12.
+# Document sha256 b3532da71b7bc5f37fd030f324aaaa1e59df72ac025e7d15b4e3d268ea15ac38, fetched 2026-10-18.
 DELETE /device-invites/{deviceInviteId}
 DELETE /device/{deviceId}
 DELETE /device/{deviceId}/attributes/{attributeKey}

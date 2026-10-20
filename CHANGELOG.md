@@ -2,6 +2,13 @@
 
 What each release of tailkeeper changed. Versions follow semantic versioning; until 1.0, a minor release may change the CLI or the MCP tool list.
 
+## 0.6.0 — unreleased
+
+### Changed
+
+- The pin of Tailscale's OpenAPI document (`internal/api/openapi`) is refreshed to the document of 18 Oct 2026. It differs from the pin of 12 Oct by one response field, `adminConsoleSessionTimeoutMinutes` on the tailnet settings, which `settings_get` does not return. The pin now also records the parameters and request content types of every read operation and of the validate call, and the error fields of the validate call, so a change to the `details` parameter of the policy file or to the content types of the validate call fails the weekly drift check.
+- The weekly drift check retries its download of the document three times.
+
 ## 0.5.0 — 2026-10-16
 
 The first public release: tailkeeper's repository is public, and releases are signed, attested binaries. The tools are the same; the fixes, and what masking now covers, are listed below.
