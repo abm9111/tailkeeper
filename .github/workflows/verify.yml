@@ -20,7 +20,10 @@ permissions:
   contents: read
 
 concurrency:
-  group: verify-${{ github.ref }}
+  # The event is part of the group: the weekly run and a push to main share the ref
+  # refs/heads/main, and in one group a run that waits behind another is replaced by the
+  # next one to arrive.
+  group: verify-${{ github.event_name }}-${{ github.ref }}
   # A newer push to a pull request supersedes its run; a run on main always finishes.
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 

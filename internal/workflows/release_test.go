@@ -1,4 +1,4 @@
-// Package workflows holds tests of the files under .github/workflows; it has no code.
+// Package workflows holds tests of the repository's workflow, release and documentation files; it has no code.
 package workflows
 
 import (
@@ -18,13 +18,18 @@ type step struct {
 	Run   string            `yaml:"run"`
 	With  map[string]any    `yaml:"with"`
 	Env   map[string]string `yaml:"env"`
+	// ContinueOnError is a bool or an expression; nil when the key is absent.
+	ContinueOnError any `yaml:"continue-on-error"`
 }
 
 type job struct {
 	If          string            `yaml:"if"`
+	Needs       any               `yaml:"needs"`
 	Env         map[string]string `yaml:"env"`
 	Permissions any               `yaml:"permissions"`
 	Steps       []step            `yaml:"steps"`
+	// ContinueOnError is a bool or an expression; nil when the key is absent.
+	ContinueOnError any `yaml:"continue-on-error"`
 }
 
 type workflow struct {
@@ -108,7 +113,7 @@ func TestReleaseWorkflowPinsTheTagAndSkipsTheCache(t *testing.T) {
 	}
 	// The Go toolchain action's cache is off wherever it is set up, in the job that gates the
 	// release as in the two that build and rebuild what is signed: a restored cache is input.
-	for _, name := range []string{"verify", "release", "reproduce"} {
+	for _, name := range []string{"verify", "release", "snapshot", "reproduce"} {
 		j, ok := jobs[name]
 		if !ok {
 			t.Fatalf("release.yml has no %s job", name)

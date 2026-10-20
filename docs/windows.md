@@ -18,7 +18,7 @@ Also different on Windows:
 
 ## Tests that do not run on Windows
 
-The suite runs on Windows in CI (the `test-os` job). These tests do not run there, each for the reason given. `scripts/windows-skips.sh` compares the first list with the tests that report SKIP in that job, and the job fails when they differ, so the list is kept true; a test that stops skipping, or a new one that skips, must change it. A test in the second list is not compiled on Windows, which `internal/workflows/windows_test.go` checks against the source.
+The suite runs on Windows in CI (the `test-os` job). These tests do not run there, each for the reason given. `scripts/windows-skips.sh` compares the first list with the tests that report SKIP in that job, by package and test name, and the job fails when they differ, so the list is kept true; a test that stops skipping, or a new one that skips, must change it. A test in the second list is not compiled on Windows, which `internal/workflows/windows_test.go` checks against the source.
 
 ### Skipped when the tests run on Windows
 
@@ -97,6 +97,10 @@ The suite runs on Windows in CI (the `test-os` job). These tests do not run ther
 - `TestLongErrorsAreMaskedBeforeTheyAreCut` (`internal/tools`): the stand-in `tailscale` CLI is a POSIX shell script.
 - `TestTailnetNameIsMaskedOnlyWhenItIsALogin` (`internal/tools`): the stand-in `tailscale` CLI is a POSIX shell script.
 - `TestWindowsSkipCheckJudgesALog` (`internal/workflows`): the check it runs is a POSIX shell script.
+- `TestWindowsSkipCheckKnowsATestByPackageAndName` (`internal/workflows`): the check it runs is a POSIX shell script.
+- `TestReleaseNotesCheckJudgesALog` (`internal/workflows`): the check it runs is a POSIX shell script.
+- `TestChangelogTopSectionGivesReleaseNotes` (`internal/workflows`): the release job's command is a POSIX shell command that runs awk.
+- `TestChangelogNotesCheckFindsAnEmptySection` (`internal/workflows`): the release job's command is a POSIX shell command that runs awk.
 <!-- windows-skipped:end -->
 
 ### Not compiled on Windows

@@ -1,9 +1,11 @@
 package workflows
 
 import (
+	"fmt"
 	"os"
 	"path"
 	"slices"
+	"strings"
 	"testing"
 
 	"gopkg.in/yaml.v3"
@@ -77,18 +79,41 @@ func TestEveryArchiveCarriesTheLicences(t *testing.T) {
 				t.Errorf("archive %q overrides the format for %s to binary, which packs no files", a.ID, o.Goos)
 			}
 		}
-		for _, name := range required {
-			found := false
-			for _, f := range a.Files {
-				if ok, err := path.Match(f.Src, name); err != nil {
-					t.Errorf("archive %q: files entry %q is not a valid pattern: %v", a.ID, f.Src, err)
-				} else if ok {
-					found = true
-				}
-			}
-			if !found {
-				t.Errorf("archive %q does not pack %s: add it to its files list", a.ID, name)
-			}
+		for _, problem := range archiveFilesProblems(a.ID, a.Files, required) {
+			t.Error(problem)
 		}
 	}
+}
+
+// archiveFilesProblems says what is wrong with the files list of one archive: a required
+// file that no entry packs, and an entry that is not a valid pattern.
+func archiveFilesProblems(id string, files []archiveFile, required []string) []string {
+	var out []string
+	// GoReleaser reads ** as "any depth", and path.Match has no such thing: it reads ** as
+	// two stars of one path element. An entry with one cannot be judged here, and saying
+	// that the archive does not pack a file would send the reader looking for a missing
+	// entry that is there. So it is named, and the list is not judged further.
+	for _, f := range files {
+		if strings.Contains(f.Src, "**") {
+			out = append(out, fmt.Sprintf("archive %q: files entry %q uses **, which this test cannot read (it matches names with path.Match, which has no **): "+
+				"write the entry as a plain name or a single-level glob", id, f.Src))
+		}
+	}
+	if len(out) > 0 {
+		return out
+	}
+	for _, name := range required {
+		found := false
+		for _, f := range files {
+			if ok, err := path.Match(f.Src, name); err != nil {
+				out = append(out, fmt.Sprintf("archive %q: files entry %q is not a valid pattern: %v", id, f.Src, err))
+			} else if ok {
+				found = true
+			}
+		}
+		if !found {
+			out = append(out, fmt.Sprintf("archive %q does not pack %s: add it to its files list", id, name))
+		}
+	}
+	return out
 }
