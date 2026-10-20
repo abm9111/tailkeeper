@@ -105,7 +105,9 @@ func aclGet(ctx context.Context, env *registry.Env, in ACLGetInput) (ACLGetOutpu
 	// Each line is prepared as the registry shows it, so that its passes change
 	// nothing: masked, credential shapes replaced, escaped (a CRLF shown as LF, a
 	// lone CR escaped), and masked again, since escaping can turn an invisible
-	// character into text that reads as part of an address.
+	// character into text that reads as part of an address. The first pass also
+	// rewrites any [p: the policy holds, so a marker on the page is one acl_get
+	// appended; the second must not, since it would rewrite those.
 	mask := !env.ShowPersonalData()
 	mk := env.Masker()
 	lines := splitLines(string(raw.Body))
@@ -114,7 +116,7 @@ func aclGet(ctx context.Context, env *registry.Env, in ACLGetInput) (ACLGetOutpu
 	for i, l := range lines {
 		shown[i] = sanitize.Text(tripwire.Redact(l), 0)
 		if mask {
-			m := mk.Emails(sanitize.Text(tripwire.Redact(mk.Emails(l)), 0))
+			m := mk.Emails(sanitize.Text(tripwire.Redact(mk.PolicyText(l)), 0))
 			shown[i], masked[i] = m, m != shown[i]
 			_, _ = io.WriteString(h, m)
 			size += len(m)

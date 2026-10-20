@@ -29,22 +29,25 @@ const MaxText = 16 << 20
 // String renders every rune that does not print visibly (control characters, ANSI
 // escape introducers, bidirectional, zero-width and other format characters, tag
 // characters, variation selectors, blank fillers) and invalid UTF-8 as visible
-// \u{XXXX} escapes, then cuts the result to max bytes on a rune boundary. max <= 0
-// means no cap.
-func String(s string, max int) string { return escape(s, max, false) }
+// \u{XXXX} escapes, then cuts the result to limit bytes on a rune boundary. limit <= 0
+// means no cap. A limit under the 14 bytes of the notice that marks a cut gets the text cut
+// to it, without the notice: the result is never longer than the limit.
+func String(s string, limit int) string { return escape(s, limit, false) }
 
 // Text is String for multi-line documents such as the policy file: line feeds and
 // tabs are kept, a CRLF line end is shown as LF, and a lone carriage return, like
 // every other invisible character, is escaped. A terminal only moves the cursor
 // for LF and TAB; nothing else can redraw or hide text.
-func Text(s string, max int) string { return escape(strings.ReplaceAll(s, "\r\n", "\n"), max, true) }
+func Text(s string, limit int) string {
+	return escape(strings.ReplaceAll(s, "\r\n", "\n"), limit, true)
+}
 
-func escape(s string, max int, lines bool) string {
+func escape(s string, limit int, lines bool) string {
 	truncated := false
-	if max > 0 && len(s) > max {
-		// Escaping never shortens text, so input past max bytes cannot reach the
+	if limit > 0 && len(s) > limit {
+		// Escaping never shortens text, so input past limit bytes cannot reach the
 		// output: dropping it first bounds the work.
-		cut := max
+		cut := limit
 		for cut > 0 && !utf8.RuneStart(s[cut]) {
 			cut--
 		}
@@ -65,20 +68,25 @@ func escape(s string, max int, lines bool) string {
 		b.WriteRune(r)
 	}
 	out := b.String()
-	if max <= 0 || (!truncated && len(out) <= max) {
+	if limit <= 0 || (!truncated && len(out) <= limit) {
 		return out
 	}
-	cut := max - len(truncatedSuffix)
+	suffix := truncatedSuffix
+	cut := limit - len(suffix)
 	if cut < 0 {
-		cut = 0
+		// The limit cannot hold the notice. The limit is a promise about size and the notice
+		// a courtesy, so the text is cut to the limit and the notice is left out.
+		suffix, cut = "", limit
 	}
 	if cut < len(out) {
 		for cut > 0 && !utf8.RuneStart(out[cut]) {
 			cut--
 		}
-		out = dropPartialMarker(out[:cut])
+		out = out[:cut]
 	}
-	return out + truncatedSuffix
+	// The text was cut, here or by the pre-cut above (which can leave it exactly the limit
+	// long), so a marker the cut went through is dropped either way.
+	return dropPartialMarker(out) + suffix
 }
 
 // markerOpen is how the pseudonym marker that masking appends to a masked value starts:
@@ -128,6 +136,9 @@ func unsafeRune(r rune) bool {
 
 // HasTag reports whether a `tk` struct tag value contains the given option.
 func HasTag(tag reflect.StructTag, option string) bool {
+	if option == "" {
+		return false // no tag has the empty option: an untagged field only splits into one
+	}
 	for _, part := range strings.Split(tag.Get("tk"), ",") {
 		if strings.TrimSpace(part) == option {
 			return true
@@ -138,22 +149,22 @@ func HasTag(tag reflect.StructTag, option string) bool {
 
 // Fields escapes, in place, every string reachable from ptr (a pointer). Strings
 // inside a field tagged `tk:"untrusted"` (text tailnet members choose) are also
-// capped at max and have credential shapes replaced (tripwire.Redact); a tagged
+// capped at limit and have credential shapes replaced (tripwire.Redact); a tagged
 // struct, slice or map field has everything inside it treated as untrusted. A
 // string field tagged `tk:"untrusted,multiline"` keeps its line feeds and tabs
 // (Text) and is capped at MaxText. Map keys and values are rebuilt; keys that are
 // the same text once escaped and capped are all kept (see distinctKey). It panics
 // unless ptr is a non-nil pointer: skipping the escaping of a result is a
 // programming error that must not pass silently.
-func Fields(ptr any, max int) {
+func Fields(ptr any, limit int) {
 	v := reflect.ValueOf(ptr)
 	if v.Kind() != reflect.Pointer || v.IsNil() {
 		panic(fmt.Sprintf("sanitize.Fields: want a non-nil pointer, got %T", ptr))
 	}
-	walk(v.Elem(), false, false, max)
+	walk(v.Elem(), false, false, limit)
 }
 
-func walk(v reflect.Value, untrusted, multiline bool, max int) {
+func walk(v reflect.Value, untrusted, multiline bool, limit int) {
 	switch v.Kind() {
 	case reflect.String:
 		if !v.CanSet() {
@@ -163,13 +174,13 @@ func walk(v reflect.Value, untrusted, multiline bool, max int) {
 		case multiline:
 			v.SetString(Text(tripwire.Redact(v.String()), MaxText))
 		case untrusted:
-			v.SetString(String(tripwire.Redact(v.String()), max))
+			v.SetString(String(tripwire.Redact(v.String()), limit))
 		default:
 			v.SetString(String(v.String(), 0))
 		}
 	case reflect.Pointer:
 		if !v.IsNil() {
-			walk(v.Elem(), untrusted, multiline, max)
+			walk(v.Elem(), untrusted, multiline, limit)
 		}
 	case reflect.Struct:
 		t := v.Type()
@@ -178,11 +189,11 @@ func walk(v reflect.Value, untrusted, multiline bool, max int) {
 			if !f.IsExported() {
 				continue
 			}
-			walk(v.Field(i), untrusted || HasTag(f.Tag, "untrusted"), multiline || HasTag(f.Tag, "multiline"), max)
+			walk(v.Field(i), untrusted || HasTag(f.Tag, "untrusted"), multiline || HasTag(f.Tag, "multiline"), limit)
 		}
 	case reflect.Slice, reflect.Array:
 		for i := 0; i < v.Len(); i++ {
-			walk(v.Index(i), untrusted, multiline, max)
+			walk(v.Index(i), untrusted, multiline, limit)
 		}
 	case reflect.Map:
 		if v.IsNil() || !v.CanSet() {
@@ -199,13 +210,13 @@ func walk(v reflect.Value, untrusted, multiline bool, max int) {
 		for _, key := range keys {
 			k := reflect.New(v.Type().Key()).Elem()
 			k.Set(key)
-			walk(k, untrusted, multiline, max)
+			walk(k, untrusted, multiline, limit)
 			if k.Kind() == reflect.String {
-				k.SetString(distinctKey(fresh, k, keyCap(untrusted, multiline, max), next))
+				k.SetString(distinctKey(fresh, k, keyCap(untrusted, multiline, limit), next))
 			}
 			val := reflect.New(v.Type().Elem()).Elem()
 			val.Set(v.MapIndex(key))
-			walk(val, untrusted, multiline, max)
+			walk(val, untrusted, multiline, limit)
 			fresh.SetMapIndex(k, val)
 		}
 		v.Set(fresh)
@@ -213,12 +224,12 @@ func walk(v reflect.Value, untrusted, multiline bool, max int) {
 }
 
 // keyCap is the byte cap walk puts on a string in the field it is reading.
-func keyCap(untrusted, multiline bool, max int) int {
+func keyCap(untrusted, multiline bool, limit int) int {
 	switch {
 	case multiline:
 		return MaxText
 	case untrusted:
-		return max
+		return limit
 	}
 	return 0
 }
@@ -227,11 +238,11 @@ func keyCap(untrusted, multiline bool, max int) int {
 // already holds it. Escaping and the cap can make two keys the same text (a control
 // character and the \u{001B} that spells it, bytes that are not UTF-8, keys cut at the cap),
 // and a map holds one entry for them: the rest would be dropped, and a crafted key could
-// hide another's entry. The counter stays within max bytes. The counters tried for a text
+// hide another's entry. The counter stays within limit bytes. The counters tried for a text
 // are all taken once a key has passed them, and an entry is never removed, so next holds
 // where the next key of that text resumes: the answer is the same as counting from #2 each
 // time, without the cost of K keys that collide being K squared.
-func distinctKey(fresh, k reflect.Value, max int, next map[string]int) string {
+func distinctKey(fresh, k reflect.Value, limit int, next map[string]int) string {
 	base := k.String()
 	cand := base
 	n := 2
@@ -241,8 +252,8 @@ func distinctKey(fresh, k reflect.Value, max int, next map[string]int) string {
 	for ; fresh.MapIndex(reflect.ValueOf(cand).Convert(k.Type())).IsValid(); n++ {
 		tail := "#" + strconv.Itoa(n)
 		keep := base
-		if max > 0 && len(base)+len(tail) > max {
-			cut := max - len(tail)
+		if limit > 0 && len(base)+len(tail) > limit {
+			cut := limit - len(tail)
 			if cut < 0 {
 				cut = 0
 			}

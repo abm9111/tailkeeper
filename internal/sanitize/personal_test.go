@@ -2237,10 +2237,10 @@ func TestEmailRefsAreExactlyWhatEmailsAppends(t *testing.T) {
 func TestTextRefsAreWhatAMaskedUntrustedStringShows(t *testing.T) {
 	m, k := keyedMasker(t)
 	for _, s := range emailRefCases() {
-		for _, max := range []int{0, DefaultMax, 40} {
-			got, want := m.TextRefs(s, max), distinct(shownIn(String(tripwire.Redact(m.Text(s)), max)))
+		for _, limit := range []int{0, DefaultMax, 40} {
+			got, want := m.TextRefs(s, limit), distinct(shownIn(String(tripwire.Redact(m.Text(s)), limit)))
 			if !slices.Equal(got, want) {
-				t.Errorf("TextRefs(%q, %d) = %v, but the display shows %v", s, max, got, want)
+				t.Errorf("TextRefs(%q, %d) = %v, but the display shows %v", s, limit, got, want)
 			}
 		}
 	}
@@ -2285,10 +2285,10 @@ func FuzzEmailRefsAreExactlyWhatEmailsAppends(f *testing.F) {
 		if got, want := m.EmailRefs(s), shownIn(m.Emails(s)); !strings.Contains(s, "[p:") && !slices.Equal(got, want) {
 			t.Errorf("EmailRefs(%q) = %v, but Emails shows %v", s, got, want)
 		}
-		for _, max := range []int{0, DefaultMax, 64} {
-			shown := displayOf(m, s, max)
-			if got, want := m.TextRefs(s, max), distinct(shownIn(shown)); !slices.Equal(got, want) {
-				t.Errorf("TextRefs(%q, %d) = %v, but the display %q shows %v", s, max, got, shown, want)
+		for _, limit := range []int{0, DefaultMax, 64} {
+			shown := displayOf(m, s, limit)
+			if got, want := m.TextRefs(s, limit), distinct(shownIn(shown)); !slices.Equal(got, want) {
+				t.Errorf("TextRefs(%q, %d) = %v, but the display %q shows %v", s, limit, got, shown, want)
 			}
 		}
 		// Every marker in the uncapped display was appended: there are as many as
@@ -2307,7 +2307,7 @@ func TestTextRefsEqualTheDisplayOverGeneratedText(t *testing.T) {
 	m, _ := keyedMasker(t)
 	bs := "\\"
 	pieces := []string{"[p:", " [p:", "[p:ys3mrm23sj]", " [p:ys3mrm23sj]", "p:", "[", "]", " ", "amy@example.com", "bob@example.com", "a…@example.com",
-		"x@y.org", "a" + bs + "u0040b.com", "203.0.113.9", "tskey-auth-abc123", "…", "\x00", "é"}
+		"x@y.org", "a" + bs + "u0040b.com", "203.0.113.9", "tskey-auth-abc123", "…", "\x00", "é", "=", "?", "user="}
 	rnd := rand.New(rand.NewSource(7))
 	for i := 0; i < 20000; i++ {
 		var b strings.Builder
@@ -2319,10 +2319,10 @@ func TestTextRefsEqualTheDisplayOverGeneratedText(t *testing.T) {
 			}
 		}
 		s := b.String()
-		for _, max := range []int{0, DefaultMax, 64} {
-			shown := displayOf(m, s, max)
-			if got, want := m.TextRefs(s, max), distinct(shownIn(shown)); !slices.Equal(got, want) {
-				t.Fatalf("TextRefs(%.80q, %d) = %v, but the display shows %v", s, max, got, want)
+		for _, limit := range []int{0, DefaultMax, 64} {
+			shown := displayOf(m, s, limit)
+			if got, want := m.TextRefs(s, limit), distinct(shownIn(shown)); !slices.Equal(got, want) {
+				t.Fatalf("TextRefs(%.80q, %d) = %v, but the display shows %v", s, limit, got, want)
 			}
 		}
 		if n, want := strings.Count(displayOf(m, s, 0), " [p:"), len(m.EmailRefs(MaskAddrs(m.unforged(s)))); n != want {
@@ -2338,14 +2338,14 @@ func TestIdentifierRefsAreWhatAPersonalFieldShows(t *testing.T) {
 	long := "z@" + strings.Repeat("x", 1100) + ".com"
 	for _, s := range []string{"", "tagged-devices", "Tagged Devices", "a", "…", "Amy Lee", "amy@example.com", "AMY@Example.com", "a@b@c.d", long,
 		"[p:ys3mrm23sj]", "x@tskey-auth-abc123.com", string(rune(0x200b)) + "amy"} {
-		for _, max := range []int{0, DefaultMax, 8, 20} {
+		for _, limit := range []int{0, DefaultMax, 8, 20} {
 			r := struct {
 				Name string `tk:"untrusted,personal"`
 			}{s}
 			m.Mask(&r)
-			Fields(&r, max)
-			if got, want := m.IdentifierRefs(s, max), distinct(shownIn(r.Name)); !slices.Equal(got, want) {
-				t.Errorf("IdentifierRefs(%.30q, %d) = %v, but the display %.60q shows %v", s, max, got, r.Name, want)
+			Fields(&r, limit)
+			if got, want := m.IdentifierRefs(s, limit), distinct(shownIn(r.Name)); !slices.Equal(got, want) {
+				t.Errorf("IdentifierRefs(%.30q, %d) = %v, but the display %.60q shows %v", s, limit, got, r.Name, want)
 			}
 		}
 	}
@@ -2363,12 +2363,12 @@ func TestIdentifierRefsAreWhatAPersonalFieldShows(t *testing.T) {
 }
 
 // displayOf is what a result shows for an untrusted string: Mask, then Fields.
-func displayOf(m Masker, s string, max int) string {
+func displayOf(m Masker, s string, limit int) string {
 	r := struct {
 		Name string `tk:"untrusted"`
 	}{s}
 	m.Mask(&r)
-	Fields(&r, max)
+	Fields(&r, limit)
 	return r.Name
 }
 
@@ -2491,5 +2491,398 @@ func TestIsTaggedDevices(t *testing.T) {
 		if got := IsTaggedDevices(s); got != want {
 			t.Errorf("IsTaggedDevices(%q) = %v, want %v", s, got, want)
 		}
+	}
+}
+
+// A synced group is named like an address and names no person: it stays as written, with
+// no pseudonym, in a policy and in text. What only looks like one is still masked.
+func TestMaskEmailsLeavesSyncedGroupNamesWhole(t *testing.T) {
+	m, k := keyedMasker(t)
+	for in, want := range map[string]string{
+		"group:engineering@example.com":                            "group:engineering@example.com",
+		`"group:eng@example.com", "amy@example.com"`:               `"group:eng@example.com", "a…@example.com"`,
+		`{"group:eng@example.com": ["bo@example.com"]}`:            `{"group:eng@example.com": ["b…@example.com"]}`,
+		"group:eng%40example.com and amy%40example.com":            "group:eng%40example.com and a…@example.com",
+		"group:eng" + esc("0040") + "example.com, amy@example.com": "group:eng" + esc("0040") + "example.com, a…@example.com",
+		"group:eng@example.com.":                                   "group:eng@example.com.",
+		"group:amy@example.com is amy@example.com":                 "group:amy@example.com is a…@example.com",
+		// Not the name of a synced group.
+		"autogroup:member@example.com":   "autogroup:m…@example.com",
+		"mygroup:amy@example.com":        "mygroup:a…@example.com",
+		"my-group:amy@example.com":       "my-group:a…@example.com",
+		"Group:amy@example.com":          "Group:a…@example.com",
+		"group :amy@example.com":         "group :a…@example.com",
+		"group:finance team@example.com": "group:finance t…@example.com",
+	} {
+		if got := MaskEmails(in); got != want {
+			t.Errorf("MaskEmails(%q) = %q, want %q", in, got, want)
+		}
+		if again := MaskEmails(want); again != want {
+			t.Errorf("MaskEmails(%q) = %q: masked text must mask to itself", want, again)
+		}
+	}
+	// A group takes no pseudonym; the address after it takes its own.
+	in := "group:eng@example.com and amy@example.com"
+	want := "group:eng@example.com and a…@example.com" + privacy.Suffix(k.Pseudonym("amy@example.com"))
+	if got := m.Emails(in); got != want {
+		t.Errorf("Emails(%q) = %q, want %q", in, got, want)
+	}
+	if got := m.Text(in); got != want {
+		t.Errorf("Text(%q) = %q, want %q", in, got, want)
+	}
+	if refs := m.EmailRefs(in); !slices.Equal(refs, []string{k.Pseudonym("amy@example.com")}) {
+		t.Errorf("EmailRefs(%q) = %v, want amy's pseudonym alone", in, refs)
+	}
+	if refs := m.TextRefs("group:eng@example.com", 0); len(refs) != 0 {
+		t.Errorf("TextRefs of a group name = %v, want none", refs)
+	}
+}
+
+// The class: a group name behind each lead a policy or a message puts before one and in front
+// of each ending is found whole, and stays whole when masked again.
+func TestSyncedGroupNamesStayWholeBehindEveryLeadAndTail(t *testing.T) {
+	m, _ := keyedMasker(t)
+	leads := []string{"", " ", "\t", "\n", `"`, "[", "(", "<", "{", ",", ";", "=", ":", "/", "'", esc("0022"), "%22", "to group:x ", "[p:abcdefghij] "}
+	tails := []string{"", " ", `"`, ",", ")", ">", "]", "}", ".", ":22", "?q=1", "/x", " and more", esc("0022"), "%22"}
+	checked := 0
+	for _, lead := range leads {
+		for _, tail := range tails {
+			in := lead + "group:engineering@example.com" + tail
+			checked++
+			for name, got := range map[string]string{"MaskEmails": MaskEmails(in), "Emails": m.Emails(in), "Text": m.Text(in)} {
+				if !strings.Contains(got, "group:engineering@example.com") {
+					t.Errorf("%s(%q) = %q: the group's name was masked", name, in, got)
+				}
+			}
+		}
+	}
+	if want := len(leads) * len(tails); checked != want {
+		t.Fatalf("checked %d inputs, want %d", checked, want)
+	}
+}
+
+// A quoted local part stays hidden when control characters stand between its closing quote and
+// the at sign, however the control character is written: the walk back from the at sign read
+// them as local bytes and then refused the quote, because only a full stop may follow one.
+func TestMaskEmailsReadsControlCharactersAfterAQuotedWord(t *testing.T) {
+	bs := string(rune(92))
+	m, _ := keyedMasker(t)
+	controls := []string{"\x01", "\x1b", "\x7f", "\x01\x02", "%01", "%1F", "%7f", "%01%02",
+		bs + "u{0001}", bs + "u{1}", bs + "u{001B}", bs + "u{1F600}", bs + "u{10FFFF}", bs + "u{abcdef}", bs + "u{12345678}",
+		bs + "u{0001}" + bs + "u{0002}", "\x01" + bs + "u{0001}%01"}
+	ats := []string{"@", esc("0040"), "%40"}
+	// Each form has a name no output may show, and is built around a control character c.
+	forms := []struct {
+		hidden []string
+		build  func(c, at string) string
+	}{
+		{[]string{"qzxkwv"}, func(c, at string) string { return `"qzxkwv"` + c + at + "example.com" }},
+		{[]string{"qzxkwv"}, func(c, at string) string { return `"q zxkwv"` + c + at + "example.com" }},
+		{[]string{"qzxkwv"}, func(c, at string) string { return `x."qzxkwv"` + c + at + "example.com" }},
+		{[]string{"qzxkwv"}, func(c, at string) string { return bs + `"qzxkwv` + bs + `"` + c + at + "example.com" }},
+		{[]string{"qzxkwv"}, func(c, at string) string { return `"qzxkwv"` + c + ".smith" + at + "example.com" }},
+		{[]string{"qzjt", "xkwvl"}, func(c, at string) string { return `"qzjt"` + c + `."xkwvl"` + at + "example.com" }},
+		{[]string{"qzjt", "xkwvl"}, func(c, at string) string { return `"qzjt"` + c + `."xkwvl"` + c + at + "example.com" }},
+	}
+	checked := 0
+	for _, f := range forms {
+		for _, c := range controls {
+			for _, at := range ats {
+				in := f.build(c, at)
+				checked++
+				for name, got := range map[string]string{"MaskEmails": MaskEmails(in), "Emails": m.Emails(in), "Text": m.Text(in)} {
+					for _, hidden := range f.hidden {
+						if strings.Contains(got, hidden) {
+							t.Errorf("%s(%q) = %q still shows %q", name, in, got, hidden)
+						}
+					}
+					if name == "MaskEmails" && MaskEmails(got) != got {
+						t.Errorf("MaskEmails(%q) = %q, but masking that again gives %q", in, got, MaskEmails(got))
+					}
+				}
+			}
+		}
+	}
+	// The denominator: a loop over nothing passes.
+	if want := len(forms) * len(controls) * len(ats); checked != want || checked < 350 {
+		t.Fatalf("checked %d inputs, want %d", checked, want)
+	}
+	// And the plain case: the quoted word and the control character are one local part.
+	if got, want := MaskEmails(`"qzxkwv"`+bs+`u{0001}@example.com`), `q…@example.com`; got != want {
+		t.Errorf("MaskEmails = %q, want %q", got, want)
+	}
+}
+
+// The control-character term of the quoted-word branch changed nothing without a quote: a
+// local part with a raw control character and no quote, and a quoted word followed by a
+// percent-encoded letter (which is not a control character), read as they did before it. The
+// values are what the base of this branch (0ffd0f8) gave. These are pins, not detectors: they
+// fail only if the term starts reading something that is not a control character.
+func TestControlCharacterTermChangesNothingWithoutAQuote(t *testing.T) {
+	for in, want := range map[string]string{
+		"amy\x01@example.com": "a…@example.com",
+		`"q"%41@example.com`:  `"q"%…@example.com`,
+	} {
+		if got := MaskEmails(in); got != want {
+			t.Errorf("MaskEmails(%q) = %q, want %q (the value at the base of this branch)", in, got, want)
+		}
+	}
+}
+
+// The pseudonym names the address, not the word glued to it: user=amy@example.com and
+// amy@example.com are one person.
+func TestPseudonymNamesTheAddressNotTheWordGluedToIt(t *testing.T) {
+	m, k := keyedMasker(t)
+	amy := k.Pseudonym("amy@example.com")
+	for in, want := range map[string]string{
+		"user=amy@example.com":                         "u…@example.com" + privacy.Suffix(amy),
+		"?u=amy@example.com":                           "?…@example.com" + privacy.Suffix(amy),
+		"https://x.example/?u=amy%40example.com&v=1":   "https://x.example/?…@example.com" + privacy.Suffix(amy) + "&v=1",
+		"email=Amy@Example.com":                        "e…@Example.com" + privacy.Suffix(amy),
+		"a?b=c=amy@example.com":                        "a…@example.com" + privacy.Suffix(amy),
+		"login=" + "am" + esc("0079") + "@example.com": "l…" + privacy.Suffix(amy),
+		"amy@example.com":                              "a…@example.com" + privacy.Suffix(amy),
+		// A question mark alone is glue too: no equals sign comes after it.
+		"?amy@example.com":  "?…@example.com" + privacy.Suffix(amy),
+		"x?amy@example.com": "x…@example.com" + privacy.Suffix(amy),
+		// Nothing after the glue, or a quoted name: the whole text is the name.
+		"amy=@example.com":  "a…@example.com" + privacy.Suffix(k.Pseudonym("amy=@example.com")),
+		`"a=b"@example.com`: "a…@example.com" + privacy.Suffix(k.Pseudonym("a=b@example.com")),
+	} {
+		if got := m.Emails(in); got != want {
+			t.Errorf("Emails(%q) = %q, want %q", in, got, want)
+		}
+		if got := m.Text(in); got != want {
+			t.Errorf("Text(%q) = %q, want %q", in, got, want)
+		}
+	}
+	// A filter reads the pseudonym off the display through the same scan.
+	for _, in := range []string{"user=amy@example.com", "?u=amy@example.com", "email=AMY@example.com"} {
+		if refs := m.EmailRefs(in); !slices.Equal(refs, []string{amy}) {
+			t.Errorf("EmailRefs(%q) = %v, want [%s]", in, refs, amy)
+		}
+		if refs := m.TextRefs(in, 0); !slices.Equal(refs, []string{amy}) {
+			t.Errorf("TextRefs(%q) = %v, want [%s]", in, refs, amy)
+		}
+	}
+	// The display is the same with and without a key.
+	if got := MaskEmails("user=amy@example.com"); got != "u…@example.com" {
+		t.Errorf("MaskEmails = %q, want u…@example.com", got)
+	}
+}
+
+// The exemption of a synced group's name is an allowlist: what the base masked and the name does
+// not clearly begin is still masked. Leads, tails, quoted or escaped names and URL authorities
+// that a person's address could hide behind are the cases.
+func TestSyncedGroupExemptionIsAnAllowlist(t *testing.T) {
+	m, _ := keyedMasker(t)
+	bs := string(rune(92))
+	hidden := func(name, in string) {
+		t.Helper()
+		got := map[string]string{"MaskEmails": MaskEmails(in), "Emails": m.Emails(in), "Text": m.Text(in)}
+		for fn, out := range got {
+			if strings.Contains(out, "amy") || strings.Contains(out, "hunter2") {
+				t.Errorf("%s: %s(%q) = %q: the address is shown", name, fn, in, out)
+			}
+		}
+		if out := got["MaskEmails"]; MaskEmails(out) != out {
+			t.Errorf("%s: MaskEmails(%q) = %q: masked text must mask to itself", name, out, MaskEmails(out))
+		}
+	}
+
+	// 1. A lead that is no word start masks the address behind it.
+	leads := []string{"x@", "mail@", "a%40", "a@", "a!", "a#", "a+", "a$", "a&", "a*", "a?", "a^", "a~", "a%", "a}",
+		"%41", "%2e", "%5F", "%21", "%00", "A", bs + "u{41}", esc("0041"), "\x01", "]", ")", "}", ">", "[p:abcdefghij]", "https://", "//",
+		"b@example.com" + esc("0022"), "b@example.com" + esc("0020"), "b@example.com" + esc("002c")}
+	checked := 0
+	for _, lead := range leads {
+		checked++
+		hidden("lead", lead+"group:amy@example.com")
+	}
+	if checked != len(leads) {
+		t.Fatalf("checked %d leads, want %d", checked, len(leads))
+	}
+
+	// 2. A tail that carries a second address masks it.
+	tails := []string{
+		esc("0020") + "amy@example.com",
+		"@amy@example.com",
+		"%40amy@example.com",
+		esc("00e9") + "amy@example.com",
+		esc("0022") + "," + esc("0022") + "amy@example.com",
+		bs + "u{20}amy@example.com",
+	}
+	checked = 0
+	for _, tail := range tails {
+		checked++
+		hidden("tail", "group:eng@example.com"+tail)
+	}
+	if checked != len(tails) {
+		t.Fatalf("checked %d tails, want %d", checked, len(tails))
+	}
+
+	// 3. A quoted or escaped name, one with a control character, and one that holds glue (= or ?), is masked.
+	names := []string{
+		`group:"amy"@example.com`,
+		"group:%22amy%22@example.com",
+		"group:" + bs + "u{0022}amy" + bs + "u{0022}@example.com",
+		"group:a" + bs + "u{0001}my@example.com",
+		"group:a\x01my@example.com",
+		"group:user=amy@example.com",
+		"group:a?b@example.com",
+	}
+	checked = 0
+	for _, in := range names {
+		checked++
+		if got := MaskEmails(in); got == in || !strings.Contains(got, "…") || strings.Contains(got, "amy") {
+			t.Errorf("MaskEmails(%q) = %q: the name was not masked", in, got)
+		}
+	}
+	if checked != len(names) {
+		t.Fatalf("checked %d names, want %d", checked, len(names))
+	}
+
+	// 4. The allowlist still exempts, in each spelling of each lead.
+	const group = "group:engineering@example.com"
+	const hexDigits = "0123456789ABCDEF"
+	checked = 0
+	for _, c := range []byte(groupLeads) {
+		hex := string([]byte{hexDigits[c>>4], hexDigits[c&15]})
+		for _, lead := range []string{string(c), "%" + hex, esc("00" + hex), bs + "u{" + hex + "}"} {
+			checked++
+			if got := MaskEmails(lead + group); !strings.Contains(got, group) {
+				t.Errorf("MaskEmails(%q) = %q: the group's name was masked", lead+group, got)
+			}
+		}
+	}
+	if want := len(groupLeads) * 4; checked != want {
+		t.Fatalf("checked %d spellings, want %d", checked, want)
+	}
+	if got := MaskEmails(group); got != group {
+		t.Errorf("MaskEmails(%q) = %q at the start of the text", group, got)
+	}
+
+	// 5. A URL authority is a user and a password, not a group.
+	urls := []string{
+		"https:/" + "/group:hunter2@example.com", // assembled: a credential URI in source is a scanner hit
+		"//group:hunter2@example.com",
+		"%2F%2Fgroup:hunter2@example.com",
+		esc("002f") + "/group:hunter2@example.com",
+	}
+	checked = 0
+	for _, in := range urls {
+		checked++
+		hidden("url", in)
+	}
+	if checked != len(urls) {
+		t.Fatalf("checked %d URLs, want %d", checked, len(urls))
+	}
+	if got := MaskEmails("/group:eng@example.com"); got != "/group:eng@example.com" {
+		t.Errorf("MaskEmails of a group after one slash = %q, want it whole", got)
+	}
+}
+
+// LocalByte is the masker's byte test and the same for every byte; the rows say what that is, so
+// a change of the set fails here and not only where hideLogin happens to read one.
+func TestLocalByteIsTheMaskersLocalByte(t *testing.T) {
+	for c := 0; c <= 255; c++ {
+		if got, want := LocalByte(byte(c)), localByte(byte(c)); got != want {
+			t.Errorf("LocalByte(%#x) = %v, but the masker's localByte says %v", c, got, want)
+		}
+	}
+	checked := 0
+	for c, want := range map[byte]bool{'a': true, 'Z': true, '0': true, '.': true, '+': true, '=': true, 0x80: true,
+		'/': false, ' ': false, '@': false, '(': false, '"': false} {
+		checked++
+		if got := LocalByte(c); got != want {
+			t.Errorf("LocalByte(%q) = %v, want %v", c, got, want)
+		}
+	}
+	// The denominator: seven true rows and five false.
+	if checked != 12 {
+		t.Fatalf("checked %d rows, want 12", checked)
+	}
+}
+
+// The leads are a closed set, pinned here by their own literal and not by the constant: a lead
+// removed from groupLeads, or one added to it, fails this test and not only the loops that
+// iterate groupLeads. Each lead keeps a group's name whole; a lead that is a code point past
+// 0x7F is no lead, though its low byte may be a space.
+func TestSyncedGroupLeadIsAClosedSet(t *testing.T) {
+	bs := string(rune(92))
+	const leads = " \t\n\r\v\f\"'" + "`" + "[({<,;:=/|"
+	if groupLeads != leads {
+		t.Errorf("groupLeads = %q, want %q", groupLeads, leads)
+	}
+	const group = "group:eng@example.com"
+	checked := 0
+	for i := 0; i < len(leads); i++ {
+		checked++
+		if in := leads[i:i+1] + group; MaskEmails(in) != in {
+			t.Errorf("MaskEmails(%q) = %q: the group's name was masked behind a lead", in, MaskEmails(in))
+		}
+	}
+	// The denominator: the 19 leads the constant documents.
+	if checked != 19 || len(leads) != 19 {
+		t.Fatalf("checked %d of %d leads, want 19", checked, len(leads))
+	}
+	checked = 0
+	for _, lead := range []string{esc("0120"), esc("0a20"), bs + "u{120}", bs + "u{10020}"} {
+		checked++
+		in := lead + group
+		if got := MaskEmails(in); got == in || !strings.Contains(got, "…") || strings.Contains(got, "eng") {
+			t.Errorf("MaskEmails(%q) = %q: a lead past 0x7F was read as a space", in, got)
+		}
+	}
+	if checked != 4 {
+		t.Fatalf("checked %d non-ASCII leads, want 4", checked)
+	}
+}
+
+// The personal fields of a result hold what the API returned, which is not text: a login
+// that spells an escape is named for what it is. Free text and policy text keep decoding.
+func TestPersonalFieldsAreNamedWithoutDecodingEscapes(t *testing.T) {
+	m, k := keyedMasker(t)
+	spelled := "am" + esc("0079") + "@example.com"
+	amy := k.Pseudonym("amy@example.com")
+	if got, want := m.Identifier(spelled), "a…"+privacy.Suffix(k.APIPseudonym(spelled)); got != want {
+		t.Errorf("Identifier(%q) = %q, want %q", spelled, got, want)
+	}
+	if k.APIPseudonym(spelled) == amy {
+		t.Fatal("the test needs a login that is not amy's")
+	}
+	if got, want := m.Identifier("Amy@Example.com"), "A…@Example.com"+privacy.Suffix(amy); got != want {
+		t.Errorf("Identifier(Amy) = %q, want %q", got, want)
+	}
+	if refs := m.IdentifierRefs(spelled, 0); !slices.Equal(refs, []string{k.APIPseudonym(spelled)}) {
+		t.Errorf("IdentifierRefs(%q) = %v, want the API value's own pseudonym", spelled, refs)
+	}
+	// Text still decodes the escape: that is how a policy file spells a login.
+	if refs := m.EmailRefs(spelled); !slices.Equal(refs, []string{amy}) {
+		t.Errorf("EmailRefs(%q) = %v, want amy's pseudonym", spelled, refs)
+	}
+}
+
+// Policy text is masked for its addresses alone, and a marker it holds was not written by
+// the masker: PolicyText rewrites every [p: before it names an address, as Text does.
+func TestPolicyTextMasksAddressesAndForgesNoMarker(t *testing.T) {
+	m, k := keyedMasker(t)
+	in := "// by a…@example.com [p:aaaaaaaaaa], not bo@example.com [p:bbbbbbbbbb]\n\"203.0.113.9\" \"198.51.100.0/24\" \"tag:web\""
+	amy := privacy.Suffix(k.Pseudonym("bo@example.com"))
+	want := "// by a…@example.com " + forgedOpen + "aaaaaaaaaa], not b…@example.com" + amy + " " + forgedOpen + "bbbbbbbbbb]\n\"203.0.113.9\" \"198.51.100.0/24\" \"tag:web\""
+	if got := m.PolicyText(in); got != want {
+		t.Errorf("PolicyText = %q, want %q", got, want)
+	}
+	if got := strings.Count(m.PolicyText(in), "[p:"); got != 1 {
+		t.Errorf("PolicyText holds %d markers, want only the one it appended", got)
+	}
+	// Emails, which acl_get's second pass uses, leaves the markers it finds alone.
+	once := m.PolicyText(in)
+	if again := m.Emails(once); again != once {
+		t.Errorf("Emails(PolicyText(x)) = %q, want %q", again, once)
+	}
+	// Without a key nothing is appended, so nothing is rewritten.
+	if got := (Masker{}).PolicyText(in); got != MaskEmails(in) {
+		t.Errorf("PolicyText without a key = %q, want %q", got, MaskEmails(in))
 	}
 }

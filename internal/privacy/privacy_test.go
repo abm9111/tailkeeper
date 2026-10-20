@@ -199,3 +199,39 @@ func TestAZeroKeyStopsInsteadOfDerivingFromNothing(t *testing.T) {
 		}()
 	}
 }
+
+// A value the API returned is not text: a login that holds a backslash sequence is a
+// different login from the address the sequence spells. Policy text is decoded, once.
+func TestAPIPseudonymDoesNotDecodeEscapes(t *testing.T) {
+	k := testKey(t)
+	bs := "\\"
+	amy := k.Pseudonym("amy@example.com")
+	spelled := "am" + bs + "u0079@example.com"
+	if got := k.APIPseudonym("amy@example.com"); got != amy {
+		t.Errorf("APIPseudonym(amy) = %q, want the pseudonym of amy, %q", got, amy)
+	}
+	if got := k.APIPseudonym("AMY@Example.COM"); got != amy {
+		t.Errorf("APIPseudonym folds the case of an address: got %q, want %q", got, amy)
+	}
+	if k.APIPseudonym(spelled) == amy {
+		t.Error("an API value that spells an escape got the pseudonym of the address it spells")
+	}
+	if k.Pseudonym(spelled) != amy {
+		t.Error("policy text spells a login with an escape: Pseudonym must still decode it")
+	}
+	// Text is decoded once: an escaped backslash decodes to a backslash, which is not decoded again.
+	twice := "am" + bs + bs + "u0079@example.com"
+	if k.Pseudonym(twice) == amy || k.Pseudonym(twice) != k.APIPseudonym(spelled) {
+		t.Errorf("Normalize must decode once: got %q for the doubled escape, want the pseudonym of the API value, %q", k.Pseudonym(twice), k.APIPseudonym(spelled))
+	}
+	if k.APIPseudonym("Amy Lee") == k.APIPseudonym("amy lee") {
+		t.Error("a display name is not an address: its case must count")
+	}
+	if !pseudonymRE.MatchString(k.APIPseudonym("Amy Lee")) {
+		t.Errorf("APIPseudonym = %q, want p: and ten base32 characters", k.APIPseudonym("Amy Lee"))
+	}
+	other, _ := Parse(strings.Repeat("a5", 32))
+	if other.APIPseudonym("amy@example.com") == amy {
+		t.Error("two keys give the same pseudonym")
+	}
+}

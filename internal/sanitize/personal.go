@@ -73,16 +73,16 @@ func (m Masker) Identifier(s string) string {
 }
 
 // IdentifierRefs returns the pseudonym a personal field holding s shows once it
-// has been through Mask and then Fields with the byte cap max (0 means none):
+// has been through Mask and then Fields with the byte cap limit (0 means none):
 // none when masking leaves s unchanged (an empty value, or the owner of tagged
 // devices) or when the cap cuts the pseudonym off. As for TextRefs, a filter on a
 // pseudonym the display does not show would confirm a guess at the value.
-func (m Masker) IdentifierRefs(s string, max int) []string {
+func (m Masker) IdentifierRefs(s string, limit int) []string {
 	out, ref := m.identifier(s)
 	if ref == "" {
 		return nil
 	}
-	if shown := String(tripwire.Redact(out+privacy.Suffix(ref)), max); !strings.Contains(shown, privacy.Suffix(ref)) {
+	if shown := String(tripwire.Redact(out+privacy.Suffix(ref)), limit); !strings.Contains(shown, privacy.Suffix(ref)) {
 		return nil
 	}
 	return []string{ref}
@@ -90,7 +90,14 @@ func (m Masker) IdentifierRefs(s string, max int) []string {
 
 // identifier masks s and returns, besides the masked value, the pseudonym that
 // follows it: empty when there is no key or masking changed nothing.
-func (m Masker) identifier(s string) (out, ref string) { return m.quotedIdentifier(s, false) }
+func (m Masker) identifier(s string) (out, ref string) {
+	out = maskIdentifier(s, false)
+	if m.key == nil || out == s {
+		return out, ""
+	}
+	// s is a value the API returned, not text: its escapes are not decoded.
+	return out, m.key.APIPseudonym(s)
+}
 
 // quotedIdentifier is identifier for an address whose local part may have been quoted
 // (see maskIdentifier); s holds it without its quotes.
@@ -112,6 +119,14 @@ func (m Masker) Text(s string) string { return m.Emails(MaskAddrs(m.unforged(s))
 // "[p:": every marker in text already through Text was appended by it, and the
 // rewrite would destroy them. Only a field tagged premasked is masked this way.
 func (m Masker) Remask(s string) string { return m.Emails(MaskAddrs(s)) }
+
+// PolicyText masks the email addresses in text taken from a policy, and nothing else: hosts,
+// CIDRs, tags and groups are the rules and stay whole. With a key it first rewrites every
+// "[p:" the text holds, as Text does, so that a marker in the result is one PolicyText
+// appended and nothing else: a comment or a name in the policy can spell one, and must not
+// pass for the masker's. A second pass over its result with Emails, to catch what escaping
+// exposed, leaves those markers alone.
+func (m Masker) PolicyText(s string) string { return m.Emails(m.unforged(s)) }
 
 // forgedOpen is what "[p:" becomes in free text, with the bracket spelled the way
 // String spells a character it cannot show. Without it, a tailnet member could
@@ -178,6 +193,13 @@ func address(local, domain string, quoted bool) bool {
 	return true
 }
 
+// LocalByte reports whether c, taken alone, is a byte of an email address's local part, as the
+// masker reads a byte. It is a byte test and nothing more: the escapes the masker also reads in
+// a local part (a percent-encoded byte, a JSON or brace escape) and a quoted word span more than
+// one byte, and LocalByte sees none of them. A caller that masks text around an address uses it
+// to find where the address begins, and reads those spellings itself.
+func LocalByte(c byte) bool { return localByte(c) }
+
 // localByte and domainByte are the bytes of an email address's local part and
 // domain. Bytes of non-ASCII characters count, so international addresses are
 // found whole.
@@ -193,6 +215,22 @@ func localByte(c byte) bool {
 // a tab, a line feed or a carriage return, which separate fields and lines.
 func controlByte(c byte) bool {
 	return c < 0x20 && c != '\t' && c != '\n' && c != '\r' || c == 0x7F
+}
+
+// afterGlue is the address that ends s without the words glued to its front by = or ?, which
+// are legal bytes of a local part and common in text (user=amy@example.com,
+// ?u=amy@example.com): the text after the last of them before the at sign. It is s itself when
+// there is none, or nothing but the at sign follows it.
+func afterGlue(s string) string {
+	at := strings.IndexByte(s, '@')
+	if at <= 0 {
+		return s
+	}
+	i := strings.LastIndexAny(s[:at], "=?")
+	if i < 0 || i == at-1 {
+		return s
+	}
+	return s[i+1:]
 }
 
 // braceEscapeLen is the length of the brace escape that s starts with, or 0: a backslash,
@@ -305,7 +343,7 @@ func (m Masker) EmailRefs(s string) []string {
 
 // TextRefs returns the distinct pseudonyms, in order of first appearance, that
 // an untrusted string shows once it has been through Mask and then Fields with
-// the byte cap max (0 means none): those Text appends, less any the credential
+// the byte cap limit (0 means none): those Text appends, less any the credential
 // redaction or the cap cut off. A pseudonym that is not displayed must not match
 // a filter, or a guess at a hidden value could be confirmed by asking for it.
 //
@@ -313,12 +351,12 @@ func (m Masker) EmailRefs(s string) []string {
 // Text rewrites every "[p:" the string holds before it names an address: a
 // marker in the display is one Text appended, so what the display shows is
 // exactly what it appended, less what the cap cut.
-func (m Masker) TextRefs(s string, max int) []string {
+func (m Masker) TextRefs(s string, limit int) []string {
 	masked, refs := m.emails(MaskAddrs(m.unforged(s)))
 	if len(refs) == 0 {
 		return nil
 	}
-	shown := String(tripwire.Redact(masked), max)
+	shown := String(tripwire.Redact(masked), limit)
 	var kept []string
 	for _, r := range refs {
 		if !slices.Contains(kept, r) && strings.Contains(shown, privacy.Suffix(r)) {
@@ -393,7 +431,9 @@ func (m Masker) emails(s string) (string, []string) {
 					break // no domain, so no address to read a quoted word for
 				}
 				open, from, to := quotedWord(s, last, start)
-				if open < 0 || (start != i && s[start] != '.') {
+				// Between the closing quote and the at sign there may be a full stop, or control
+				// characters, which the walk reads through here as it does anywhere else.
+				if open < 0 || (start != i && s[start] != '.' && controlLen(s[start:]) == 0) {
 					break
 				}
 				quotes = append(quotes, [2]int{open, from}, [2]int{to, start})
@@ -409,6 +449,13 @@ func (m Masker) emails(s string) (string, []string) {
 		if end == domain {
 			continue
 		}
+		if len(quotes) == 0 && syncedGroup(s, last, start, i, domain, end) {
+			// group:name@example.com is how a synced group is written. It names no person, so
+			// it stays as written, and nothing is named for it.
+			b.WriteString(s[last:end])
+			last, i = end, end-1
+			continue
+		}
 		text := s[start:end]
 		if len(quotes) > 0 {
 			// Quotes that split an at sign ("%4" "0") are kept: taking them out would make
@@ -418,7 +465,15 @@ func (m Masker) emails(s string) (string, []string) {
 			}
 		}
 		b.WriteString(s[last:start])
-		out, ref := m.quotedIdentifier(strings.ReplaceAll(strings.ReplaceAll(text, jsonAt, "@"), pctAt, "@"), len(quotes) > 0)
+		plain := strings.ReplaceAll(strings.ReplaceAll(text, jsonAt, "@"), pctAt, "@")
+		out, ref := m.quotedIdentifier(plain, len(quotes) > 0)
+		if ref != "" && len(quotes) == 0 {
+			// Whatever is glued to the address by = or ? is hidden with it but is no part of
+			// its name: the pseudonym is the address's, as users_list shows it.
+			if bare := afterGlue(plain); bare != plain {
+				ref = m.key.Pseudonym(bare)
+			}
+		}
 		b.WriteString(out)
 		if ref != "" {
 			b.WriteString(privacy.Suffix(ref))
@@ -428,6 +483,84 @@ func (m Masker) emails(s string) (string, []string) {
 	}
 	b.WriteString(s[last:])
 	return b.String(), refs
+}
+
+// groupPrefix starts the name of a synced group (group:engineering@example.com), which
+// Tailscale writes with the group's address.
+const groupPrefix = "group:"
+
+// groupLeads are the bytes after which a group: begins a word: white space, quotes, an opening
+// bracket, and the separators of a list, a pair, a path and a table cell. Showing text whole
+// is a decision, so the set is closed: any other byte before group: (a letter, a digit, a full
+// stop, a hyphen, an underscore, an at sign, a closing bracket, a control character, a byte of
+// a non-ASCII character) means it does not begin one, and the name is masked as an address.
+const groupLeads = " \t\n\r\v\f\"'`[({<,;:=/|"
+
+// syncedGroup reports whether the address whose local part is s[start:at] and whose domain
+// is s[domain:end] is the name of a synced group: a group: that begins a word stands right
+// before it, and nothing in it is quoted, escaped or chained. The scan has consumed s up to
+// last, so what group: is read against must lie after it: a group: that an earlier address
+// has used as its domain (x@group:amy@example.com) begins no word. autogroup: and a name
+// that ends in group are not one. A name with a space in it cannot be found whole in free
+// text: the space ends the local part, so what follows it is read, and masked, as an address.
+func syncedGroup(s string, last, start, at, domain, end int) bool {
+	before := start - len(groupPrefix)
+	if before < last || s[before:start] != groupPrefix {
+		return false
+	}
+	for _, c := range []byte(s[start:at]) {
+		if !localByte(c) || c == '%' || controlByte(c) || c == '=' || c == '?' {
+			// A percent, JSON or brace escape, or a control character, in the name. An equals
+			// sign or a question mark is glue (user=amy@example.com, ?u=amy@example.com): text
+			// that has one before an address names the address by the part after it, so a name
+			// that holds one is not a group's name, and is masked as the address it may be.
+			return false
+		}
+	}
+	// Whatever the domain scan swept up after the name must hold no at sign: a person's
+	// address can follow it behind an escape (group:a@example.org\u0020amy@example.com).
+	if atSigns(s[domain:end]) > 0 {
+		return false
+	}
+	return before == 0 || before > last && groupLead(s, last, before)
+}
+
+// groupLead reports whether the byte, or the percent, JSON or brace escape, that ends at
+// s[before-1] and begins no earlier than last, is one of groupLeads. A slash right after
+// another slash is no lead: it is the start of a URL authority (scheme://user:password@host),
+// where what follows the slashes is a user and a password, not a group.
+func groupLead(s string, last, before int) bool {
+	r, n := leadAt(s, last, before)
+	if r <= 0 || r >= 0x80 || strings.IndexByte(groupLeads, byte(r)) < 0 {
+		return false
+	}
+	if r == '/' && before-n > last {
+		if prev, _ := leadAt(s, last, before-n); prev == '/' {
+			return false
+		}
+	}
+	return true
+}
+
+// leadAt decodes the byte, or the percent, JSON or brace escape, that ends at s[before-1] and
+// begins no earlier than last: the character it stands for and its length in s.
+func leadAt(s string, last, before int) (r, n int) {
+	if n := braceEscapeBefore(s, last, before); n > 0 {
+		for _, c := range []byte(s[before-n+3 : before-1]) {
+			r = r<<4 | hexVal(c)
+		}
+		return r, n
+	}
+	if before-3 >= last && s[before-3] == '%' && hexVal(s[before-2]) >= 0 && hexVal(s[before-1]) >= 0 {
+		return hexVal(s[before-2])<<4 | hexVal(s[before-1]), 3
+	}
+	if before-len(jsonAt) >= last && uEscape(s[before-len(jsonAt):before]) {
+		for _, c := range []byte(s[before-4 : before]) {
+			r = r<<4 | hexVal(c)
+		}
+		return r, len(jsonAt)
+	}
+	return int(s[before-1]), 1
 }
 
 // domainEnd reads the domain after an at sign, from the byte after it: where it starts,
@@ -1076,10 +1209,10 @@ func digitsEnd(s string, i int) int {
 	return i
 }
 
-// partsFrom counts the numbers that full stops join from s[p], up to max.
-func partsFrom(s string, p, max int) int {
+// partsFrom counts the numbers that full stops join from s[p], up to limit.
+func partsFrom(s string, p, limit int) int {
 	n := 0
-	for n < max {
+	for n < limit {
 		q := p
 		for q < len(s) && isDigit(s[q]) {
 			q++

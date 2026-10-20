@@ -72,6 +72,13 @@ func requireID(field, v string) error {
 	return nil
 }
 
+// keylessHint is what a refusal says when there is no privacy key: pseudonyms exist only with
+// one, so no refusal may send the caller to a pseudonym.
+const keylessHint = "masked values carry pseudonyms only when a privacy key is configured (README, Privacy key); the owner can also set personalData to show"
+
+// keyless reports whether no privacy key is loaded. A nil Env has none.
+func keyless(env *registry.Env) bool { return env == nil || env.Privacy == nil }
+
 // filterRefused refuses a literal filter that would confirm a guessed personal
 // value while masking is on (spec Appendix C): a match would tell the caller the
 // guess was right. takesIDs says the filter also takes exact IDs. The message
@@ -83,8 +90,8 @@ func filterRefused(env *registry.Env, name string, takesIDs bool) error {
 		takes = "an exact ID or a pseudonym (p:…)"
 	}
 	hint := "pass the pseudonym shown after a masked value, or the masked value itself; the owner can set personalData to show"
-	if env.Privacy == nil {
-		hint = "masked values carry pseudonyms only when a privacy key is configured (README, Privacy key); the owner can also set personalData to show"
+	if keyless(env) {
+		hint = keylessHint
 	}
 	if takesIDs {
 		hint = "pass an exact ID; or " + hint
