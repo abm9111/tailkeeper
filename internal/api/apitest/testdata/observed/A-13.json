@@ -1,0 +1,31 @@
+{
+  "observedOn": "2026-10-20",
+  "probe": "A-13",
+  "title": "The ETag formula",
+  "sends": "`sha256(hujson.Format(GET body))` in hex against the ETag",
+  "expected": "Equal",
+  "branch": "\"Identical to live\" without a request",
+  "observations": [
+    {
+      "label": "the policy as HuJSON",
+      "expect": "an ETag equal to sha256(hujson.Format(body))",
+      "request": "GET policy, Accept application/hujson",
+      "result": {
+        "status": 200,
+        "body": "text"
+      },
+      "etag": "quoted-hex64"
+    }
+  ],
+  "checks": [
+    {
+      "name": "sha256(hujson.Format(body)) equals the ETag",
+      "want": true,
+      "got": true
+    }
+  ],
+  "facts": {
+    "hujson.Format accepted the body": true,
+    "sha256 of the raw body equals the ETag": true
+  }
+}

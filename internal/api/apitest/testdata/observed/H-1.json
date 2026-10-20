@@ -1,0 +1,124 @@
+{
+  "observedOn": "2026-10-20",
+  "probe": "H-1",
+  "title": "Do the audit log's old and new hold policy texts",
+  "sends": "`GET` configuration audit log, 90 days, ACL update entries: are `old` and `new` strings that parse as a HuJSON object with a known section",
+  "expected": "Yes (the documentation promises a full diff)",
+  "branch": "`acl_history` in 0.6.0 or metadata in 0.7.0",
+  "observations": [
+    {
+      "label": "ACL update entries in a 31-day window",
+      "expect": "entries whose old and new are policy texts",
+      "request": "GET /logging/configuration",
+      "result": {
+        "status": 200,
+        "body": "json",
+        "paths": [
+          {
+            "path": "$",
+            "type": "object"
+          },
+          {
+            "path": "<key>",
+            "type": "string"
+          },
+          {
+            "path": "logs",
+            "type": "array"
+          },
+          {
+            "path": "logs[]",
+            "type": "object"
+          },
+          {
+            "path": "logs[].action",
+            "type": "string"
+          },
+          {
+            "path": "logs[].actor",
+            "type": "object"
+          },
+          {
+            "path": "logs[].actor.displayName",
+            "type": "string"
+          },
+          {
+            "path": "logs[].actor.id",
+            "type": "string"
+          },
+          {
+            "path": "logs[].actor.loginName",
+            "type": "string"
+          },
+          {
+            "path": "logs[].actor.type",
+            "type": "string"
+          },
+          {
+            "path": "logs[].eventGroupID",
+            "type": "string"
+          },
+          {
+            "path": "logs[].eventTime",
+            "type": "string"
+          },
+          {
+            "path": "logs[].new",
+            "type": "string"
+          },
+          {
+            "path": "logs[].old",
+            "type": "string"
+          },
+          {
+            "path": "logs[].origin",
+            "type": "string"
+          },
+          {
+            "path": "logs[].target",
+            "type": "object"
+          },
+          {
+            "path": "logs[].target.id",
+            "type": "string"
+          },
+          {
+            "path": "logs[].target.name",
+            "type": "string"
+          },
+          {
+            "path": "logs[].target.property",
+            "type": "string"
+          },
+          {
+            "path": "logs[].target.type",
+            "type": "string"
+          },
+          {
+            "path": "logs[].type",
+            "type": "string"
+          },
+          {
+            "path": "version",
+            "type": "string"
+          }
+        ]
+      }
+    }
+  ],
+  "checks": [
+    {
+      "name": "every ACL update entry holds old and new policy texts with a known section",
+      "want": true,
+      "got": true
+    }
+  ],
+  "facts": {
+    "old and new are JSON strings": true
+  },
+  "counts": {
+    "ACL update entries seen": 6,
+    "entries whose old and new also hold a known section": 6,
+    "entries whose old and new parse as a policy object": 6
+  }
+}

@@ -1,0 +1,79 @@
+{
+  "observedOn": "2026-10-20",
+  "probe": "A-11",
+  "title": "Raw, standardized and BOM-prefixed HuJSON",
+  "sends": "Policy mode: raw HuJSON with a leading comment and trailing commas; the same `Standardize`d; the same with a BOM",
+  "expected": "Raw and standardized accepted with `application/hujson`; BOM rejected",
+  "branch": "Send exact bytes or `Standardize`d",
+  "observations": [
+    {
+      "label": "raw HuJSON, a leading comment and trailing commas",
+      "expect": "accepted",
+      "request": "POST validate, application/hujson, 58 bytes",
+      "result": {
+        "status": 200,
+        "body": "json",
+        "paths": [
+          {
+            "path": "$",
+            "type": "object"
+          }
+        ]
+      }
+    },
+    {
+      "label": "the same, standardized",
+      "expect": "accepted",
+      "request": "POST validate, application/hujson, 58 bytes",
+      "result": {
+        "status": 200,
+        "body": "json",
+        "paths": [
+          {
+            "path": "$",
+            "type": "object"
+          }
+        ]
+      }
+    },
+    {
+      "label": "the same, with a byte order mark",
+      "expect": "rejected",
+      "request": "POST validate, application/hujson, 61 bytes",
+      "result": {
+        "status": 400,
+        "body": "json",
+        "paths": [
+          {
+            "path": "$",
+            "type": "object"
+          },
+          {
+            "path": "message",
+            "type": "string"
+          }
+        ],
+        "texts": [
+          "<s> <s> '<s>' <s> <s> <s> <s> <s>"
+        ]
+      }
+    }
+  ],
+  "checks": [
+    {
+      "name": "raw HuJSON is accepted",
+      "want": true,
+      "got": true
+    },
+    {
+      "name": "standardized HuJSON is accepted",
+      "want": true,
+      "got": true
+    },
+    {
+      "name": "a byte order mark is rejected",
+      "want": true,
+      "got": true
+    }
+  ]
+}

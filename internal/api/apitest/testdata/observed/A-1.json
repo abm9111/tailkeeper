@@ -1,0 +1,199 @@
+{
+  "observedOn": "2026-10-20",
+  "probe": "A-1",
+  "title": "Defaults: absent, empty and null acls, empty grants",
+  "sends": "Policy mode, `{\"tagOwners\":{\"tag:p\":[]},\"hosts\":{\"probe-a\":\"100.64.0.1\"},\"tests\":[{\"src\":\"tag:p\",\"deny\":[\"probe-a:22\"]}]}`; the same with `\"acls\":[]`, with `\"acls\":null`, with `\"grants\":[]`; control: with `\"acls\":[{\"action\":\"accept\",\"src\":[\"*\"],\"dst\":[\"*:*\"]}]`",
+  "expected": "Control fails (want Drop, got Accept, in the grammar); absent fails like the control (allow-all); `acls: []` passes (deny-all); `acls: null` fails like absent; `grants: []` fails like absent (low confidence). If the control passes, the probe does not discriminate and is redesigned before any reading",
+  "branch": "The `defaults` wording for `grants` and `null`; the canary's `src` shape (a tag with empty owners)",
+  "observations": [
+    {
+      "label": "acls absent",
+      "expect": "fails like the control (allow-all)",
+      "request": "POST validate, application/hujson, 107 bytes",
+      "result": {
+        "status": 200,
+        "body": "json",
+        "paths": [
+          {
+            "path": "$",
+            "type": "object"
+          },
+          {
+            "path": "data",
+            "type": "array"
+          },
+          {
+            "path": "data[]",
+            "type": "object"
+          },
+          {
+            "path": "data[].errors",
+            "type": "array"
+          },
+          {
+            "path": "data[].errors[]",
+            "type": "string"
+          },
+          {
+            "path": "data[].user",
+            "type": "string"
+          },
+          {
+            "path": "message",
+            "type": "string"
+          }
+        ],
+        "texts": [
+          "<s>:<s>",
+          "[acl test error]: address \"<s>-<s>:<n>\" (protocol \"<s>\"): want: Drop, got: Accept",
+          "test(s) failed"
+        ]
+      }
+    },
+    {
+      "label": "acls []",
+      "expect": "passes (deny-all)",
+      "request": "POST validate, application/hujson, 117 bytes",
+      "result": {
+        "status": 200,
+        "body": "json",
+        "paths": [
+          {
+            "path": "$",
+            "type": "object"
+          }
+        ]
+      }
+    },
+    {
+      "label": "acls null",
+      "expect": "fails like absent",
+      "request": "POST validate, application/hujson, 119 bytes",
+      "result": {
+        "status": 200,
+        "body": "json",
+        "paths": [
+          {
+            "path": "$",
+            "type": "object"
+          },
+          {
+            "path": "data",
+            "type": "array"
+          },
+          {
+            "path": "data[]",
+            "type": "object"
+          },
+          {
+            "path": "data[].errors",
+            "type": "array"
+          },
+          {
+            "path": "data[].errors[]",
+            "type": "string"
+          },
+          {
+            "path": "data[].user",
+            "type": "string"
+          },
+          {
+            "path": "message",
+            "type": "string"
+          }
+        ],
+        "texts": [
+          "<s>:<s>",
+          "[acl test error]: address \"<s>-<s>:<n>\" (protocol \"<s>\"): want: Drop, got: Accept",
+          "test(s) failed"
+        ]
+      }
+    },
+    {
+      "label": "grants []",
+      "expect": "fails like absent (low confidence)",
+      "request": "POST validate, application/hujson, 119 bytes",
+      "result": {
+        "status": 200,
+        "body": "json",
+        "paths": [
+          {
+            "path": "$",
+            "type": "object"
+          }
+        ]
+      }
+    },
+    {
+      "label": "control: acls accept everything",
+      "expect": "fails: want Drop, got Accept, in the grammar",
+      "request": "POST validate, application/hujson, 162 bytes",
+      "result": {
+        "status": 200,
+        "body": "json",
+        "paths": [
+          {
+            "path": "$",
+            "type": "object"
+          },
+          {
+            "path": "data",
+            "type": "array"
+          },
+          {
+            "path": "data[]",
+            "type": "object"
+          },
+          {
+            "path": "data[].errors",
+            "type": "array"
+          },
+          {
+            "path": "data[].errors[]",
+            "type": "string"
+          },
+          {
+            "path": "data[].user",
+            "type": "string"
+          },
+          {
+            "path": "message",
+            "type": "string"
+          }
+        ],
+        "texts": [
+          "<s>:<s>",
+          "[acl test error]: address \"<s>-<s>:<n>\" (protocol \"<s>\"): want: Drop, got: Accept",
+          "test(s) failed"
+        ]
+      }
+    }
+  ],
+  "checks": [
+    {
+      "name": "the control fails with want Drop, got Accept",
+      "want": true,
+      "got": true
+    },
+    {
+      "name": "absent acls fails like the control",
+      "want": true,
+      "got": true
+    },
+    {
+      "name": "acls [] passes",
+      "want": true,
+      "got": true
+    },
+    {
+      "name": "acls null fails like absent",
+      "want": true,
+      "got": true
+    },
+    {
+      "name": "grants [] fails like absent",
+      "want": true,
+      "got": false
+    }
+  ]
+}

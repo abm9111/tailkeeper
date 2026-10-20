@@ -1,0 +1,142 @@
+{
+  "observedOn": "2026-10-20",
+  "probe": "A-2",
+  "title": "Policy mode with a non-object body",
+  "sends": "Policy mode with `[]`, `[{\"src\":\"tag:p\",\"accept\":[\"tag:p:22\"]}]`, an empty body, `null`",
+  "expected": "Arrays run in tests mode against live; empty and `null` rejected with a bare `{message}`",
+  "branch": "Confirms the object rule, which stays either way",
+  "observations": [
+    {
+      "label": "an empty array",
+      "expect": "runs in tests mode against live",
+      "request": "POST validate, application/hujson, 2 bytes",
+      "result": {
+        "status": 400,
+        "body": "json",
+        "paths": [
+          {
+            "path": "$",
+            "type": "object"
+          },
+          {
+            "path": "message",
+            "type": "string"
+          }
+        ],
+        "texts": [
+          "<s> <s> <s>"
+        ]
+      }
+    },
+    {
+      "label": "an array with one test",
+      "expect": "runs in tests mode against live",
+      "request": "POST validate, application/hujson, 39 bytes",
+      "result": {
+        "status": 200,
+        "body": "json",
+        "paths": [
+          {
+            "path": "$",
+            "type": "object"
+          },
+          {
+            "path": "data",
+            "type": "array"
+          },
+          {
+            "path": "data[]",
+            "type": "object"
+          },
+          {
+            "path": "data[].errors",
+            "type": "array"
+          },
+          {
+            "path": "data[].errors[]",
+            "type": "string"
+          },
+          {
+            "path": "data[].user",
+            "type": "string"
+          },
+          {
+            "path": "message",
+            "type": "string"
+          }
+        ],
+        "texts": [
+          "<s>:<s>",
+          "[acl test error]: user or host is invalid: tag not found: \"<s>:<s>\"",
+          "test(s) failed"
+        ]
+      }
+    },
+    {
+      "label": "an empty body",
+      "expect": "rejected with a bare message",
+      "request": "POST validate, application/hujson, 0 bytes",
+      "result": {
+        "status": 400,
+        "body": "json",
+        "paths": [
+          {
+            "path": "$",
+            "type": "object"
+          },
+          {
+            "path": "message",
+            "type": "string"
+          }
+        ],
+        "texts": [
+          "<s> <s> <s> <s> <s>"
+        ]
+      }
+    },
+    {
+      "label": "null",
+      "expect": "rejected with a bare message",
+      "request": "POST validate, application/hujson, 4 bytes",
+      "result": {
+        "status": 400,
+        "body": "json",
+        "paths": [
+          {
+            "path": "$",
+            "type": "object"
+          },
+          {
+            "path": "message",
+            "type": "string"
+          }
+        ],
+        "texts": [
+          "<s> <s> <s>"
+        ]
+      }
+    }
+  ],
+  "checks": [
+    {
+      "name": "an empty array is not rejected as a policy",
+      "want": true,
+      "got": false
+    },
+    {
+      "name": "an array with a test is not rejected as a policy",
+      "want": true,
+      "got": true
+    },
+    {
+      "name": "an empty body is rejected with a bare message",
+      "want": true,
+      "got": true
+    },
+    {
+      "name": "null is rejected with a bare message",
+      "want": true,
+      "got": true
+    }
+  ]
+}

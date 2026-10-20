@@ -137,21 +137,22 @@ func canaryServer(t *testing.T, shown bool, reply func(w http.ResponseWriter, lo
 	return nil, nil, nil, ""
 }
 
-// failureReply answers a validation with a failed test whose user and reasons echo the login.
+// failureReply answers a validation with a failed test whose user and reasons echo the login,
+// in the ledger's shape of a failed test.
 func failureReply(w http.ResponseWriter, login string) {
-	var errs []string
-	errs = append(errs, echoes(login)...)
-	body, _ := json.Marshal(map[string]any{"message": "test(s) failed", "data": []map[string]any{{"user": login, "errors": errs}}})
-	w.Header().Set("Content-Type", "application/json")
-	_, _ = w.Write(body)
+	apitest.TestsFailed(apitest.Entry{User: login, Errors: echoes(login)}).Write(w)
 }
 
-// rejectionReply answers with a 400 whose message echoes the login.
+// rejectionReply answers with a 400 whose message echoes the login, in the ledger's shape of a
+// body the API does not read as a policy.
 func rejectionReply(w http.ResponseWriter, login string) {
-	body, _ := json.Marshal(map[string]string{"message": strings.Join(echoes(login), "; ")})
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(http.StatusBadRequest)
-	_, _ = w.Write(body)
+	apitest.Rejected400(strings.Join(echoes(login), "; ")).Write(w)
+}
+
+// rejectionAt200Reply answers with a bare message at HTTP 200 that echoes the login: how the
+// live API rejects a well-formed document it cannot accept (the ledger's BareMessage200).
+func rejectionAt200Reply(w http.ResponseWriter, login string) {
+	apitest.BareMessage200(strings.Join(echoes(login), "; ")).Write(w)
 }
 
 // everything is all that the server produced for a call: the whole result, its structured
@@ -194,7 +195,7 @@ func leaks(s string) []string {
 }
 
 func TestAResolvedLoginReachesOnlyTheRequest(t *testing.T) {
-	for name, reply := range map[string]func(http.ResponseWriter, string){"a failed test": failureReply, "a rejection": rejectionReply} {
+	for name, reply := range map[string]func(http.ResponseWriter, string){"a failed test": failureReply, "a rejection": rejectionReply, "a rejection at 200": rejectionAt200Reply} {
 		t.Run(name, func(t *testing.T) {
 			cs, a, f, ref := canaryServer(t, false, reply)
 			res := callTool(t, cs, "acl_canary", map[string]any{"subject": ref, "mode": "result"})

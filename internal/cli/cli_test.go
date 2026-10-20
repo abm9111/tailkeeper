@@ -671,11 +671,12 @@ func TestAResultThatCannotBePrintedFailsTheCommand(t *testing.T) {
 func TestACLTestPrintsEveryReason(t *testing.T) {
 	var errs []string
 	for i := 1; i <= 40; i++ {
-		errs = append(errs, fmt.Sprintf(`"address \"tag:prod%02d:22\": want: Accept, got: Drop"`, i))
+		errs = append(errs, fmt.Sprintf(`address "tag:prod%02d:22": want: Accept, got: Drop`, i))
 	}
 	f := apitest.New(t)
-	f.Raw("POST", apitest.ValidatePath, 200, `{"message":"test(s) failed","data":[{"user":"tag:ci","errors":[`+strings.Join(errs, ",")+`]},`+
-		`{"user":"tag:ci","warnings":["host alias \"lab\" unused, and so is \"edge\""]}]}`, nil)
+	f.ServeValidate(apitest.TestsFailed(
+		apitest.Entry{User: "tag:ci", Errors: errs},
+		apitest.Entry{User: "tag:ci", Warnings: []string{`host alias "lab" unused, and so is "edge"`}}))
 	h := newHarness(t, f)
 	if code := h.run("acl", "test", "tag:ci", "--accept", "tag:prod01:22"); code != 9 {
 		t.Fatalf("exit %d: %s", code, h.err)
@@ -697,15 +698,18 @@ func TestACLTestPrintsEveryReason(t *testing.T) {
 
 // A failed acl test exits 9, the spec's tests_failed; a pass exits 0.
 func TestACLTestExitCodes(t *testing.T) {
-	for body, want := range map[string]int{
-		"": 0,
-		`{"message":"test(s) failed","data":[{"user":"tag:ci","errors":["address \"tag:prod:22\": want: Accept, got: Drop"]}]}`: 9,
+	for _, c := range []struct {
+		shape apitest.Shape
+		want  int
+	}{
+		{apitest.TestsPass(), 0},
+		{apitest.TestsFailed(apitest.Entry{User: "tag:ci", Errors: []string{`address "tag:prod:22": want: Accept, got: Drop`}}), 9},
 	} {
 		f := apitest.New(t)
-		f.Raw("POST", apitest.ValidatePath, 200, body, nil)
+		f.ServeValidate(c.shape)
 		h := newHarness(t, f)
-		if code := h.run("acl", "test", "tag:ci", "--accept", "tag:prod:22"); code != want {
-			t.Errorf("%q: exit %d, want %d (%s %s)", body, code, want, h.out, h.err)
+		if code := h.run("acl", "test", "tag:ci", "--accept", "tag:prod:22"); code != c.want {
+			t.Errorf("%s: exit %d, want %d (%s %s)", c.shape.Name, code, c.want, h.out, h.err)
 		}
 	}
 }

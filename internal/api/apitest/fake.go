@@ -4,6 +4,7 @@
 package apitest
 
 import (
+	"bytes"
 	"context"
 	"io"
 	"net/http"
@@ -36,6 +37,7 @@ type Request struct {
 	Auth        string
 	Accept      string
 	ContentType string
+	IfNoneMatch string
 	Body        []byte
 }
 
@@ -65,6 +67,25 @@ type Fake struct {
 	idToken   string // the identity token the exchange accepts; "" accepts none
 	failures  []int  // statuses the next exchanges return, in order
 	exchanges int
+	// permitProbe lets validate POSTs through whose content type and body disagree.
+	// Only the probe harness sends such requests, on purpose (PermitProbeRequests).
+	permitProbe bool
+}
+
+// maxRequestBody caps the request body the fake records. A body over the cap fails the
+// test instead of being cut, so a truncated body can never stand in for the exact
+// bytes a test compares.
+const maxRequestBody = 16 << 20
+
+// PermitProbeRequests lets the fake accept validate POSTs whose content type and
+// body disagree (an array sent as HuJSON, an empty body, a byte order mark). The
+// probe harness sends them on purpose, to see what the real API does with them. The
+// callers allowed today are the tests of internal/probe, apitest/spy_test.go and
+// internal/api/policy_test.go; no other test may call this.
+func (f *Fake) PermitProbeRequests() {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.permitProbe = true
 }
 
 // AcceptIDToken makes the token-exchange route accept tok for FedClientID.
@@ -182,7 +203,12 @@ func (f *Fake) serve(w http.ResponseWriter, r *http.Request) {
 		f.exchange(w, r)
 		return
 	}
-	body, _ := io.ReadAll(io.LimitReader(r.Body, 1<<20))
+	body, _ := io.ReadAll(io.LimitReader(r.Body, maxRequestBody+1))
+	if len(body) > maxRequestBody {
+		f.t.Errorf("a request body over %d bytes reached the fake", maxRequestBody)
+		body = body[:maxRequestBody]
+	}
+	r.Body = io.NopCloser(bytes.NewReader(body)) // a handler that answers by the body reads the same bytes the fake recorded
 	// A spy over every test that uses the fake: tailkeeper's read client may send
 	// nothing but GET, and POST to the validate path.
 	if r.Method != http.MethodGet && !(r.Method == http.MethodPost && r.URL.EscapedPath() == ValidatePath) {
@@ -190,7 +216,7 @@ func (f *Fake) serve(w http.ResponseWriter, r *http.Request) {
 	}
 	f.mu.Lock()
 	f.requests = append(f.requests, Request{Method: r.Method, Path: r.URL.EscapedPath(), Query: r.URL.Query(), Auth: r.Header.Get("Authorization"),
-		Accept: r.Header.Get("Accept"), ContentType: r.Header.Get("Content-Type"), Body: body})
+		Accept: r.Header.Get("Accept"), ContentType: r.Header.Get("Content-Type"), IfNoneMatch: r.Header.Get("If-None-Match"), Body: body})
 	h := f.routes[r.Method+" "+r.URL.EscapedPath()]
 	if h == nil {
 		h = f.fallback
@@ -199,7 +225,17 @@ func (f *Fake) serve(w http.ResponseWriter, r *http.Request) {
 	if f.NumberTokens {
 		want = "Bearer " + f.latest
 	}
+	permit := f.permitProbe
 	f.mu.Unlock()
+	// A second spy on the validate POST: its content type selects the mode, and the
+	// body must be what that mode takes (a JSON array of tests, or a policy object).
+	// A mismatch would run in the other mode and read as a pass for text that was
+	// never validated.
+	if r.Method == http.MethodPost && r.URL.EscapedPath() == ValidatePath && !permit {
+		if msg := validateMismatch(r.Header.Get("Content-Type"), body); msg != "" {
+			f.t.Errorf("%s", msg)
+		}
+	}
 	if r.Header.Get("Authorization") != want {
 		w.WriteHeader(http.StatusUnauthorized)
 		_, _ = w.Write([]byte(`{"message":"unauthorized"}`))

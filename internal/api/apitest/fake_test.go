@@ -38,6 +38,8 @@ func TestSpyReportsEveryOtherRequest(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
+		// A validate POST must name a mode; this table is about the method and the path.
+		req.Header.Set("Content-Type", "application/hujson")
 		resp, err := http.DefaultClient.Do(req)
 		if err != nil {
 			t.Fatal(err)

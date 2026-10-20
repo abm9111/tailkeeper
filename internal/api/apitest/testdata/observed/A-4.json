@@ -1,0 +1,147 @@
+{
+  "observedOn": "2026-10-20",
+  "probe": "A-4",
+  "title": "Duplicate sections and keys",
+  "sends": "Policy mode: two `groups` blocks, two `acls` blocks, two `acls` blocks whose second rule has no `dst`, `tagOwners` plus `TagOwners`, a group name defined twice inside `groups`",
+  "expected": "All accepted: struct-valued sections merge, arrays replace, keys fold case, the later map entry wins; a repeated array of rules replaces whole, with no element-wise merge (the one rule left has no `dst`, so it is rejected or its test fails)",
+  "branch": "The folding rules; if rejected, proposals with duplicates are `invalid` anyway and only the live-side wording changes; if the second rule keeps the first's `dst`, the server merges repeated arrays element-wise and how repeated array sections are read changes",
+  "observations": [
+    {
+      "label": "two groups blocks",
+      "expect": "accepted: the blocks merge, so group:one still exists",
+      "request": "POST validate, application/hujson, 133 bytes",
+      "result": {
+        "status": 200,
+        "body": "json",
+        "paths": [
+          {
+            "path": "$",
+            "type": "object"
+          },
+          {
+            "path": "message",
+            "type": "string"
+          }
+        ],
+        "texts": [
+          "<s> <s> \"<s>\" <s> <s> (<s> <n>:<n> <s> <n>:<n>)"
+        ]
+      }
+    },
+    {
+      "label": "two acls blocks",
+      "expect": "accepted: the later array replaces the earlier, so deny-all and the test passes",
+      "request": "POST validate, application/hujson, 137 bytes",
+      "result": {
+        "status": 200,
+        "body": "json",
+        "paths": [
+          {
+            "path": "$",
+            "type": "object"
+          },
+          {
+            "path": "message",
+            "type": "string"
+          }
+        ],
+        "texts": [
+          "<s> <s> \"<s>\" <s> <s> (<s> <n>:<n> <s> <n>:<n>)"
+        ]
+      }
+    },
+    {
+      "label": "two acls blocks, the second rule without dst",
+      "expect": "rejected, or accepted with the test failing: the later array replaces the earlier, so the one rule has no dst",
+      "request": "POST validate, application/hujson, 214 bytes",
+      "result": {
+        "status": 200,
+        "body": "json",
+        "paths": [
+          {
+            "path": "$",
+            "type": "object"
+          },
+          {
+            "path": "message",
+            "type": "string"
+          }
+        ],
+        "texts": [
+          "<s> <s> \"<s>\" <s> <s> (<s> <n>:<n> <s> <n>:<n>)"
+        ]
+      }
+    },
+    {
+      "label": "tagOwners and TagOwners",
+      "expect": "accepted: the keys fold case and the blocks merge, so both tags exist",
+      "request": "POST validate, application/hujson, 107 bytes",
+      "result": {
+        "status": 200,
+        "body": "json",
+        "paths": [
+          {
+            "path": "$",
+            "type": "object"
+          },
+          {
+            "path": "message",
+            "type": "string"
+          }
+        ],
+        "texts": [
+          "<s> <s> \"<s>\" <s> <s> (<s> <n>:<n> <s> <n>:<n>)"
+        ]
+      }
+    },
+    {
+      "label": "a group defined twice inside groups",
+      "expect": "accepted: the later entry wins",
+      "request": "POST validate, application/hujson, 86 bytes",
+      "result": {
+        "status": 200,
+        "body": "json",
+        "paths": [
+          {
+            "path": "$",
+            "type": "object"
+          },
+          {
+            "path": "message",
+            "type": "string"
+          }
+        ],
+        "texts": [
+          "<s> <s> \"<s>:<s>\" <s> <s> (<s> <n>:<n> <s> <n>:<n>)"
+        ]
+      }
+    }
+  ],
+  "checks": [
+    {
+      "name": "two groups blocks are accepted and merge",
+      "want": true,
+      "got": false
+    },
+    {
+      "name": "two acls blocks are accepted and the later array replaces the earlier",
+      "want": true,
+      "got": false
+    },
+    {
+      "name": "a repeated acls array replaces its rules whole (no element-wise merge)",
+      "want": true,
+      "got": false
+    },
+    {
+      "name": "tagOwners and TagOwners are accepted and merge",
+      "want": true,
+      "got": false
+    },
+    {
+      "name": "a group defined twice inside groups is accepted",
+      "want": true,
+      "got": false
+    }
+  ]
+}

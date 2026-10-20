@@ -365,7 +365,7 @@ func TestDesignMarksEveryPendingProbeOneWay(t *testing.T) {
 // writes them: internal/guard, or internal/{acl,guard}.
 var guardPaths = regexp.MustCompile(`internal/(?:\{[a-z,]*guard[a-z,]*\}|[a-z]*guard[a-z]*)`)
 
-// The shared depth guard is one package with one name, internal/guard; PR5 must use it or
+// The shared depth guard is one package with one name, internal/guard; the policy engine must use it or
 // change the design in the same change. A misspelling (internal/guards, internal/depthguard)
 // would send an implementer to a package that does not exist, and a different word for it
 // (depthguard) would name a second package.

@@ -11,6 +11,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/abm9111/tailkeeper/internal/api/apitest"
 	"github.com/abm9111/tailkeeper/internal/registry"
 	"github.com/abm9111/tailkeeper/internal/tkerr"
 	"github.com/abm9111/tailkeeper/internal/tools"
@@ -236,25 +237,25 @@ func TestACLGetDoesNotWaitLongForTheSettings(t *testing.T) {
 
 func TestACLTestReportsPassFailAndWarnings(t *testing.T) {
 	for _, c := range []struct {
-		body     string
+		shape    apitest.Shape
 		status   string
 		failures int
 		warnings int
 	}{
-		{"", "pass", 0, 0},
-		{`{}`, "pass", 0, 0},
-		{`{"message":"test(s) failed","data":[{"user":"amy@example.com","errors":["address \"203.0.113.9:22\": want: Accept, got: Drop for amy@example.com"]}]}`, "fail", 1, 0},
-		{`{"message":"warning(s) found","data":[{"user":"amy@example.com","warnings":["host alias \"lab\" unused"]}]}`, "pass", 0, 1},
+		{apitest.TestsPass(), "pass", 0, 0},
+		{apitest.TestsPassEmptyObject(), "pass", 0, 0},
+		{apitest.TestsFailed(apitest.Entry{User: "amy@example.com", Errors: []string{`address "203.0.113.9:22": want: Accept, got: Drop for amy@example.com`}}), "fail", 1, 0},
+		{apitest.TestsWarned(apitest.Entry{User: "amy@example.com", Warnings: []string{`host alias "lab" unused`}}), "pass", 0, 1},
 	} {
 		f, reg, env := apiEnv(t)
-		f.Raw("POST", "/api/v2/tailnet/T1234CNTRL/acl/validate", 200, c.body, map[string]string{"Content-Type": "application/json"})
+		f.ServeValidate(c.shape)
 		var out tools.ACLTestOutput
 		s := mustCall(t, reg, env, "acl_test", `{"src":"amy@example.com","accept":["203.0.113.9:22"],"deny":["tag:db:5432"],"proto":"tcp"}`, &out)
 		if out.Status != c.status || len(out.Failures) != c.failures || len(out.Warnings) != c.warnings || out.Note == "" || out.EvaluatedAt == "" {
-			t.Errorf("%q: %+v", c.body, out)
+			t.Errorf("%s: %+v", c.shape.Name, out)
 		}
 		if want := map[string]int{"pass": 0, "fail": 9}[c.status]; out.ExitCode() != want {
-			t.Errorf("%q: exit code %d, want %d", c.body, out.ExitCode(), want)
+			t.Errorf("%s: exit code %d, want %d", c.shape.Name, out.ExitCode(), want)
 		}
 		absent(t, s, "amy@")
 		if c.failures > 0 && !strings.Contains(s, "203.0.113.9:22") {

@@ -1,0 +1,125 @@
+{
+  "observedOn": "2026-10-20",
+  "probe": "A-3",
+  "title": "What a rejection looks like",
+  "sends": "Policy mode: a syntax error, an unknown field, an unknown tag, `app: {}` without `ip`",
+  "expected": "400 with a bare `{message}`, no `data`; the syntax error carries `line N, column M`",
+  "branch": "A 200 bare `{message}` maps to `rejected` only if seen; otherwise `unknown`",
+  "observations": [
+    {
+      "label": "a syntax error",
+      "expect": "HTTP 400 with a bare message and no data",
+      "request": "POST validate, application/hujson, 60 bytes",
+      "result": {
+        "status": 200,
+        "body": "json",
+        "paths": [
+          {
+            "path": "$",
+            "type": "object"
+          },
+          {
+            "path": "message",
+            "type": "string"
+          }
+        ],
+        "texts": [
+          "line <n>, column <n>: <s> <s>: <s>"
+        ]
+      }
+    },
+    {
+      "label": "an unknown field",
+      "expect": "HTTP 400 with a bare message and no data",
+      "request": "POST validate, application/hujson, 46 bytes",
+      "result": {
+        "status": 200,
+        "body": "json",
+        "paths": [
+          {
+            "path": "$",
+            "type": "object"
+          },
+          {
+            "path": "message",
+            "type": "string"
+          }
+        ],
+        "texts": [
+          "json: unknown field \"<s>\""
+        ]
+      }
+    },
+    {
+      "label": "an unknown tag",
+      "expect": "HTTP 400 with a bare message and no data",
+      "request": "POST validate, application/hujson, 65 bytes",
+      "result": {
+        "status": 200,
+        "body": "json",
+        "paths": [
+          {
+            "path": "$",
+            "type": "object"
+          },
+          {
+            "path": "message",
+            "type": "string"
+          }
+        ],
+        "texts": [
+          "src=tag not found: \"<s>:<s>\""
+        ]
+      }
+    },
+    {
+      "label": "app: {} without ip",
+      "expect": "HTTP 400 with a bare message and no data",
+      "request": "POST validate, application/hujson, 80 bytes",
+      "result": {
+        "status": 200,
+        "body": "json",
+        "paths": [
+          {
+            "path": "$",
+            "type": "object"
+          },
+          {
+            "path": "message",
+            "type": "string"
+          }
+        ],
+        "texts": [
+          "<s> <s> <s> <s> <s> <s> <s> <s>"
+        ]
+      }
+    }
+  ],
+  "checks": [
+    {
+      "name": "a syntax error answers 400 with a bare message and no data",
+      "want": true,
+      "got": false
+    },
+    {
+      "name": "the syntax error names a line and a column",
+      "want": true,
+      "got": true
+    },
+    {
+      "name": "an unknown field answers 400 with a bare message and no data",
+      "want": true,
+      "got": false
+    },
+    {
+      "name": "an unknown tag answers 400 with a bare message and no data",
+      "want": true,
+      "got": false
+    },
+    {
+      "name": "app: {} without ip answers 400 with a bare message and no data",
+      "want": true,
+      "got": false
+    }
+  ]
+}
