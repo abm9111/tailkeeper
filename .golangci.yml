@@ -20,9 +20,17 @@ linters:
     # A rule below that matches nothing is logged, so a stale one shows up.
     warn-unused: true
     rules:
-      # Tests write fixtures with fixed permissions and run the binary they built.
+      # Tests write fixtures with fixed permissions, run the binary they built, walk the
+      # repository's own files, seed a generator and name credential-shaped fixtures.
+      # Only the rules that fire on such code are excused there; any other gosec rule
+      # applies to a test file as it does to the rest:
+      #   G101 a fixture named like a credential      G115 integer conversions in measurements
+      #   G122 a Walk over the repository's files     G204, G702 a subprocess of the test binary
+      #   G30x file modes and paths of fixtures       G404 a seeded generator of test inputs
+      #   G703, G705 paths and text a loopback fake echoes
       - path: _test\.go
         linters: [gosec]
+        text: 'G101|G115|G122|G204|G30[0-9]|G404|G70[235]'
 
       # Every other rule names the file, the rule and the shape of the line it
       # excuses, so the same rule on any other line or in any other file is still
@@ -46,10 +54,6 @@ linters:
         linters: [gosec]
         text: G304
         source: 'os\.Open\(filepath\.Join\(dir, name\)\)'
-      - path: internal/config/read\.go
-        linters: [gosec]
-        text: G304
-        source: 'os\.OpenFile\(path, os\.O_RDONLY\|openFlags, 0\)'
       # An operator's policy file: the name is checked, the file is inspected with
       # Lstat (a symlink or a non-regular file is refused), opened without following
       # a symlink, and compared with what was inspected.

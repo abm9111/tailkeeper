@@ -111,9 +111,9 @@ func Load(d Dirs, check Checker) (*Loaded, error) {
 			fmt.Sprintf("no configuration found at %s or %s", sys, usr),
 			"create "+usr+" (see the Configure section of README.md); tailkeeper never falls back to an implicit tailnet")
 	}
-	want, err := os.Lstat(path)
+	want, err := inspectPath(path)
 	if err != nil {
-		return nil, tkerr.Wrap(tkerr.ConfigInvalid, err, "cannot inspect "+path, "")
+		return nil, inspectRefused(path, err)
 	}
 	if err := check(path, owners...); err != nil {
 		return nil, err
@@ -137,7 +137,7 @@ func exists(path string) (bool, error) {
 	if errors.Is(err, fs.ErrNotExist) {
 		return false, nil
 	}
-	return false, tkerr.Wrap(tkerr.ConfigInvalid, err, "cannot inspect "+path, "")
+	return false, inspectRefused(path, err)
 }
 
 // Select picks the context: the flag value, then TAILKEEPER_CONTEXT, then

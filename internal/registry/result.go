@@ -20,9 +20,20 @@ type Findings struct {
 
 // Gated is implemented by a typed result that --fail-on can gate. A command whose
 // output type implements it takes --fail-on; one that does not has no such flag.
+// A count the tool does not compute is 0 (see Findings), and the command refuses a
+// --fail-on token for it when the result type says which kinds it computes (Computes).
 //
 // Precedence when several apply: exit 1, then 9, then 2, then 8, then 0. The
 // result's own code (ExitCoder) is 0, 1, 2 or 9; a gate that matches turns an
 // otherwise successful run into exit 8, findings_present, and never hides a code
 // that outranks it.
 type Gated interface{ Findings() Findings }
+
+// Computes is implemented, with a value receiver, by a Gated result type whose tool
+// fills only some of the counts of Findings. FailOnKinds names the --fail-on tokens
+// the tool computes ("warnings", "tests-reduced", "defaults", "widening", "change"),
+// at least one. The command refuses a token outside the list before anything loads,
+// because a gate on a count that is always 0 never fires and a pipeline that relies on
+// it would stay green for good. A Gated type that does not implement Computes computes
+// all five.
+type Computes interface{ FailOnKinds() []string }

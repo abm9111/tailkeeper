@@ -9,7 +9,7 @@ import (
 // right: a transient failure says to retry once, and every other code says that
 // retrying the same call does not help.
 func TestProgramHintsSayWhetherToRetry(t *testing.T) {
-	retryable := map[Code]bool{APIRateLimited: true, UpstreamUnavailable: true, LocalTimeout: true, LocalRateLimited: true}
+	retryable := map[Code]bool{APIRateLimited: true, UpstreamUnavailable: true, LocalTimeout: true, LocalRateLimited: true, ValidateRateLimited: true}
 	for c := range declaredCodes(t) {
 		h := strings.ToLower(ProgramHint(c))
 		saysOnce := strings.Contains(h, "retry once")

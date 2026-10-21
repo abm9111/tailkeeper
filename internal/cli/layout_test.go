@@ -294,7 +294,7 @@ func TestTheLayoutReturnsTheFirstWriteError(t *testing.T) {
 
 // reportIn picks one of the layout cases; the files only name sources.
 type reportIn struct {
-	Case   string `json:"case" jsonschema:"which canned report to return"`
+	Case   string `json:"case" tk:"short" jsonschema:"which canned report to return"`
 	Policy string `json:"policy,omitempty" cli:"file:from,stdin"`
 	Patch  string `json:"patch,omitempty" cli:"file:patch,stdin"`
 }

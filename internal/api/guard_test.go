@@ -83,14 +83,14 @@ func TestNewInstallsTheGuardForEveryCredentialKind(t *testing.T) {
 		noop := func(io.Reader, *http.Response) error { return nil }
 		for _, m := range []string{"POST /acl", "DELETE /acl", "PUT /settings", "PATCH /settings", "POST /acl/validate/x"} {
 			method, path, _ := strings.Cut(m, " ")
-			err := c.do(context.Background(), method, "https://api.example.test"+c.TailnetPath(path), []byte("{}"), "application/json", false, noop)
+			err := c.do(context.Background(), method, "https://api.example.test"+c.TailnetPath(path), []byte("{}"), "application/json", "application/json", false, noop)
 			if err == nil || !strings.Contains(err.Error(), "refuses") {
 				t.Errorf("kind %v: %s: err = %v", cred.Kind, m, err)
 			}
 		}
 		// The validate POST passes the guard (the federated token exchange may still
 		// fail against this stub; that is not what this test checks).
-		if err := c.do(context.Background(), "POST", "https://api.example.test"+c.TailnetPath("/acl/validate"), []byte("[]"), "application/json", false, noop); err != nil && strings.Contains(err.Error(), "refuses") {
+		if err := c.do(context.Background(), "POST", "https://api.example.test"+c.TailnetPath("/acl/validate"), []byte("[]"), "application/json", "application/json", false, noop); err != nil && strings.Contains(err.Error(), "refuses") {
 			t.Errorf("kind %v: the validate POST was refused: %v", cred.Kind, err)
 		}
 		for _, r := range s.seen {

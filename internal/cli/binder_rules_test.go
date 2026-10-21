@@ -85,14 +85,17 @@ func TestBindRefusesAMisplacedTagAndSkipsFieldsWithoutAFlag(t *testing.T) {
 
 func TestParseCLITag(t *testing.T) {
 	for tag, want := range map[string]cliTag{
-		"":                               {},
-		"-":                              {kind: "-"},
-		"bool:offline":                   {kind: "bool", flag: "offline"},
-		"file:from":                      {kind: "file", flag: "from"},
-		"file:from,stdin":                {kind: "file", flag: "from", stdin: true},
-		"file:against,stdin,live":        {kind: "file", flag: "against", stdin: true, live: true},
-		"file:from,group=proposal":       {kind: "file", flag: "from", group: "proposal"},
-		"file:from,stdin,group=a-b,live": {kind: "file", flag: "from", stdin: true, live: true, group: "a-b"},
+		"":                                     {},
+		"-":                                    {kind: "-"},
+		"bool:offline":                         {kind: "bool", flag: "offline"},
+		"file:from":                            {kind: "file", flag: "from"},
+		"file:from,stdin":                      {kind: "file", flag: "from", stdin: true},
+		"file:against,stdin,live":              {kind: "file", flag: "against", stdin: true, live: true},
+		"file:from,group=proposal":             {kind: "file", flag: "from", group: "proposal"},
+		"file:from,stdin,group=a-b,live":       {kind: "file", flag: "from", stdin: true, live: true, group: "a-b"},
+		"file:against,stdin,live,arg=1,as=OLD": {kind: "file", flag: "against", stdin: true, live: true, arg: 1, as: "OLD"},
+		"file:from,arg=2,as=NEW2":              {kind: "file", flag: "from", arg: 2, as: "NEW2"},
+		"operator":                             {kind: "operator"},
 	} {
 		got, err := parseCLITag(tag)
 		if err != nil || got != want {
@@ -100,7 +103,9 @@ func TestParseCLITag(t *testing.T) {
 		}
 	}
 	for _, tag := range []string{"file:", "file:Bad", "file:a_b", "file:-a", "file:a-", "bool:x,stdin", "bool:x,live", "bool:x,group=g",
-		"file:x,group=", "file:x,group", "file:x,stdin,stdin2", "file:x,", "other:x", "stdin", "file:x,live=1"} {
+		"file:x,group=", "file:x,group", "file:x,stdin,stdin2", "file:x,", "other:x", "stdin", "file:x,live=1",
+		"file:x,arg=0,as=A", "file:x,arg=3,as=A", "file:x,arg=one,as=A", "file:x,arg=1", "file:x,as=OLD", "file:x,arg=1,as=",
+		"file:x,arg=1,as=old", "file:x,arg=1,as=O-D", "bool:x,arg=1,as=A", "operator:x", "operator,stdin", "operator:"} {
 		if got, err := parseCLITag(tag); err == nil {
 			t.Errorf("parseCLITag(%q) = %+v, want an error", tag, got)
 		}

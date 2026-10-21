@@ -37,7 +37,7 @@ jobs:
           persist-credentials: false
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
-          go-version-file: go.mod # uses its toolchain line (go1.27.2)
+          go-version-file: go.mod # uses its toolchain line (go1.27.3)
       - run: make verify
       - run: make actionlint # the workflow files (syntax, expressions, permissions, shell) and scripts/
       - run: make cover # fails below 90% statement coverage, end-to-end runs included, and below 95% for internal/acl and internal/guard measured from their own tests

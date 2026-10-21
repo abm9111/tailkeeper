@@ -7,8 +7,11 @@ import (
 	"io"
 	"net/http"
 	"os"
+	"reflect"
 	"strings"
 	"testing"
+
+	"github.com/abm9111/tailkeeper/internal/skeleton"
 )
 
 // hasCapture reports whether CaptureDir holds the capture a shape names.
@@ -43,6 +46,9 @@ var provenanceOf = map[string]Kind{
 	"PolicyUnknownField":   Observed,
 	"PolicyTagNotFound":    Observed,
 	"PolicyServerError500": Observed,
+	"PolicyDuplicateKey":   Observed,
+	"PolicyKeyRejected":    Observed,
+	"CanaryFailed":         Observed,
 	"SSHTestFailed":        Observed,
 	"TestUnevaluable":      Observed,
 	"DetailsOK":            Observed,
@@ -58,13 +64,14 @@ var observedBy = map[string]string{
 	"Rejected400": "A-2", "TestsPass": "A-12", "TestsPassEmptyObject": "A-1", "TestsFailed": "A-1",
 	"BareMessage200": "A-3", "PolicySyntaxError": "A-3", "PolicyUnknownField": "A-3", "PolicyTagNotFound": "A-3",
 	"PolicyServerError500": "A-6", "SSHTestFailed": "A-10", "TestUnevaluable": "A-2",
+	"PolicyDuplicateKey": "A-4", "PolicyKeyRejected": "A-14", "CanaryFailed": "A-9",
 	"DetailsOK": "A-8", "PolicyText": "A-13",
 }
 
 func TestEveryShapesProvenanceIsPinned(t *testing.T) {
 	const how = "update provenanceOf only when the API documentation or a capture committed by make probe-acl says so"
-	if len(provenanceOf) != 17 {
-		t.Fatalf("the table holds %d builders, want 17", len(provenanceOf))
+	if len(provenanceOf) != 20 {
+		t.Fatalf("the table holds %d builders, want 20", len(provenanceOf))
 	}
 	inLedger := map[string]bool{}
 	for _, s := range AllShapes() {
@@ -92,6 +99,50 @@ func TestEveryShapesProvenanceIsPinned(t *testing.T) {
 	for _, b := range shapeBuilders(t) {
 		if _, ok := provenanceOf[b]; !ok {
 			t.Errorf("the builder %s has no row in provenanceOf", b)
+		}
+	}
+}
+
+// A builder of an Observed shape must answer in the structure the capture recorded: the
+// status, the key paths with their types and the grammar of each text. A body that
+// differs would make the reader pass every test against the fake and fail on the real
+// API. The three shapes added with the strict policy reader are tied to
+// the observation they stand for; the label names it in the capture.
+func TestTheNewObservedShapesMatchTheirCapture(t *testing.T) {
+	for _, c := range []struct {
+		shape        Shape
+		probe, label string
+	}{
+		{PolicyDuplicateKey(2, 3, 5, 3), "A-4", "two groups blocks"},
+		{CanaryFailed("tag:canary-one-two", false), "A-9", "the canary, acls absent (allow-all)"},
+		{CanaryFailed("tag:canary-one-two", true), "A-9", "the canary, acls [] (deny-all)"},
+		{PolicyKeyRejected("nobody-aaaaaaaa@example.com"), "A-14", "a login that cannot exist, as an object key (in hosts)"},
+	} {
+		raw, err := os.ReadFile(CaptureFile(CaptureDir, c.probe))
+		if err != nil {
+			t.Fatal(err)
+		}
+		var capture struct {
+			Observations []struct {
+				Label  string
+				Result skeleton.Skeleton
+			}
+		}
+		if err := json.Unmarshal(raw, &capture); err != nil {
+			t.Fatal(err)
+		}
+		found := false
+		for _, o := range capture.Observations {
+			if o.Label != c.label {
+				continue
+			}
+			found = true
+			if got := skeleton.Of(c.shape.Status, []byte(c.shape.Body), skeleton.DefaultOptions()); !reflect.DeepEqual(got, o.Result) {
+				t.Errorf("%s does not match the observation %q of %s:\n got  %+v\n want %+v", c.shape.Name, c.label, c.probe, got, o.Result)
+			}
+		}
+		if !found {
+			t.Errorf("%s has no observation %q: the capture or the label changed", c.probe, c.label)
 		}
 	}
 }

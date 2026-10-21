@@ -16,10 +16,6 @@ import (
 // ownership and permissions on this platform.
 const StrictModeEnforced = true
 
-// openFlags are the extra flags readChecked opens with: a symlink fails the open,
-// and a FIFO put in the file's place cannot block it.
-const openFlags = syscall.O_NOFOLLOW | syscall.O_NONBLOCK
-
 // CheckOwnership is the default Checker: path must be a regular file (not a symlink)
 // and path and its directory must be owned by one of allowOwners and writable by
 // neither group nor others.
@@ -31,6 +27,27 @@ func CheckOwnership(path string, allowOwners ...int) error {
 	if !fi.Mode().IsRegular() {
 		return unsafe(path, "is not a regular file (symlinks are refused)", "replace it with a regular file")
 	}
+	return ownedFileAndDirectory(path, fi, allowOwners)
+}
+
+// OwnedBy returns the check for safefile.Options.Verify that holds a file to the rule
+// CheckOwnership applies, on the file that was opened: fi is the open file's Stat, so
+// what is judged is the file that is read, not whatever the path names a moment before
+// or after. The file must be regular, and it and its directory must be owned by one of
+// owners and writable by neither group nor others. Windows reads no owner; there it
+// refuses a file that is not a regular one and nothing else.
+func OwnedBy(owners ...int) func(path string, opened os.FileInfo) error {
+	return func(path string, opened os.FileInfo) error {
+		if !opened.Mode().IsRegular() {
+			return unsafe(path, "is not a regular file", "replace it with a regular file")
+		}
+		return ownedFileAndDirectory(path, opened, owners)
+	}
+}
+
+// ownedFileAndDirectory is the ownership rule for a regular file whose FileInfo is fi
+// and for the directory that holds it.
+func ownedFileAndDirectory(path string, fi os.FileInfo, allowOwners []int) error {
 	if err := checkOne(path, fi, allowOwners); err != nil {
 		return err
 	}

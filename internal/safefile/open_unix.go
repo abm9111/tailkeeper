@@ -13,9 +13,11 @@ type identity struct{ fi os.FileInfo }
 
 func identify(_ string, fi os.FileInfo) (identity, error) { return identity{fi}, nil }
 
-// openNoFollow opens path for reading: a symlink fails the open, and a FIFO put in the
-// file's place after the inspection cannot block it.
-func openNoFollow(path string) (*os.File, error) {
+// OpenNoFollow opens path for reading: a symlink fails the open, and a FIFO put in the
+// file's place after the inspection cannot block it. O_NONBLOCK is for that FIFO alone:
+// it stays set on the descriptor of a regular file and has no effect there, so a read
+// of a regular file is an ordinary blocking read.
+func OpenNoFollow(path string) (*os.File, error) {
 	return os.OpenFile(path, os.O_RDONLY|syscall.O_NOFOLLOW|syscall.O_NONBLOCK, 0)
 }
 

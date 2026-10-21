@@ -230,6 +230,39 @@ func PolicyServerError500() Shape {
 	return validate("PolicyServerError500", observed(runOf20Oct, "A-6"), 500, jsonHeader, messageBody("internal server error"))
 }
 
+// PolicyDuplicateKey is a policy that writes a key twice: HTTP 200 and a bare message that
+// names the key and both positions (A-4). The server rejects every repeated key, a case
+// collision included, and merges nothing. The capture records the grammar of the text,
+// not its words; this wording has that grammar (TestTheNewObservedShapesMatchTheirCapture).
+func PolicyDuplicateKey(line1, col1, line2, col2 int) Shape {
+	return validate("PolicyDuplicateKey", observed(runOf20Oct, "A-4"), 200, jsonHeader,
+		messageBody(fmt.Sprintf("duplicate key %q seen twice (first %d:%d and %d:%d)", "groups", line1, col1, line2, col2)))
+}
+
+// CanaryFailed is the answer to a policy that holds the canary of acl_validate: HTTP 200,
+// "test(s) failed" and one entry whose user is the canary's src and whose one error is
+// in the want/got grammar (A-9). The canary accepts and denies the same destination, so
+// exactly one of the two fails: with no acls (allow-all) the denial fails (want Drop, got
+// Accept), with acls [] (deny-all) the acceptance does (want Accept, got Drop).
+func CanaryFailed(src string, wantAccept bool) Shape {
+	want, got := "Drop", "Accept"
+	if wantAccept {
+		want, got = got, want
+	}
+	text := fmt.Sprintf(`[acl test error]: address "192.0.2.1:1" (protocol "tcp"): want: %s, got: %s`, want, got)
+	return validate("CanaryFailed", observed(runOf20Oct, "A-9"), 200, jsonHeader,
+		entryBody("test(s) failed", []Entry{{User: src, Errors: []string{text}}}))
+}
+
+// PolicyKeyRejected is a rejection that echoes an object key: HTTP 200 and a bare message
+// that quotes the key, as the server did for a login used as a key of hosts (A-14). The
+// echo is Tailscale text like any other and is masked as such. The capture records the
+// grammar of the text, not its words.
+func PolicyKeyRejected(key string) Shape {
+	return validate("PolicyKeyRejected", observed(runOf20Oct, "A-14"), 200, jsonHeader,
+		messageBody(fmt.Sprintf("hosts[%q]: host names may only hold letters, digits, dashes, dots and the underscore", key)))
+}
+
 // SSHTestFailed is a failed sshTests entry. Policy mode runs sshTests and the line has this
 // form (A-10); the entry's user is the test's src.
 func SSHTestFailed(src, srcAddr, dst, dstAddr, user string) Shape {
@@ -281,7 +314,8 @@ func AllShapes() []Shape {
 		TestsFailedIn400(Entry{User: "tag:p", Errors: []string{`[acl test error]: address "tag:p:22" (protocol "tcp"): want: Accept, got: Drop`}}),
 		BareMessage200("line 1, column 1: invalid"), ErrorsListAt200("tag not found"),
 		PolicySyntaxError(3, 5, "invalid literal: invalidtext"), PolicyUnknownField("nodeAttr"), PolicyTagNotFound("tag:p"),
-		PolicyServerError500(),
+		PolicyServerError500(), PolicyDuplicateKey(2, 3, 5, 3), PolicyKeyRejected("nobody-aaaaaaaa@example.com"),
+		CanaryFailed("tag:canary-one-two", false),
 		SSHTestFailed("tag:p", "100.64.0.1", "tag:p", "100.64.0.2", "root"), TestUnevaluable("tag:p"),
 		DetailsOK("{}\n", `"e1"`, []string{`host alias "p" unused`}, nil), PolicyText("{}\n", `"e1"`),
 	}

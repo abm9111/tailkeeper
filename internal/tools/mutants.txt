@@ -1,0 +1,148 @@
+# Mutants of internal/tools: each is a change to the code that a test must notice.
+# scripts/mutate.go says what the format is and what the three outcomes mean. The list
+# holds one mutant for each class of defect the tests of the subject resolver, the
+# pseudonym substitution and the failure-line grammar were written to catch.
+
+mutant: Resolve names every login of the tailnet on every call
+file: acl_subjects.go
+old: match := u.byPseudonym[p]
+new: var match []string; for _, ls := range u.byPseudonym { for _, l := range ls { n := r.name; if n == nil { n = key.APIPseudonym }; if n(l) == p { match = append(match, l) } } }
+kill: TestResolveDoesNotRenameEveryLoginPerCall
+
+mutant: Hide compiles the pattern of each login on every call
+file: acl_subjects_hide.go
+old: text = hideLogin(text, l.pattern)
+new: text = hideLogin(text, loginPattern(l.login))
+kill: TestHideCompilesNothingPerCall
+
+mutant: Hide reads the whole text
+file: acl_subjects_hide.go
+old: text = r.env.Masker().Unforge(cutForHide(text, resolved))
+new: text = r.env.Masker().Unforge(text)
+kill: TestHideReadsAtMostHideLimit
+
+mutant: Hide leaves the part of a login that the cut falls inside
+file: acl_subjects_hide.go
+old: for back := 0; n > 0 && back < maxLoginBytes && addressByte(text[n-1]); back++ {
+new: for back := 0; false; back++ {
+kill: TestHideCutLeavesNoPartOfALoginInAnySpelling|TestHideCutTakesAWordGluedToAnUnreadableLoginWithIt
+
+mutant: Hide leaves the start of an escaped at sign when the cut falls inside it
+file: acl_subjects_hide.go
+old: return sanitize.LocalByte(c) || c == '@' || c == '\\\\' || c == '"'
+new: return sanitize.LocalByte(c) || c == '@' || c == '"'
+kill: TestHideCutLeavesNoPartOfALoginInAnySpelling
+
+mutant: Hide leaves the quote of a quoted local part when the cut falls inside it
+file: acl_subjects_hide.go
+old: return sanitize.LocalByte(c) || c == '@' || c == '\\\\' || c == '"'
+new: return sanitize.LocalByte(c) || c == '@' || c == '\\\\'
+kill: TestHideCutLeavesNoPartOfALoginInAnySpelling
+
+mutant: Hide leaves the start of a login whose local part holds a byte the address scan does not read
+file: acl_subjects_hide.go
+old: if startsLogin(text[s:], l.parts) {
+new: if false && startsLogin(text[s:], l.parts) {
+kill: TestHideCutLeavesNoStartOfAnyLoginWhateverItsLocalPartHolds
+
+mutant: Hide leaves the start of a login written with leading zeros in a brace escape
+file: acl_subjects_hide.go
+old: return consumeFold(strings.TrimLeft(rest, "0"), "40}")
+new: return consumeFold(rest, "40}")
+kill: TestHideCutLeavesNoStartOfAnyLoginWhateverItsLocalPartHolds
+
+mutant: Hide leaves the start of a login written in another letter case
+file: acl_subjects_hide.go
+old: if !foldEqual(lr, tr) {
+new: if lr != tr {
+kill: TestHideCutLeavesNoStartOfAnyLoginWhateverItsLocalPartHolds
+
+mutant: Hide leaves a word glued to the front of a login whose start it dropped
+file: acl_subjects_hide.go
+old: return text[:dropAddressBytes(text[:dropLoginStart(text, logins)])]
+new: return text[:dropLoginStart(text, logins)]
+kill: TestHideCutTakesAWordGluedToAnUnreadableLoginWithIt
+
+mutant: a login in another letter case is not masked
+file: acl_subjects_hide.go
+old: return regexp.MustCompile("(?i)" + strings.Join(parts, at))
+new: return regexp.MustCompile(strings.Join(parts, at))
+kill: TestHideMasksALoginInAnotherLetterCase
+
+mutant: Hide leaves a marker the text holds
+file: acl_subjects_hide.go
+old: text = r.env.Masker().Unforge(cutForHide(text, resolved))
+new: text = cutForHide(text, resolved)
+kill: TestHideUnforgesAMarkerTheTextHolds
+
+mutant: a masked carrier needs no masked address before the marker
+file: acl_subjects_subst.go
+old: .…@\\S+ \\[(p:[a-z2-7]{10})\\]$
+new: .+ \\[(p:[a-z2-7]{10})\\]$
+kill: TestSubstituteRefusesWhatIsNotACarrier
+
+mutant: a marker inside a longer string is left alone
+file: acl_subjects_subst.go
+old: if markerRE.MatchString(s) {
+new: if false {
+kill: TestSubstituteRefusesWhatIsNotACarrier
+
+mutant: a pseudonym as a segment of a JSON pointer is left alone
+file: acl_subjects_subst.go
+old: if strings.HasPrefix(s, "/") {
+new: if false {
+kill: TestSubstituteRefusesWhatIsNotACarrier
+
+mutant: a line comment is read as text
+file: acl_subjects_subst.go
+old: i += j
+new: _ = j
+kill: TestSubstituteReplacesCarriersInKeysAndValuesAndKeepsComments
+
+mutant: any number of distinct pseudonyms is resolved
+file: acl_subjects_subst.go
+old: if len(distinct) > maxSubjects {
+new: if len(distinct) > maxSubjects*100 {
+kill: TestMoreThanMaxSubjectsIsRefusedBeforeAnyRequest
+
+mutant: a login is written into the text without JSON escaping
+file: acl_subjects_subst.go
+old: if err := enc.Encode(login.Reveal()); err != nil {
+new: if _, err := lit.WriteString("\\"" + login.Reveal() + "\\"\\n"); err != nil {
+kill: TestSubstituteEscapesTheLoginAsJSON
+
+mutant: two equal verdicts read as a failed assertion
+file: acl_verdicts.go
+old: || want == rest {
+new: {
+kill: TestUnevaluableLinesAreNotAssertions
+
+mutant: text after an SSH line is ignored
+file: acl_verdicts.go
+old: if !ok || rest != "" {
+new: if !ok || len(rest) > 1<<30 {
+kill: TestUnevaluableLinesAreNotAssertions
+
+mutant: a quoted token is not cut
+file: acl_verdicts.go
+old: if len(tok) > maxQuotedToken {
+new: if false {
+kill: TestPositionInAndQuotedToken
+
+mutant: a position of line 0 is read
+file: acl_verdicts.go
+old: err != nil || n < 1
+new: err != nil || n < 0
+kill: TestPositionInAndQuotedToken
+
+mutant: the destination of a failure is dropped before it is located
+file: acl_verdicts.go
+old: return acl.Failure{Src: src, Dst: f.Dst, SSH: f.SSH}
+new: return acl.Failure{Src: src, SSH: f.SSH}
+kill: TestAFailureLineMakesTheFailureToLocate|TestLocateFindsEveryCandidateNeverCannotTell
+
+mutant: the cut count of Locate is dropped
+file: acl_problems.go
+old: return placement{basis: placedByTest, locations: locs, cut: cut}, nil
+new: return placement{basis: placedByTest, locations: locs, cut: cut * 0}, nil
+kill: TestAPlacementCarriesLocatesCutCount

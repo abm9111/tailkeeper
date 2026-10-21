@@ -27,7 +27,9 @@ type Report struct {
 	// Classes are the diff counts by class, in the order to show them: defaults,
 	// tests reduced and widenings first.
 	Classes []ClassCount
-	// Findings are the located problems and notes, in the order to show them.
+	// Findings are the located problems and notes, in the order to show them. (The
+	// counts of Gated.Findings are another thing: a count a tool does not compute is
+	// 0, and the command refuses the --fail-on token that names it; see Computes.)
 	Findings []Finding
 }
 

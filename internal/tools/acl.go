@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/abm9111/tailkeeper/internal/api"
+	"github.com/abm9111/tailkeeper/internal/guard"
 	"github.com/abm9111/tailkeeper/internal/registry"
 	"github.com/abm9111/tailkeeper/internal/sanitize"
 	"github.com/abm9111/tailkeeper/internal/tkerr"
@@ -29,7 +30,7 @@ var aclScopes = []string{"policy_file:read", "devices:core:read", "devices:postu
 
 const (
 	defaultPolicyPage = 150 << 10 // keeps a page's JSON text under the 200,000 characters MCP results declare
-	maxPolicyPage     = 4 << 20
+	maxPolicyPage     = guard.MaxPolicyBytes
 	maxDestinations   = 32
 	maxTestValue      = 300
 	maxTestMessages   = 64

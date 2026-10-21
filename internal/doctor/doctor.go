@@ -9,6 +9,7 @@ import (
 	"os"
 	"path/filepath"
 	"slices"
+	"strconv"
 	"strings"
 	"time"
 
@@ -16,6 +17,7 @@ import (
 	"github.com/abm9111/tailkeeper/internal/audit"
 	"github.com/abm9111/tailkeeper/internal/config"
 	"github.com/abm9111/tailkeeper/internal/creds"
+	"github.com/abm9111/tailkeeper/internal/guard"
 	"github.com/abm9111/tailkeeper/internal/privacy"
 	"github.com/abm9111/tailkeeper/internal/registry"
 	"github.com/abm9111/tailkeeper/internal/sanitize"
@@ -429,7 +431,7 @@ var probeList = []struct{ tool, args string }{
 	{"user_invites_list", `{}`},
 	{"log_streaming_get", `{"logType":"configuration"}`},
 	{"network_flow_logs", `{"maxRecords":1}`},
-	{"acl_get", `{"maxBytes":4194304}`}, // the largest page: a minified policy is one long line
+	{"acl_get", `{"maxBytes":` + strconv.Itoa(guard.MaxPolicyBytes) + `}`}, // the largest page: a minified policy is one long line
 }
 
 // aclCanary is a test no policy can pass: the same destination both accepted and

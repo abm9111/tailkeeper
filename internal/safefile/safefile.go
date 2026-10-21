@@ -18,17 +18,23 @@ import (
 	"runtime"
 	"strings"
 
+	"github.com/abm9111/tailkeeper/internal/guard"
 	"github.com/abm9111/tailkeeper/internal/tkerr"
 )
 
-// MaxBytes is the most a policy file may hold: tailkeeper's own cap, since
-// Tailscale publishes none.
-const MaxBytes = 4 << 20
+// MaxBytes is the most a policy file may hold: guard.MaxPolicyBytes, tailkeeper's own
+// cap, since Tailscale publishes none.
+const MaxBytes = guard.MaxPolicyBytes
 
 // Options say how much may be read and how a refusal is reported.
 type Options struct {
 	Cap  int64      // the most bytes accepted; MaxBytes when 0
 	Code tkerr.Code // the code of every refusal; tkerr.Usage when empty
+	// Verify, when set, runs on the Stat of the file that was opened, after the
+	// identity check and before any byte is read. Its error is returned as it is,
+	// not rewrapped in Code: a check that knows its own code (config_unsafe for a
+	// file of the wrong owner) keeps it.
+	Verify func(path string, opened os.FileInfo) error
 }
 
 // limit is the cap in force. It stops one short of the top of int64 so that the
@@ -55,6 +61,23 @@ func (o Options) refuse(msg, hint string) error { return tkerr.New(o.code(), msg
 // afterLstat runs between the inspection and the open. It is a seam for tests that
 // change the file at that moment; it does nothing otherwise.
 var afterLstat = func(string) {}
+
+// Identity is the file that an inspection saw, so that the file opened afterwards
+// can be compared with it. Take it with Identify, at the inspection.
+type Identity struct{ id identity }
+
+// Identify reads the identity of the file at path, whose Lstat is fi. On Windows it
+// is read from a handle that does not follow a reparse point (and that refuses one),
+// at this moment: os.SameFile reads the identity of its two arguments later, by
+// path, so a file put at the path in between would compare equal to itself.
+func Identify(path string, fi os.FileInfo) (Identity, error) {
+	id, err := identify(path, fi)
+	return Identity{id}, err
+}
+
+// Is reports whether f, the file opened, and opened, its Stat, are the file that
+// Identify saw. The zero Identity is no file.
+func (i Identity) Is(f *os.File, opened os.FileInfo) (bool, error) { return i.id.is(f, opened) }
 
 // Check refuses a path that Read would refuse for its name or its kind, without
 // opening it: the first process of a command checks, before the credential
@@ -100,12 +123,12 @@ func Read(path string, o Options) ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
-	id, err := identify(path, want)
+	id, err := Identify(path, want)
 	if err != nil {
 		return nil, o.refuse("cannot inspect "+path+": "+reason(err), "")
 	}
 	afterLstat(path)
-	f, err := openNoFollow(path)
+	f, err := OpenNoFollow(path)
 	if err != nil {
 		return nil, o.refuse("cannot open "+path+" without following a symlink: "+reason(err), "")
 	}
@@ -114,12 +137,17 @@ func Read(path string, o Options) ([]byte, error) {
 	if err != nil {
 		return nil, o.refuse("cannot inspect "+path+": "+reason(err), "")
 	}
-	same, err := id.is(f, got)
+	same, err := id.Is(f, got)
 	if err != nil {
 		return nil, o.refuse(path+" changed while it was being opened: "+reason(err), "run the command again; if it repeats, find what replaces the file")
 	}
 	if !got.Mode().IsRegular() || !same {
 		return nil, o.refuse(path+" changed while it was being opened", "run the command again; if it repeats, find what replaces the file")
+	}
+	if o.Verify != nil {
+		if err := o.Verify(path, got); err != nil {
+			return nil, err
+		}
 	}
 	return readCapped(f, path, o)
 }

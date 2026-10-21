@@ -33,6 +33,15 @@ const (
 	PrivacyKeyUnavailable Code = "privacy_key_unavailable"
 	ToolHidden            Code = "tool_hidden"
 
+	// PolicyRejectedOrServerError is a policy-mode validation that got HTTP 500 twice. The
+	// hosted service answers 500 for some policies it cannot evaluate.
+	PolicyRejectedOrServerError Code = "policy_rejected_or_server_error"
+
+	// ValidateRateLimited is tailkeeper's own bucket of validation requests being empty. It
+	// is a wait, not a failure: RetryAfterSeconds says when. Tailscale's 429 is
+	// APIRateLimited.
+	ValidateRateLimited Code = "validate_rate_limited"
+
 	LocalBinaryMissing      Code = "local_binary_missing"
 	LocalDaemonUnreachable  Code = "local_daemon_unreachable"
 	LocalPermissionDenied   Code = "local_permission_denied"
@@ -56,7 +65,11 @@ type Error struct {
 	Status  int    `json:"httpStatus,omitempty"`
 	// RetryAfter is the delay the server asked for (HTTP Retry-After), if any.
 	RetryAfter time.Duration `json:"-"`
-	Err        error         `json:"-"`
+	// RetryAfterSeconds is how long a program should wait before it tries again, in whole
+	// seconds rounded up, when the error knows: tailkeeper's own validation limit, and a 429
+	// that came with a Retry-After. Zero is left out.
+	RetryAfterSeconds int   `json:"retryAfterSeconds,omitempty"`
+	Err               error `json:"-"`
 }
 
 func (e *Error) Error() string {

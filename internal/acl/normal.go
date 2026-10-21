@@ -489,10 +489,11 @@ func (c *countWriter) Write(p []byte) (int, error) {
 // AccessState is the state of the access rules as the server reads them together: acls and
 // grants, which the admin console rewrites into each other, are non-empty if either is,
 // empty if neither is non-empty and one is [], and absent if neither is in the text. An
-// absent acls section is the default allow-all and "acls": [] is deny-all; whether grants
-// alone cancels the default is not known, so a move between these states is always reported
-// (the defaults class of a diff). The pooled state hides which of the two sections is
-// written as [], and that is not a rewrite: see writtenEmpty.
+// absent acls section is the default allow-all, and "acls": [] and "grants": [] are both
+// deny-all (probe A-1, 20 Oct 2026). Whether a non-empty grants section alone cancels the
+// default was not measured, so a move between these states is always reported (the defaults
+// class of a diff). The pooled state hides which of the two sections is written as [], and
+// that is not a rewrite: see writtenEmpty.
 func (n *NormalForm) AccessState() State {
 	st := StateAbsent
 	for _, s := range n.secs[:len(sections)] {

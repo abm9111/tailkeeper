@@ -1,0 +1,136 @@
+## a tag destination
+line:  "[acl test error]: address \"tag:db:5432\" (protocol \"tcp\"): want: Accept, got: Drop"
+parse: kind=assertion_failed ssh=false dst="tag:db:5432" protocol="tcp" want="Accept" got="Drop"
+
+## a host alias
+line:  "[acl test error]: address \"web:443\" (protocol \"tcp\"): want: Accept, got: Drop"
+parse: kind=assertion_failed ssh=false dst="web:443" protocol="tcp" want="Accept" got="Drop"
+
+## an IPv4 address with its protocol
+line:  "[acl test error]: address \"192.0.2.10:22\" (protocol \"tcp\"): want: Drop, got: Accept"
+parse: kind=assertion_failed ssh=false dst="192.0.2.10:22" protocol="tcp" want="Drop" got="Accept"
+
+## an IPv4 address with no protocol clause
+line:  "[acl test error]: address \"192.0.2.10:22\": want: Drop, got: Accept"
+parse: kind=assertion_failed ssh=false dst="192.0.2.10:22" protocol="" want="Drop" got="Accept"
+
+## a bracketed IPv6 address
+line:  "[acl test error]: address \"[2001:db8::10]:443\" (protocol \"tcp\"): want: Accept, got: Drop"
+parse: kind=assertion_failed ssh=false dst="[2001:db8::10]:443" protocol="tcp" want="Accept" got="Drop"
+
+## ICMP, port 0, with its protocol
+line:  "[acl test error]: address \"192.0.2.10:0\" (protocol \"icmp\"): want: Accept, got: Drop"
+parse: kind=assertion_failed ssh=false dst="192.0.2.10:0" protocol="icmp" want="Accept" got="Drop"
+
+## ICMP, port 0, no protocol clause
+line:  "[acl test error]: address \"192.0.2.10:0\": want: Accept, got: Drop"
+parse: kind=assertion_failed ssh=false dst="192.0.2.10:0" protocol="" want="Accept" got="Drop"
+
+## the canary with acls absent
+line:  "[acl test error]: address \"192.0.2.1:1\" (protocol \"tcp\"): want: Drop, got: Accept"
+parse: kind=assertion_failed ssh=false dst="192.0.2.1:1" protocol="tcp" want="Drop" got="Accept"
+
+## the canary with acls empty
+line:  "[acl test error]: address \"192.0.2.1:1\" (protocol \"tcp\"): want: Accept, got: Drop"
+parse: kind=assertion_failed ssh=false dst="192.0.2.1:1" protocol="tcp" want="Accept" got="Drop"
+
+## an SSH test
+line:  "[ssh test error]: src \"tag:p\" at \"100.64.0.1\", dst \"tag:db\" at \"100.64.0.2\", ssh user \"root\": want: \"accept\" got: \"deny\""
+parse: kind=assertion_failed ssh=true dst="tag:db" protocol="" want="accept" got="deny"
+
+## an SSH test, the other way
+line:  "[ssh test error]: src \"tag:p\" at \"100.64.0.1\", dst \"tag:db\" at \"100.64.0.2\", ssh user \"root\": want: \"deny\" got: \"accept\""
+parse: kind=assertion_failed ssh=true dst="tag:db" protocol="" want="deny" got="accept"
+
+## a service (constructed from the grammar, not observed)
+line:  "[acl test error]: address \"svc:web:443\" (protocol \"tcp\"): want: Accept, got: Drop"
+parse: kind=assertion_failed ssh=false dst="svc:web:443" protocol="tcp" want="Accept" got="Drop"
+
+## no heading (constructed from the grammar, not observed)
+line:  "address \"198.51.100.7:80\" (protocol \"udp\"): want: Accept, got: Drop"
+parse: kind=assertion_failed ssh=false dst="198.51.100.7:80" protocol="udp" want="Accept" got="Drop"
+
+## a destination with a quote and a backslash (constructed from the grammar, not observed)
+line:  "[acl test error]: address \"tag:a\\\"b\\\\c:22\" (protocol \"tcp\"): want: Drop, got: Accept"
+parse: kind=assertion_failed ssh=false dst="tag:a\"b\\c:22" protocol="tcp" want="Drop" got="Accept"
+
+## an SSH test with no heading (constructed from the grammar, not observed)
+line:  "src \"group:eng\" at \"100.64.0.3\", dst \"tag:db\" at \"100.64.0.2\", ssh user \"admin\": want: \"accept\" got: \"deny\""
+parse: kind=assertion_failed ssh=true dst="tag:db" protocol="" want="accept" got="deny"
+
+## a CIDR
+line:  "[acl test error]: user or host is invalid: bad user spec given: \"198.51.100.0/24\""
+parse: kind=test_unevaluable ssh=false dst="" protocol="" want="" got=""
+
+## autogroup:internet
+line:  "[acl test error]: address autogroup:internet:22: is not a valid address"
+parse: kind=test_unevaluable ssh=false dst="" protocol="" want="" got=""
+
+## a tag that is not defined
+line:  "[acl test error]: user or host is invalid: tag not found: \"tag:missing\""
+parse: kind=test_unevaluable ssh=false dst="" protocol="" want="" got=""
+
+## the summary line
+line:  "test(s) failed"
+parse: kind=test_unevaluable ssh=false dst="" protocol="" want="" got=""
+
+## an empty line
+line:  ""
+parse: kind=test_unevaluable ssh=false dst="" protocol="" want="" got=""
+
+## the heading alone
+line:  "[acl test error]: "
+parse: kind=test_unevaluable ssh=false dst="" protocol="" want="" got=""
+
+## a bare message
+line:  "something else went wrong"
+parse: kind=test_unevaluable ssh=false dst="" protocol="" want="" got=""
+
+## both verdicts the same
+line:  "[acl test error]: address \"192.0.2.10:22\" (protocol \"tcp\"): want: Drop, got: Drop"
+parse: kind=test_unevaluable ssh=false dst="" protocol="" want="" got=""
+
+## a verdict in lower case
+line:  "[acl test error]: address \"192.0.2.10:22\" (protocol \"tcp\"): want: accept, got: drop"
+parse: kind=test_unevaluable ssh=false dst="" protocol="" want="" got=""
+
+## text after the verdict
+line:  "[acl test error]: address \"192.0.2.10:22\" (protocol \"tcp\"): want: Accept, got: Drop (twice)"
+parse: kind=test_unevaluable ssh=false dst="" protocol="" want="" got=""
+
+## text before the heading
+line:  "error: [acl test error]: address \"192.0.2.10:22\": want: Accept, got: Drop"
+parse: kind=test_unevaluable ssh=false dst="" protocol="" want="" got=""
+
+## two headings
+line:  "[acl test error]: [acl test error]: address \"192.0.2.10:22\": want: Accept, got: Drop"
+parse: kind=test_unevaluable ssh=false dst="" protocol="" want="" got=""
+
+## an address that is not quoted
+line:  "[acl test error]: address 192.0.2.10:22: want: Accept, got: Drop"
+parse: kind=test_unevaluable ssh=false dst="" protocol="" want="" got=""
+
+## an address that does not unquote
+line:  "[acl test error]: address \"tag:\\q:22\": want: Accept, got: Drop"
+parse: kind=test_unevaluable ssh=false dst="" protocol="" want="" got=""
+
+## a protocol that is not closed
+line:  "[acl test error]: address \"192.0.2.10:22\" (protocol \"tcp\": want: Accept, got: Drop"
+parse: kind=test_unevaluable ssh=false dst="" protocol="" want="" got=""
+
+## a missing comma
+line:  "[acl test error]: address \"192.0.2.10:22\": want: Accept got: Drop"
+parse: kind=test_unevaluable ssh=false dst="" protocol="" want="" got=""
+
+## an SSH verdict outside accept and deny
+line:  "[ssh test error]: src \"tag:p\" at \"100.64.0.1\", dst \"tag:db\" at \"100.64.0.2\", ssh user \"root\": want: \"check\" got: \"deny\""
+parse: kind=test_unevaluable ssh=false dst="" protocol="" want="" got=""
+
+## an SSH line with a field missing
+line:  "[ssh test error]: src \"tag:p\" at \"100.64.0.1\", dst \"tag:db\" at \"100.64.0.2\": want: \"accept\" got: \"deny\""
+parse: kind=test_unevaluable ssh=false dst="" protocol="" want="" got=""
+
+## an SSH line with text after it
+line:  "[ssh test error]: src \"tag:p\" at \"100.64.0.1\", dst \"tag:db\" at \"100.64.0.2\", ssh user \"root\": want: \"accept\" got: \"deny\" "
+parse: kind=test_unevaluable ssh=false dst="" protocol="" want="" got=""
+

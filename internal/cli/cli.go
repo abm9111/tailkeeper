@@ -464,11 +464,7 @@ func (r *Runner) tool(ctx context.Context, g globals, args []string) int {
 		return r.fail(tkerr.Wrap(tkerr.Internal, err, "cannot build flags for "+t.Meta.Name+": "+err.Error(), ""), routeJSON)
 	}
 	usage := func() {
-		arg := ""
-		if b.positional != "" {
-			arg = " [" + b.positional + "]"
-		}
-		fs.printUsage(r.Stderr, fmt.Sprintf("Usage: tailkeeper %s %s [flags]%s\n\n%s\nMCP tool: %s\n\nFlags:\n", area, args[1], arg, t.Meta.Summary, t.Meta.Name))
+		fs.printUsage(r.Stderr, fmt.Sprintf("Usage: tailkeeper %s %s [flags]%s\n\n%s\nMCP tool: %s\n\nFlags:\n", area, args[1], b.usageArgs(), t.Meta.Summary, t.Meta.Name))
 	}
 	var positional []string
 	asJSON := func() bool { return g.json || *jsonOut || jsonRequested(args[2:]) }
@@ -483,12 +479,18 @@ func (r *Runner) tool(ctx context.Context, g globals, args []string) int {
 	if err := chooseFormat(*format, jsonOut); err != nil {
 		return r.fail(err, *jsonOut)
 	}
+	if failOnValues.big > 0 {
+		return r.fail(tkerr.New(tkerr.Usage, longFlagValue("--fail-on", failOnValues.big), "see `tailkeeper "+area+" "+args[1]+" --help`"), *jsonOut)
+	}
 	raw, err := b.arguments(positional)
 	if err != nil {
 		return r.fail(tkerr.New(tkerr.Usage, err.Error(), "see `tailkeeper "+area+" "+args[1]+" --help`"), *jsonOut)
 	}
 	gate, err := parseFailOn(failOnValues.v)
 	if err != nil {
+		return r.fail(err, *jsonOut)
+	}
+	if err := checkKinds(t, gate); err != nil {
 		return r.fail(err, *jsonOut)
 	}
 	// The tool's own checks come first: a value it refuses must not cost the
@@ -518,6 +520,8 @@ func (r *Runner) tool(ctx context.Context, g globals, args []string) int {
 	if err != nil {
 		return r.fail(err, *jsonOut)
 	}
+	// Whatever reaches the tool from a command line is the operator's own.
+	b.setOperator(in)
 	start := r.now()
 	out, err := p.Run(ctx, a.Env)
 	r.record(a, t, start, out, err)

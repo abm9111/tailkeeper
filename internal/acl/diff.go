@@ -429,8 +429,10 @@ func stateText(s State, n int) string {
 	return strconv.Itoa(n)
 }
 
-// defaultsNote is what a move of the access rules between absent and empty means.
-const defaultsNote = "an absent acls section is the default allow-all and an empty one is deny-all; whether grants alone cancels the default allow-all is not known, so the move is reported"
+// defaultsNote is what a move of the access rules between absent and empty means. Probe A-1
+// (20 Oct 2026) measured acls absent (allow-all), acls [] (deny-all) and grants [] with no
+// acls (deny-all); a non-empty grants section with no acls was not measured.
+const defaultsNote = "an absent acls section is the default allow-all, and an empty acls or grants section is deny-all (measured against the live API, 20 Oct 2026); whether a non-empty grants section alone cancels the default allow-all was not measured, so the move is reported"
 
 // defaults reports the access rules and ssh moving between absent, empty and non-empty. The
 // access rules are read together (acls and grants are one pool), and then each section on its
@@ -441,7 +443,7 @@ func (d *comparer) defaults() {
 		d.emit(rawChange{class: cDefaults, op: oChanged, kind: kDefault, sort: "access",
 			x: &rawExtra{sec: "acls+grants", key: "acls+grants",
 				oldText: stateText(a, len(d.na.atoms)), newText: stateText(b, len(d.nb.atoms)),
-				note: "an absent acls section is the default allow-all and an empty one is deny-all"}})
+				note: defaultsNote}})
 	} else {
 		oldAcls, oldGrants := d.na.writtenEmpty()
 		newAcls, newGrants := d.nb.writtenEmpty()

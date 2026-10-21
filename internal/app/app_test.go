@@ -118,6 +118,49 @@ func TestEnvProviderConnectsAndRecordsReads(t *testing.T) {
 	}
 }
 
+// The configured acl.validatePerMinute reaches the client's validation bucket; without the
+// key the rate is the default of 30.
+func TestConnectPassesTheConfiguredValidateRate(t *testing.T) {
+	f := apitest.New(t)
+	f.ServeValidate(apitest.TestsPass())
+	env := map[string]string{creds.EnvClientID: apitest.ClientID, creds.EnvClientSecret: apitest.ClientSecret}
+	now := time.Date(2026, 10, 20, 12, 0, 0, 0, time.UTC)
+	aclConfig := `{
+  "contexts": {"test": {"tailnetId": "T1234CNTRL", "credentials": {"read": {"provider": "env"}}}},
+  "acl": {"validatePerMinute": 3},
+}`
+	a, err := Build(context.Background(), Options{Dirs: dirs(t, aclConfig), Stat: noCLI, Getenv: func(k string) string { return env[k] },
+		API: api.Options{BaseURL: f.URL(), Now: func() time.Time { return now }}})
+	if err != nil || a.Env.APIErr != nil {
+		t.Fatalf("Build: %v, %v", err, a.Env.APIErr)
+	}
+	tests := []api.PolicyTest{{Src: "tag:p", Accept: []string{"tag:p:22"}}}
+	for i := 0; i < 3; i++ {
+		if _, err := a.Env.API.ValidateTests(context.Background(), tests); err != nil {
+			t.Fatalf("call %d: %v", i+1, err)
+		}
+	}
+	_, err = a.Env.API.ValidateTests(context.Background(), tests)
+	if e, ok := tkerr.As(err); !ok || e.Code != tkerr.ValidateRateLimited || !strings.Contains(e.Message, "limit of 3 validation requests a minute (") {
+		t.Errorf("the fourth call: %v, want validate_rate_limited at 3 a minute", err)
+	}
+
+	// Without the key: 30.
+	b, err := Build(context.Background(), Options{Dirs: dirs(t, envConfig), Stat: noCLI, Getenv: func(k string) string { return env[k] },
+		API: api.Options{BaseURL: f.URL(), Now: func() time.Time { return now }}})
+	if err != nil || b.Env.APIErr != nil {
+		t.Fatalf("Build: %v, %v", err, b.Env.APIErr)
+	}
+	for i := 0; i < 30; i++ {
+		if _, err := b.Env.API.ValidateTests(context.Background(), tests); err != nil {
+			t.Fatalf("call %d of the default 30: %v", i+1, err)
+		}
+	}
+	if _, err := b.Env.API.ValidateTests(context.Background(), tests); code(err) != tkerr.ValidateRateLimited {
+		t.Errorf("the 31st call: %v", err)
+	}
+}
+
 func TestRecordKeepsOnlyReadMetadata(t *testing.T) {
 	f := apitest.New(t)
 	env := map[string]string{creds.EnvClientID: apitest.ClientID, creds.EnvClientSecret: apitest.ClientSecret}
