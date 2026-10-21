@@ -155,7 +155,8 @@ func Locate(d *Doc, f Failure) (locations []Location, cut int) {
 // differs from the server's decoder: a null written after a string for src or user is
 // ignored by Go, which keeps the earlier string, and here it is the value, so the test does
 // not match by that string. It is rare, and Parse reports the repetition as duplicate_key.
-// A repeated key is no impossibility: the server accepts such a text and stores it.
+// The server refuses a repeated key (probe A-4), but a proposal can carry one, and Locate
+// still reads it the way Go's decoder does.
 func testFields(obj *hujson.Object) [nTestFields]*hujson.Value {
 	var vals [nTestFields]*hujson.Value
 	for i := range obj.Members {

@@ -128,6 +128,12 @@ func (m Masker) Remask(s string) string { return m.Emails(MaskAddrs(s)) }
 // exposed, leaves those markers alone.
 func (m Masker) PolicyText(s string) string { return m.Emails(m.unforged(s)) }
 
+// Unforge rewrites every "[p:" in s, as Text and PolicyText do first, and returns s as it
+// came when the masker has no key. It is for text that this masker does not mask but that
+// must not carry a marker the masker did not append: a message Tailscale echoed from a
+// proposal, which the registry's emails pass would otherwise read as a pseudonym.
+func (m Masker) Unforge(s string) string { return m.unforged(s) }
+
 // forgedOpen is what "[p:" becomes in free text, with the bracket spelled the way
 // String spells a character it cannot show. Without it, a tailnet member could
 // write " [p:xxxxxxxxxx]" into a name, and the display would show a pseudonym the

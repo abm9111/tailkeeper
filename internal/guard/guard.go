@@ -12,6 +12,11 @@
 // of millions of tiny values before the parser allocates for them.
 package guard
 
+// MaxPolicyBytes is the largest policy tailkeeper reads or checks: 4 MiB, decoded.
+// Tailscale publishes no cap of its own; this one is tailkeeper's. A policy over it is
+// refused with its size, never cut.
+const MaxPolicyBytes = 4 << 20
+
 // MaxDepth is how many levels of braces and brackets HuJSON text may nest before it is
 // refused unread. A policy file is a few levels deep.
 const MaxDepth = 1000

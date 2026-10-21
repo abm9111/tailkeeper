@@ -1,0 +1,160 @@
+# Mutants of internal/api: each is a change to the code that a test must notice.
+# scripts/mutate.go says what the format is and what the three outcomes mean. The readers
+# of the validate endpoint decide what a pass is, so every mutant here turns a refusal
+# into a pass or loses a check that stops one.
+
+mutant: policy-mode answers default to a pass
+file: policy_read.go
+old: v := PolicyValidation{Status: PolicyUnknown, HTTP: status}
+new: v := PolicyValidation{Status: PolicyPass, HTTP: status}
+kill: TestAssumedValidateShapesNeverReadAsAPass
+
+mutant: a bare message at 200 reads as a pass
+file: policy_read.go
+old: v.Status = PolicyRejected
+new: v.Status = PolicyPass
+kill: TestObservedValidateShapesThatAreNotPassesNeverReadAsAPass
+
+mutant: a repeated key is accepted
+file: client.go
+old: if _, twice := out[k]; twice {
+new: if _, twice := out[k]; twice && false {
+kill: TestPolicyReaderTable
+
+mutant: RemoveCanary does not compare the src
+file: policy_read.go
+old: if r.User != src {
+new: if r.User != r.User {
+kill: TestRemoveCanaryNeedsTheCanarySrcAndExactlyOneEntry
+
+mutant: a 500 is retried like any other server error
+file: policy.go
+old: return fiveHundreds < 2 && retried < c.retries
+new: return retried < c.retries
+kill: TestFiveHundredIsRetriedOnceThenPolicyRejectedOrServerError
+
+mutant: the count of 500s is not kept
+file: policy.go
+old: fiveHundreds++
+new: fiveHundreds += 0
+kill: TestA500AfterOtherErrorsIsStillRetriedOnce|TestAClientWithoutRetriesSendsOnceAndSaysSo
+
+mutant: any first token is taken for the start of an object
+file: policy.go
+old: return c == '{'
+new: return true
+kill: TestValidatePolicyRefusesANonObjectBody
+
+mutant: the details reader does not check the size of the policy
+file: policy.go
+old: if len(text) > hujsonguard.MaxPolicyBytes {
+new: if len(text) < 0 {
+kill: TestGetPolicyDetailsRefusesAPolicyOverTheCap
+
+mutant: a 413 from the validate endpoint gets no size hint
+file: client.go
+old: case http.StatusRequestEntityTooLarge:
+new: case 0:
+kill: TestA413GetsThePolicyTooLargeHint
+
+mutant: the size hint goes to every endpoint
+file: client.go
+old: if r == nil || r.Method != http.MethodPost || !strings.HasSuffix(r.URL.Path, "/acl/validate") {
+new: if r == nil {
+kill: TestTheSizeHintIsGivenToTheValidateEndpointOnly
+
+mutant: a rejection that speaks of size carries no hint
+file: policy.go
+old: v.Hint = policyTooLargeHint
+new: v.Hint = ""
+kill: TestAPolicyModeRejectionThatSpeaksOfSizeCarriesTheHint
+
+mutant: a reply of exactly 1 MiB is refused
+file: policy.go
+old: if len(b) > maxValidateReply {
+new: if len(b) >= maxValidateReply {
+kill: TestAReplyOverOneMiBIsRefused
+
+mutant: the bucket reads the wall clock
+file: bucket.go
+old: t := b.now()
+new: t := time.Now()
+kill: TestTheBucketGrantsTheRateAndRefillsOnAFakeClock
+
+mutant: a refund can make the bucket bigger than it is
+file: bucket.go
+old: b.units = min(b.units+int64(n)*tokenUnits, b.size*tokenUnits)
+new: b.units = b.units + int64(n)*tokenUnits
+kill: TestARefundNeverMakesTheBucketBiggerThanItsSize
+
+mutant: a wait is rounded down
+file: bucket.go
+old: secs := int((d + time.Second - 1) / time.Second)
+new: secs := int(d / time.Second)
+kill: TestAnExhaustedBucketIsValidateRateLimitedWithRetryAfterSeconds|TestWholeSecondsRoundsUpAndIsCutAtADay
+
+mutant: End gives back the tokens that were sent
+file: bucket.go
+old: if unused := v.posts - v.used; unused > 0 {
+new: if unused := v.posts; unused > 0 {
+kill: TestTheBucketGrantsTheRateAndRefillsOnAFakeClock
+
+mutant: tests mode does not mark its token used
+file: client.go
+old: if err := call.spend(); err != nil {
+new: if err := error(nil); err != nil {
+kill: TestValidateTestsDrawsOneToken
+
+mutant: a validate call has no deadline
+file: bucket.go
+old: dctx, cancel := context.WithTimeout(ctx, g.deadline)
+new: dctx, cancel := context.WithCancel(ctx)
+kill: TestAValidateCallEndsAtItsDeadline
+
+mutant: the client ignores the rate it is given
+file: bucket.go
+old: rate := opt.ValidatePerMinute
+new: rate := 0
+kill: TestAnExhaustedBucketIsValidateRateLimitedWithRetryAfterSeconds
+
+mutant: the bucket holds only as many tokens as the rate
+file: bucket.go
+old: size := max(int64(rate), minBucketSize)
+new: size := int64(rate)
+kill: TestAtOneAMinuteATwoTokenCallWaitsForItsSecondToken
+
+mutant: a long Retry-After is not cut to a day
+file: bucket.go
+old: return min(secs, maxRetryAfterSeconds)
+new: return secs
+kill: TestWholeSecondsRoundsUpAndIsCutAtADay
+
+mutant: a Retry-After of 0 is reported as one second
+file: bucket.go
+old: return min(secs, maxRetryAfterSeconds)
+new: return min(max(secs, 1), maxRetryAfterSeconds)
+kill: TestA429CarriesItsRetryAfterAsSeconds
+
+mutant: a count of seconds past the range of an int is read as no header
+file: client.go
+old: case errors.Is(err, strconv.ErrRange) && allDigits(count):
+new: case false && allDigits(count):
+kill: TestParseRetryAfterClampsHugeSeconds|TestARetryAfterOfBillionsOfSecondsWaitsTheCap
+
+mutant: a negative count past the range of an int is read as the longest wait
+file: client.go
+old: case errors.Is(err, strconv.ErrRange) && allDigits(count):
+new: case errors.Is(err, strconv.ErrRange):
+kill: TestParseRetryAfterClampsHugeSeconds
+
+mutant: the refill of a bucket is not bounded by the time an empty one takes to fill
+file: bucket.go
+old: b.units = min(b.units+int64(min(d, b.fill))*b.rate, b.size*tokenUnits)
+new: b.units = min(b.units+int64(d)*b.rate, b.size*tokenUnits)
+kill: TestAfterALongIdleTheBucketHoldsItsSizeAndNoMore
+
+mutant: the refill of a bucket is not bounded by its size
+file: bucket.go
+old: b.units = min(b.units+int64(min(d, b.fill))*b.rate, b.size*tokenUnits)
+new: b.units = b.units + int64(min(d, b.fill))*b.rate
+kill: TestAfterALongIdleTheBucketHoldsItsSizeAndNoMore

@@ -13,6 +13,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"io/fs"
 	"net/http"
 	"net/url"
 	"strings"
@@ -80,7 +81,8 @@ type System struct {
 }
 
 // readSecret reads the credential file path, refusing an unsafe one. code classifies
-// a read failure that carries no code of its own.
+// a read failure that carries no code of its own: a file that is not there says what
+// to create, any other says it cannot be read.
 func (s System) readSecret(path string, code tkerr.Code) ([]byte, error) {
 	read := s.ReadSecretFile
 	if read == nil {
@@ -88,10 +90,14 @@ func (s System) readSecret(path string, code tkerr.Code) ([]byte, error) {
 	}
 	data, err := read(path)
 	if err != nil {
-		if _, ok := tkerr.As(err); !ok {
-			return nil, tkerr.Wrap(code, err, "cannot read "+path, "")
+		if _, ok := tkerr.As(err); ok {
+			return nil, err
 		}
-		return nil, err
+		if errors.Is(err, fs.ErrNotExist) {
+			return nil, tkerr.Wrap(code, err, "the credential file "+path+" does not exist",
+				"create the file the provider's path names, mode 600, with one NAME=value per line")
+		}
+		return nil, tkerr.Wrap(code, err, "cannot read "+path, "")
 	}
 	return data, nil
 }
@@ -208,6 +214,9 @@ func value(v string, readFile func(string) ([]byte, error)) (string, error) {
 	return strings.TrimSpace(string(data)), nil
 }
 
+// parseEnvFile reads the NAME=value lines of a credential file. A value keeps its
+// quotes unless one matching pair surrounds it (unquote). A line the scanner cannot
+// hold, longer than 64 KiB, is a configuration error that says which line.
 func parseEnvFile(data []byte) (map[string]string, error) {
 	vars := map[string]string{}
 	sc := bufio.NewScanner(bytes.NewReader(data))
@@ -222,9 +231,24 @@ func parseEnvFile(data []byte) (map[string]string, error) {
 		if !ok {
 			return nil, tkerr.New(tkerr.ConfigInvalid, fmt.Sprintf("credential file line %d is not NAME=value", line), "")
 		}
-		vars[strings.TrimSpace(k)] = strings.Trim(strings.TrimSpace(v), `"'`)
+		vars[strings.TrimSpace(k)] = unquote(strings.TrimSpace(v))
 	}
-	return vars, sc.Err()
+	if err := sc.Err(); err != nil {
+		if errors.Is(err, bufio.ErrTooLong) {
+			return nil, tkerr.New(tkerr.ConfigInvalid, fmt.Sprintf("credential file line %d is longer than 64 KiB", line+1), "")
+		}
+		return nil, tkerr.Wrap(tkerr.ConfigInvalid, err, "cannot read the credential file", "")
+	}
+	return vars, nil
+}
+
+// unquote takes off one pair of matching quotes, single or double, and nothing else:
+// `'abc"` and a lone quote stay as they are.
+func unquote(v string) string {
+	if len(v) >= 2 && (v[0] == '"' || v[0] == '\'') && v[len(v)-1] == v[0] {
+		return v[1 : len(v)-1]
+	}
+	return v
 }
 
 func oidc(p config.Provider, sys System) Read {
@@ -251,7 +275,12 @@ func platformToken(ctx context.Context, p config.Provider, aud string, sys Syste
 		if err != nil {
 			return "", tkerr.Wrap(tkerr.CredentialUnavailable, err, "cannot read OIDC token file "+p.TokenFile, "")
 		}
-		return strings.TrimSpace(string(data)), nil
+		tok := strings.TrimSpace(string(data))
+		if tok == "" {
+			return "", tkerr.New(tkerr.CredentialUnavailable, "the OIDC token file "+p.TokenFile+" is empty",
+				"write the identity token into it, or remove tokenFile to take the token from the platform")
+		}
+		return tok, nil
 	}
 	if reqURL, reqTok := sys.Getenv("ACTIONS_ID_TOKEN_REQUEST_URL"), sys.Getenv("ACTIONS_ID_TOKEN_REQUEST_TOKEN"); reqURL != "" && reqTok != "" {
 		return githubToken(ctx, reqURL, reqTok, aud, sys.HTTPClient)
@@ -314,11 +343,11 @@ func PrivacyKey(p config.Provider, sys System) (*privacy.Key, error) {
 	case "file":
 		data, err := sys.readSecret(p.Path, tkerr.PrivacyKeyUnavailable)
 		if err != nil {
-			return nil, err
+			return nil, privacyKeyFileError(err)
 		}
 		vars, err := parseEnvFile(data)
 		if err != nil {
-			return nil, err
+			return nil, privacyKeyFileError(err)
 		}
 		raw = vars[privacy.EnvKey]
 	default:
@@ -332,4 +361,19 @@ func PrivacyKey(p config.Provider, sys System) (*privacy.Key, error) {
 		return nil, nil
 	}
 	return privacy.Parse(v)
+}
+
+// privacyKeyFileError is how a failure to read or parse the credential file that holds
+// the privacy key is reported: privacy_key_unavailable, with the reason and the fix of
+// the failure it replaces and none of its cause, which may hold an operating-system
+// message.
+func privacyKeyFileError(err error) error {
+	e, ok := tkerr.As(err)
+	if !ok {
+		return tkerr.New(tkerr.PrivacyKeyUnavailable, "cannot read the privacy key from the credential file", "")
+	}
+	if e.Code == tkerr.PrivacyKeyUnavailable {
+		return tkerr.New(e.Code, e.Message, e.Hint)
+	}
+	return tkerr.New(tkerr.PrivacyKeyUnavailable, "cannot read the privacy key from the credential file: "+e.Message, e.Hint)
 }

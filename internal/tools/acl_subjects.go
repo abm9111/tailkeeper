@@ -5,6 +5,9 @@ import (
 	"fmt"
 	"io"
 	"net/url"
+	"regexp"
+	"slices"
+	"strings"
 
 	"github.com/abm9111/tailkeeper/internal/privacy"
 	"github.com/abm9111/tailkeeper/internal/registry"
@@ -53,8 +56,8 @@ func (Login) MarshalText() ([]byte, error) { return []byte(loginPlaceholder), ni
 // on first use, holds them for the call, and is never kept or shared, since a long-lived
 // process holding every login is the leak this design avoids. The logins it hands out are
 // remembered, so that Hide can mask them where Tailscale's reply repeats them. The logins sit
-// behind a pointer and Format, so that no fmt verb, and no struct holding a resolver, prints them.
-// It is not safe for concurrent use.
+// behind a function and Format, so that no fmt verb, no struct holding a resolver and no
+// dumper that follows pointers reaches them. It is not safe for concurrent use.
 type SubjectResolver struct {
 	env  *registry.Env
 	name func(login string) string // how a login is named; nil means the privacy key's APIPseudonym
@@ -62,22 +65,47 @@ type SubjectResolver struct {
 }
 
 // resolverState is what a resolver learns. It is a separate type behind a pointer because fmt
-// prints a nested pointer as an address. The logins sit one pointer deeper still: a verb that
-// does not fit a pointer field (%s, %q) makes fmt print what the pointer points to, and that
-// would be the state itself.
+// prints a nested pointer as an address. The logins, and everything made from them, sit
+// behind a function: a verb that does not fit a pointer field (%s, %q) makes fmt print what
+// the pointer points to, and a dumper that follows pointers (reflection, a crash reporter)
+// reads every field it can reach, but neither can read the closure a function value holds.
 type resolverState struct {
 	listed bool
-	err    error // the failure of the users call, kept so that it is made once
-	users  *userLists
+	err    error             // the failure of the users call, kept so that it is made once
+	users  func() *userLists // the one way to the logins
 }
 
-// userLists holds the tailnet's logins and the ones the resolver handed out.
+// userLists holds the tailnet's logins by pseudonym, and the ones the resolver handed out.
 type userLists struct {
-	logins   []string
-	resolved []string
+	byPseudonym map[string][]string // a pseudonym to the logins that have it; two is a collision
+	resolved    []resolvedLogin     // the logins handed out, longest first
+	handedOut   map[string]bool
 }
 
-func newResolverState() *resolverState { return &resolverState{users: &userLists{}} }
+// resolvedLogin is a login the resolver handed out and the pattern that finds it in a reply,
+// compiled once.
+type resolvedLogin struct {
+	login   string
+	parts   []string // the login split at its at signs, to read a start of it at a cut
+	pattern *regexp.Regexp
+}
+
+func newResolverState() *resolverState {
+	u := &userLists{handedOut: map[string]bool{}}
+	return &resolverState{users: func() *userLists { return u }}
+}
+
+// remember records a login the resolver handed out, once, with its compiled pattern. The list
+// stays longest first (equal lengths in the order they were handed out), so that a login
+// whose tail is another's is masked whole.
+func (u *userLists) remember(login string) {
+	if u.handedOut[login] {
+		return
+	}
+	u.handedOut[login] = true
+	u.resolved = append(u.resolved, resolvedLogin{login: login, parts: strings.Split(login, "@"), pattern: loginPattern(login)})
+	slices.SortStableFunc(u.resolved, func(a, b resolvedLogin) int { return len(b.login) - len(a.login) })
+}
 
 // Format keeps every login out of every format verb: fmt calls it before any other way of
 // printing, so even the numeric verbs print "subject resolver". The receiver is a value, so
@@ -112,23 +140,14 @@ func (r *SubjectResolver) Resolve(ctx context.Context, ref string) (Login, error
 	if err != nil {
 		return Login{}, err
 	}
-	if err := r.load(ctx); err != nil {
+	if err := r.load(ctx, key); err != nil {
 		return Login{}, err
 	}
-	name := r.name
-	if name == nil {
-		name = key.APIPseudonym
-	}
-	var match []string
-	for _, l := range r.state().users.logins {
-		if name(l) == p {
-			match = append(match, l)
-		}
-	}
+	u := r.state().users()
+	match := u.byPseudonym[p]
 	switch len(match) {
 	case 1:
-		st := r.state()
-		st.users.resolved = append(st.users.resolved, match[0])
+		u.remember(match[0])
 		return newLogin(match[0]), nil
 	case 0:
 		return Login{}, tkerr.New(tkerr.ValidationFailed, "no user has that pseudonym: the user may have left the tailnet, or the privacy key was replaced since the pseudonym was shown",
@@ -142,7 +161,8 @@ func (r *SubjectResolver) Resolve(ctx context.Context, ref string) (Login, error
 // (listUsers has no paging, and a user's status is an attribute, not a filter). A login
 // listed twice is one user; logins that differ in case are different users, and if their
 // pseudonyms collide Resolve reports more than one. A failed call is remembered for the call.
-func (r *SubjectResolver) load(ctx context.Context) error {
+// Each login is named once, here, so that a resolution is a lookup.
+func (r *SubjectResolver) load(ctx context.Context, key *privacy.Key) error {
 	st := r.state()
 	if st.listed {
 		return nil
@@ -164,14 +184,21 @@ func (r *SubjectResolver) load(ctx context.Context) error {
 		st.err = usersError(err)
 		return st.err
 	}
-	seen := map[string]bool{}
+	name := r.name
+	if name == nil {
+		name = key.APIPseudonym
+	}
+	by := make(map[string][]string, len(resp.Users))
+	seen := make(map[string]bool, len(resp.Users))
 	for _, u := range resp.Users {
 		if u.LoginName == "" || seen[u.LoginName] {
 			continue
 		}
 		seen[u.LoginName] = true
-		st.users.logins = append(st.users.logins, u.LoginName)
+		p := name(u.LoginName)
+		by[p] = append(by[p], u.LoginName)
 	}
+	st.users().byPseudonym = by
 	st.listed = true
 	return nil
 }

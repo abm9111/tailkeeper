@@ -22,11 +22,15 @@ const (
 	// folds too: the top level, the elements of the array sections, the fields of
 	// autoApprovers and derpMap and the structs inside derpMap (a region and its nodes), and
 	// the values of postures, attrConfig and externalTailnets. The keys of a map ("group:a"
-	// and "group:A") are distinct.
+	// and "group:A") are distinct. The server refuses a top-level collision (probe A-4,
+	// 20 Oct 2026); below the top level the report follows the decoder, which was not probed.
 	FindingCaseCollision FindingCode = "case_collision"
 )
 
-// Keeps says which value the server's decoder keeps when a key is repeated.
+// Keeps says which value Go's decoder keeps when a key is repeated. That is the reading the
+// normal form and Diff use. It is not the server's: the server refuses a text with a
+// repeated key at any depth, a case collision at the top level included (probe A-4,
+// 20 Oct 2026), and keeps neither value.
 type Keeps string
 
 const (
@@ -38,8 +42,9 @@ const (
 	KeepsMerged Keeps = "merged"
 )
 
-// Finding is one repeated key. The generic HuJSON tree keeps both; the server keeps one
-// reading, which Keeps names, and everything after Parse reads the policy that way.
+// Finding is one repeated key. The generic HuJSON tree keeps both and Go's decoder keeps one
+// reading, which Keeps names; everything after Parse reads the policy that way. A text with
+// a finding is one the server refuses.
 type Finding struct {
 	Code FindingCode
 	// Pointer is the JSON Pointer of the object that holds the key, cut at 1 KiB.
@@ -192,8 +197,8 @@ func (w *walker) repeats(o *hujson.Object, names []string, fold bool) error {
 		if names[first] != names[later] {
 			code = FindingCaseCollision
 		}
-		// Only a struct-valued field merges; a map entry written twice keeps the later value
-		// even when both are objects.
+		// In Go's decoder only a struct-valued field merges; a map entry written twice keeps
+		// the later value even when both are objects.
 		keeps := KeepsLater
 		_, a := o.Members[first].Value.Value.(*hujson.Object)
 		_, b := o.Members[later].Value.Value.(*hujson.Object)

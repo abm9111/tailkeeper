@@ -373,8 +373,8 @@ func TestASystemWithoutReadSecretFileStillReadsThroughTheCheckedFile(t *testing.
 	if _, err := Resolve(context.Background(), p, bypass); code(err) != tkerr.ConfigUnsafe {
 		t.Errorf("an unsafe file: Resolve err = %v, want config_unsafe", err)
 	}
-	if _, err := PrivacyKey(p, bypass); code(err) != tkerr.ConfigUnsafe {
-		t.Errorf("an unsafe file: PrivacyKey err = %v, want config_unsafe", err)
+	if _, err := PrivacyKey(p, bypass); code(err) != tkerr.PrivacyKeyUnavailable {
+		t.Errorf("an unsafe file: PrivacyKey err = %v, want privacy_key_unavailable", err)
 	}
 }
 

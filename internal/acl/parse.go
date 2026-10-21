@@ -13,10 +13,10 @@ import (
 )
 
 const (
-	// MaxBytes is the largest text Parse reads. These are tailkeeper's caps; Tailscale
-	// publishes none. The callers apply their own, smaller ones to what they accept
-	// (1 MiB over MCP).
-	MaxBytes = 4 << 20
+	// MaxBytes is the largest text Parse reads: guard.MaxPolicyBytes, the one policy cap of
+	// the repository. These are tailkeeper's caps; Tailscale publishes none. The callers
+	// apply their own, smaller ones to what they accept (1 MiB over MCP).
+	MaxBytes = guard.MaxPolicyBytes
 
 	// MaxNodes is the most values (every member name, member value, element and the root
 	// count as one) Parse builds. The cap is sized from the allocation measured at it:
@@ -28,9 +28,9 @@ const (
 	MaxNodes = 1 << 19
 )
 
-// Doc is a parsed policy: the text, its HuJSON tree with the server's reading of repeated
-// keys worked out, and what Parse found wrong with the structure. A Doc is built by Parse
-// only and is read-only afterwards.
+// Doc is a parsed policy: the text, its HuJSON tree with Go's decoder's reading of repeated
+// keys worked out (the server refuses such a text; see the package comment), and what Parse
+// found wrong with the structure. A Doc is built by Parse only and is read-only afterwards.
 type Doc struct {
 	// src is Parse's own copy of the text: the tree aliases it, so the caller's buffer may
 	// change after Parse returns.

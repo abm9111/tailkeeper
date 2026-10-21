@@ -15,9 +15,10 @@ import (
 // vanish from a comparison.
 //
 // A value that was written more than once (a section twice, a field twice in a rule) is a
-// list of layers, in document order. In a struct, the decoder lets a later object merge into
+// list of layers, in document order. In a struct, Go's decoder lets a later object merge into
 // an earlier one and a later array, string or number replace it; in a map, a later entry for
-// a key replaces the earlier one whole. objectFields reads that rule.
+// a key replaces the earlier one whole. objectFields reads that rule. The server refuses such
+// a text (probe A-4), so this is the engine's reading of a proposal, not the server's.
 
 // objectLayers is the trailing run of object layers: what the decoder merges. It is nil
 // when the last layer is not an object.

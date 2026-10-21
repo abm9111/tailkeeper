@@ -72,7 +72,8 @@ func TestLocateSSHTestsAndTheLastSection(t *testing.T) {
 	if locs, _ := Locate(d, Failure{Src: "group:a"}); len(locs) != 1 || locs[0].Pointer != "/tests/0" {
 		t.Errorf("tests: %+v", locs)
 	}
-	// With the section written twice the server keeps the later array, and so does Locate.
+	// With the section written twice Go's decoder keeps the later array, and so does Locate
+	// (the server refuses such a text, probe A-4).
 	d = mustParse(t, `{"tests": [{"src": "a", "accept": ["x:1"]}], "Tests": [{"src": "b", "accept": ["x:1"]}]}`)
 	if locs, _ := Locate(d, Failure{Src: "a"}); len(locs) != 0 {
 		t.Errorf("the replaced array: %+v", locs)

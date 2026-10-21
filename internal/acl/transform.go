@@ -262,8 +262,9 @@ func StripTests(ctx context.Context, text []byte) ([]byte, error) {
 // AppendTests adds tests to the top level of a policy text as new tests and sshTests
 // members at its end, so the result is the original text plus a tail. Each entry is one
 // test object, as text; a list that is empty adds no member. The text must hold neither
-// section already (StripTests first): adding to one the server would keep the later of two
-// would put the tests where they are ignored. The entries are bounded in all, not only each:
+// section already (StripTests first): a second one is a repeated key, which the server
+// refuses and Go's decoder would resolve by keeping the later of the two. The entries are
+// bounded in all, not only each:
 // the policy and the entries together may not pass MaxBytes bytes or MaxNodes values, and
 // each list holds at most MaxAppended.
 func AppendTests(ctx context.Context, text []byte, tests, sshTests [][]byte) ([]byte, error) {

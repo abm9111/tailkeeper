@@ -140,6 +140,7 @@ func (a *App) connect(ctx context.Context, o Options) (*api.Client, error) {
 		return nil, err
 	}
 	a.Credential, a.CredKind, a.KeyID = cred.String(), cred.Kind, keyID(cred)
+	o.API.ValidatePerMinute = a.Loaded.Config.ACL.ValidateRate()
 	return api.New(ctx, cctx.TailnetID, cred, o.API)
 }
 

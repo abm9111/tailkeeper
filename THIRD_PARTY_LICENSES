@@ -624,7 +624,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 
 ================================================================================
-Go standard library go1.27.2
+Go standard library go1.27.3
 linked on: darwin/amd64, darwin/arm64, linux/amd64, linux/arm64, windows/amd64
 --------------------------------------------------------------------------------
 LICENSE

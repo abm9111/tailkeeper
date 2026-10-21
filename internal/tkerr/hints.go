@@ -27,6 +27,9 @@ var programHints = map[Code]string{
 	PrivacyKeyUnavailable: "Do not retry: ask the owner to configure the privacy key, which pseudonyms need.",
 	ToolHidden:            "Do not retry: ask the owner to change the setting the message names, or use an advertised tool.",
 
+	PolicyRejectedOrServerError: "Do not retry the same policy: running it again is safe but fails the same way, so remove sections until it validates, and report it to the owner if a policy that used to pass now answers 500.",
+	ValidateRateLimited:         "Wait the retryAfterSeconds the error carries, then retry once.",
+
 	LocalBinaryMissing:      "Do not retry: report to the owner that the tailscale command line is not installed or not found.",
 	LocalDaemonUnreachable:  "Do not retry until the owner starts the Tailscale daemon or fixes the socket.",
 	LocalPermissionDenied:   "Do not retry: the owner must give this user access to the Tailscale daemon.",

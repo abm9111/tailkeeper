@@ -34,7 +34,7 @@ func shapeBuilders(t *testing.T) []string {
 // the ledger, and each shape's Name is its builder's name.
 func TestEveryBuilderIsInAllShapes(t *testing.T) {
 	builders := shapeBuilders(t)
-	if len(builders) < 17 {
+	if len(builders) < 20 {
 		t.Fatalf("found only %d builders in shapes.go (%v): the parse is not seeing them", len(builders), builders)
 	}
 	var names []string

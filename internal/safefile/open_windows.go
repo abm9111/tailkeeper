@@ -28,10 +28,10 @@ func identify(path string, _ os.FileInfo) (identity, error) {
 	return identityOf(h)
 }
 
-// openNoFollow opens path for reading without following a reparse point. Windows has
+// OpenNoFollow opens path for reading without following a reparse point. Windows has
 // no O_NOFOLLOW: a link put at the path after the inspection opens as itself, and the
 // identity check refuses it.
-func openNoFollow(path string) (*os.File, error) {
+func OpenNoFollow(path string) (*os.File, error) {
 	h, err := openHandle(path, syscall.GENERIC_READ)
 	if err != nil {
 		return nil, &os.PathError{Op: "open", Path: path, Err: err}

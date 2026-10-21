@@ -175,9 +175,10 @@ func TestDefaultsAreTheirOwnClassAndCome(t *testing.T) {
 }
 
 // acls and grants are one pool of atoms, but an absent acls section is the default allow-all
-// and "acls": [] is deny-all, and whether grants alone cancels the default is not known. So a
-// section written as [] where it was absent (or the other way round) is a defaults change on
-// its own, whatever the other one holds, and the normal form tells the two apart.
+// and "acls": [] and "grants": [] are deny-all (probe A-1), and whether a non-empty grants
+// section alone cancels the default was not measured. So a section written as [] where it
+// was absent (or the other way round) is a defaults change on its own, whatever the other one
+// holds, and the normal form tells the two apart.
 func TestAnAclsOrGrantsSectionMovingBetweenAbsentAndEmptyIsADefaultsChange(t *testing.T) {
 	g := `{"src": ["a@example.com"], "dst": ["tag:x"], "ip": ["*"]}`
 	r1 := `{"action": "accept", "src": ["a@example.com"], "dst": ["tag:x:*"]}`

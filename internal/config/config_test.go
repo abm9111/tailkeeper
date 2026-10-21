@@ -46,32 +46,34 @@ func TestParsePersonalData(t *testing.T) {
 }
 
 func TestParseRejects(t *testing.T) {
-	cases := map[string]string{
-		"unknown key":        `{"contexts":{"p":{"tailnetId":"T1CNTRL","credentials":{"read":{"provider":"env"}}}},"approverz":[]}`,
-		"no contexts":        `{"contexts":{}}`,
-		"dash tailnet":       `{"contexts":{"p":{"tailnetId":"-","credentials":{"read":{"provider":"env"}}}}}`,
-		"bad provider":       `{"contexts":{"p":{"tailnetId":"T1CNTRL","credentials":{"read":{"provider":"keychain"}}}}}`,
-		"relative exec":      `{"contexts":{"p":{"tailnetId":"T1CNTRL","credentials":{"read":{"provider":"exec","command":["wrapper","--"]}}}}}`,
-		"env with extras":    `{"contexts":{"p":{"tailnetId":"T1CNTRL","credentials":{"read":{"provider":"env","path":"/x"}}}}}`,
-		"oidc no client":     `{"contexts":{"p":{"tailnetId":"T1CNTRL","credentials":{"read":{"provider":"oidc"}}}}}`,
-		"bad default":        `{"contexts":{"p":{"tailnetId":"T1CNTRL","credentials":{"read":{"provider":"env"}}}},"defaultContext":"q"}`,
-		"bad profile":        `{"contexts":{"p":{"tailnetId":"T1CNTRL","credentials":{"read":{"provider":"env"}}}},"mcp":{"profile":"all"}}`,
-		"relative tailscale": `{"contexts":{"p":{"tailnetId":"T1CNTRL","credentials":{"read":{"provider":"env"}}}},"local":{"tailscaleBinary":"tailscale"}}`,
-		"trailing data":      `{"contexts":{"p":{"tailnetId":"T1CNTRL","credentials":{"read":{"provider":"env"}}}}} {}`,
-		"bad personalData":   `{"contexts":{"p":{"tailnetId":"T1CNTRL","credentials":{"read":{"provider":"env"}}}},"personalData":"all"}`,
-		"bad context name":   `{"contexts":{"Prod Net":{"tailnetId":"T1CNTRL","credentials":{"read":{"provider":"env"}}}}}`,
-		"bad audit reads":    `{"contexts":{"p":{"tailnetId":"T1CNTRL","credentials":{"read":{"provider":"env"}}}},"audit":{"reads":"all"}}`,
-		"relative socket":    `{"contexts":{"p":{"tailnetId":"T1CNTRL","credentials":{"read":{"provider":"env"}}}},"local":{"socket":"tailscaled.sock"}}`,
-		"relative file":      `{"contexts":{"p":{"tailnetId":"T1CNTRL","credentials":{"read":{"provider":"file","path":"read.env"}}}}}`,
-		"relative tokenFile": `{"contexts":{"p":{"tailnetId":"T1CNTRL","credentials":{"read":{"provider":"oidc","clientId":"c","tokenFile":"tok"}}}}}`,
-		"wrong type":         `{"contexts":[]}`,
-		"not JSON":           `{"contexts":`,
+	// Each refusal is config_invalid, and its message says which rule refused it: a
+	// refusal for another reason would pass a check of the code alone.
+	cases := []struct{ name, in, want string }{
+		{"unknown key", `{"contexts":{"p":{"tailnetId":"T1CNTRL","credentials":{"read":{"provider":"env"}}}},"approverz":[]}`, "approverz is not a configuration key"},
+		{"no contexts", `{"contexts":{}}`, "at least one context is required"},
+		{"dash tailnet", `{"contexts":{"p":{"tailnetId":"-","credentials":{"read":{"provider":"env"}}}}}`, "tailnetId must be the explicit tailnet ID"},
+		{"bad provider", `{"contexts":{"p":{"tailnetId":"T1CNTRL","credentials":{"read":{"provider":"keychain"}}}}}`, "provider \"keychain\" must be env, file, exec or oidc"},
+		{"relative exec", `{"contexts":{"p":{"tailnetId":"T1CNTRL","credentials":{"read":{"provider":"exec","command":["wrapper","--"]}}}}}`, "the exec provider needs \"command\" with an absolute program path"},
+		{"env with extras", `{"contexts":{"p":{"tailnetId":"T1CNTRL","credentials":{"read":{"provider":"env","path":"/x"}}}}}`, "the env provider takes no other fields"},
+		{"oidc no client", `{"contexts":{"p":{"tailnetId":"T1CNTRL","credentials":{"read":{"provider":"oidc"}}}}}`, "the oidc provider needs \"clientId\""},
+		{"bad default", `{"contexts":{"p":{"tailnetId":"T1CNTRL","credentials":{"read":{"provider":"env"}}}},"defaultContext":"q"}`, "defaultContext \"q\" is not a defined context"},
+		{"bad profile", `{"contexts":{"p":{"tailnetId":"T1CNTRL","credentials":{"read":{"provider":"env"}}}},"mcp":{"profile":"all"}}`, "mcp.profile \"all\" must be reads, core or full"},
+		{"relative tailscale", `{"contexts":{"p":{"tailnetId":"T1CNTRL","credentials":{"read":{"provider":"env"}}}},"local":{"tailscaleBinary":"tailscale"}}`, "local.tailscaleBinary must be an absolute path"},
+		{"trailing data", `{"contexts":{"p":{"tailnetId":"T1CNTRL","credentials":{"read":{"provider":"env"}}}}} {}`, "after top-level value"},
+		{"bad personalData", `{"contexts":{"p":{"tailnetId":"T1CNTRL","credentials":{"read":{"provider":"env"}}}},"personalData":"all"}`, "personalData \"all\" must be mask or show"},
+		{"bad context name", `{"contexts":{"Prod Net":{"tailnetId":"T1CNTRL","credentials":{"read":{"provider":"env"}}}}}`, "context name \"Prod Net\" must match"},
+		{"bad audit reads", `{"contexts":{"p":{"tailnetId":"T1CNTRL","credentials":{"read":{"provider":"env"}}}},"audit":{"reads":"all"}}`, "audit.reads \"all\" must be metadata or none"},
+		{"relative socket", `{"contexts":{"p":{"tailnetId":"T1CNTRL","credentials":{"read":{"provider":"env"}}}},"local":{"socket":"tailscaled.sock"}}`, "local.socket must be an absolute path"},
+		{"relative file", `{"contexts":{"p":{"tailnetId":"T1CNTRL","credentials":{"read":{"provider":"file","path":"read.env"}}}}}`, "the file provider needs an absolute \"path\""},
+		{"relative tokenFile", `{"contexts":{"p":{"tailnetId":"T1CNTRL","credentials":{"read":{"provider":"oidc","clientId":"c","tokenFile":"tok"}}}}}`, "oidc \"tokenFile\" must be an absolute path"},
+		{"wrong type", `{"contexts":[]}`, "does not match the schema"},
+		{"not JSON", `{"contexts":`, "is not valid HuJSON"},
 	}
-	for name, in := range cases {
-		_, err := Parse([]byte(in))
+	for _, c := range cases {
+		_, err := Parse([]byte(c.in))
 		e, ok := tkerr.As(err)
-		if !ok || e.Code != tkerr.ConfigInvalid {
-			t.Errorf("%s: err = %v, want config_invalid", name, err)
+		if !ok || e.Code != tkerr.ConfigInvalid || !strings.Contains(e.Message, c.want) {
+			t.Errorf("%s: err = %v, want config_invalid with %q", c.name, err, c.want)
 		}
 	}
 }
@@ -153,9 +155,11 @@ func TestLoadPropagatesCheckerRefusal(t *testing.T) {
 	root := t.TempDir()
 	d := Dirs{System: filepath.Join(root, "s"), User: filepath.Join(root, "u")}
 	writeConfig(t, d.User, validConfig)
-	refuse := func(string, ...int) error { return tkerr.New(tkerr.ConfigUnsafe, "nope", "") }
-	if _, err := Load(d, refuse); err == nil {
-		t.Fatal("Load accepted a configuration the checker refused")
+	refuse := func(string, ...int) error { return tkerr.New(tkerr.ConfigUnsafe, "nope", "make it safe") }
+	l, err := Load(d, refuse)
+	e, ok := tkerr.As(err)
+	if l != nil || !ok || e.Code != tkerr.ConfigUnsafe || e.Message != "nope" || e.Hint != "make it safe" {
+		t.Fatalf("Load = %v, %v; want the checker's own refusal, config_unsafe: nope", l, err)
 	}
 }
 
@@ -247,11 +251,11 @@ func TestSelect(t *testing.T) {
 	l := &Loaded{Config: c}
 	env := func(k string) string { return map[string]string{"TAILKEEPER_CONTEXT": "b"}[k] }
 	none := func(string) string { return "" }
-	if name, _, _ := l.Select("a", env); name != "a" {
-		t.Errorf("flag should win, got %q", name)
+	if name, ctx, err := l.Select("a", env); err != nil || name != "a" || ctx.TailnetID != "TACNTRL" {
+		t.Errorf("flag should win, got %q, %+v, %v", name, ctx, err)
 	}
-	if name, _, _ := l.Select("", env); name != "b" {
-		t.Errorf("env should be second, got %q", name)
+	if name, ctx, err := l.Select("", env); err != nil || name != "b" || ctx.TailnetID != "TBCNTRL" {
+		t.Errorf("env should be second, got %q, %+v, %v", name, ctx, err)
 	}
 	if _, _, err := l.Select("", none); err == nil {
 		t.Error("ambiguous selection should fail")
@@ -342,7 +346,7 @@ func TestReadSecretFileChecksAndReadsTheSameFile(t *testing.T) {
 	if err := os.Chmod(p, 0o600); err != nil {
 		t.Fatal(err)
 	}
-	want, err := os.Lstat(p)
+	want, err := inspect(p)
 	if err != nil {
 		t.Fatal(err)
 	}

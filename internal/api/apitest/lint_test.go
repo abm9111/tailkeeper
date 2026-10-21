@@ -20,9 +20,14 @@ import (
 // "data" (a validate answer), or both "acl" and "warnings" (a details answer).
 
 // allowed lists the files that may hold such strings. internal/api/acl_test.go feeds
-// raw bodies to the reader on purpose, to see what it refuses; nothing else is here.
+// raw bodies to the reader on purpose, to see what it refuses, and so do the table and the
+// fuzz seeds of the policy-mode reader and the refusals of the details reader; nothing
+// else is here.
 var allowed = map[string]bool{
-	"internal/api/acl_test.go": true,
+	"internal/api/acl_test.go":              true,
+	"internal/api/policy_details_test.go":   true,
+	"internal/api/policy_read_test.go":      true,
+	"internal/api/policy_read_fuzz_test.go": true,
 }
 
 // looksLikeValidateJSON reports whether s is shaped like a validate or a details answer.
@@ -252,10 +257,12 @@ func TestLintTreeAppliesTheAllowlist(t *testing.T) {
 	if len(findings) != 1 || !strings.HasPrefix(findings[0], "internal/x/x_test.go:2:") {
 		t.Errorf("findings = %v", findings)
 	}
-	if len(stale) != 1 || stale[0] != "internal/api/acl_test.go" {
-		t.Errorf("stale = %v, want the allowlisted file that is missing", stale)
+	if len(stale) != len(allowed) {
+		t.Errorf("stale = %v, want every allowlisted file, none of which is in the tree yet", stale)
 	}
-	write("internal/api/acl_test.go", bad)
+	for f := range allowed {
+		write(f, bad)
+	}
 	if findings, stale = lintTree(t, root); len(stale) != 0 || len(findings) != 1 {
 		t.Errorf("with the allowed file: findings %v, stale %v", findings, stale)
 	}

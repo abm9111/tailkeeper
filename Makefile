@@ -102,14 +102,14 @@ bench:
 # input is written to testdata/fuzz/<target>/ and fails the run. Fails closed: each
 # package's listing is captured on its own, so a listing that fails (a compile error)
 # fails the run instead of reading as "no targets", and the run fails unless it ran at
-# least FUZZ_MIN targets (nine exist today). A package with no fuzz target is fine. Not
+# least FUZZ_MIN targets (ten exist today). A package with no fuzz target is fine. Not
 # part of verify: it takes minutes and its inputs are random.
 #
 # FUZZ_PKG limits the run to some packages (go list patterns, such as ./internal/acl); the
 # nightly workflow runs one package for each of its jobs and sets FUZZ_MIN to the number
 # of targets that package holds.
 FUZZTIME ?= 20s
-FUZZ_MIN ?= 9
+FUZZ_MIN ?= 10
 FUZZ_PKG ?= ./...
 
 fuzz:
@@ -198,7 +198,7 @@ vet:
 fmt-check:
 	@out="$$(gofmt -l .)" || exit 1; if [ -n "$$out" ]; then echo "gofmt needed:"; echo "$$out"; exit 1; fi
 
-# staticcheck v0.8.1 cannot read go1.27.2 export data. Lint results do not depend
+# staticcheck v0.8.1 cannot read go1.27.3 export data. Lint results do not depend
 # on the patch release, so it runs under go1.27.1; builds and govulncheck use the
 # toolchain pinned in go.mod.
 lint:

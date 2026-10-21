@@ -11,17 +11,19 @@ import (
 
 // fixtureIn is an input shaped like the policy tools' input: the proposal, a patch
 // and the other side of a diff are text over MCP and files or standard input on the
-// command line, and the invariants and the offline switch exist on the command line
+// command line (the old and the new side also as the first and second argument), and
+// the invariants, the offline switch and the operator mark exist on the command line
 // only. It is the test tool through which the framework is tested; no real tool
 // ships in this change.
 type fixtureIn struct {
-	Name         string `json:"name,omitempty" jsonschema:"a label echoed back"`
-	Policy       string `json:"policy,omitempty" cli:"file:from,stdin,group=proposal" jsonschema:"the proposed policy text"`
+	Name         string `json:"name,omitempty" tk:"short" jsonschema:"a label echoed back"`
+	Policy       string `json:"policy,omitempty" cli:"file:from,stdin,group=proposal,arg=2,as=NEW" jsonschema:"the proposed policy text"`
 	Patch        string `json:"patch,omitempty" cli:"file:patch,stdin,group=proposal" jsonschema:"a JSON Patch against the live policy"`
-	Against      string `json:"against,omitempty" cli:"file:against,stdin,live" jsonschema:"the old side of a comparison; live when left out"`
+	Against      string `json:"against,omitempty" cli:"file:against,stdin,live,arg=1,as=OLD" jsonschema:"the old side of a comparison; live when left out"`
 	Invariants   string `json:"-" cli:"file:invariants" jsonschema:"invariants to check the proposal against"`
 	NoInvariants bool   `json:"-" cli:"bool:no-invariants" jsonschema:"skip the configured invariants"`
 	Offline      bool   `json:"-" cli:"bool:offline" jsonschema:"do not call the API"`
+	Operator     bool   `json:"-" cli:"operator"`
 }
 
 // RunsOffline: --offline, or a file on each side of a comparison.
@@ -38,6 +40,7 @@ type fixtureOut struct {
 	Invariants   string `json:"invariants" tk:"untrusted"`
 	NoInvariants bool   `json:"noInvariants"`
 	Offline      bool   `json:"offline"`
+	Operator     bool   `json:"operator"`
 }
 
 // gateIn builds a typed result with the status and finding counts a test asks
@@ -78,6 +81,22 @@ func (o gateOut) Findings() registry.Findings {
 	return registry.Findings{NewWarnings: o.NewWarnings, TestsReduced: o.TestsReduced, Defaults: o.Defaults, Widenings: o.Widenings, Changes: o.Changes}
 }
 
+// partialOut is gateOut for a tool that computes four of the five kinds of finding:
+// it never fills the count of new warnings, so a gate on warnings could never fire.
+type partialOut gateOut
+
+func (o partialOut) ExitCode() int { return gateOut(o).ExitCode() }
+func (o partialOut) Findings() registry.Findings {
+	f := gateOut(o).Findings()
+	f.NewWarnings = 0
+	return f
+}
+
+// FailOnKinds names the --fail-on tokens the tool computes.
+func (partialOut) FailOnKinds() []string {
+	return []string{"tests-reduced", "defaults", "widening", "change"}
+}
+
 // fixtureRegistry holds the test tools; ran counts the runs of fixture_check.
 func fixtureRegistry(ran *int) *registry.Registry {
 	reg := registry.New()
@@ -90,6 +109,9 @@ func fixtureRegistry(ran *int) *registry.Registry {
 	reg.MustAdd(registry.Define(registry.Meta{Name: "gate_check", Area: "gate", Verb: "check", Summary: "A test tool whose result can be gated.",
 		Tier: registry.TierLocal, Stage: registry.StageGA, Credential: registry.CredNone},
 		func(_ context.Context, _ *registry.Env, in gateIn) (gateOut, error) { return gateOut(in), nil }))
+	reg.MustAdd(registry.Define(registry.Meta{Name: "partial_check", Area: "partial", Verb: "check", Summary: "A test tool whose result computes four of the five kinds.",
+		Tier: registry.TierLocal, Stage: registry.StageGA, Credential: registry.CredNone},
+		func(_ context.Context, _ *registry.Env, in gateIn) (partialOut, error) { return partialOut(in), nil }))
 	return reg
 }
 

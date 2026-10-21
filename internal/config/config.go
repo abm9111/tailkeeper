@@ -92,8 +92,9 @@ type ACL struct {
 	// "sshTests"). Unset means no invariants. A set path that is missing or
 	// unreadable fails every call that uses it; it is never taken for none.
 	InvariantsFile string `json:"invariantsFile,omitempty"`
-	// ValidatePerMinute is the process's own limit on policy validation requests,
-	// 1 to 120. Unset means DefaultValidatePerMinute.
+	// ValidatePerMinute is the process's own limit on the policy validation requests
+	// tailkeeper decides to send, 1 to 120; a retry of a request takes no token. Unset
+	// means DefaultValidatePerMinute.
 	ValidatePerMinute *int `json:"validatePerMinute,omitempty"`
 }
 
@@ -104,7 +105,7 @@ const (
 	MaxValidatePerMinute     = 120
 )
 
-// ValidateRate is the validation requests per minute this process may send.
+// ValidateRate is the validation requests per minute this process decides to send.
 func (a ACL) ValidateRate() int {
 	if a.ValidatePerMinute == nil {
 		return DefaultValidatePerMinute

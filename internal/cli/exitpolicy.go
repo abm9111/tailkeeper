@@ -2,6 +2,8 @@ package cli
 
 import (
 	"fmt"
+	"reflect"
+	"slices"
 	"strings"
 
 	"github.com/abm9111/tailkeeper/internal/registry"
@@ -86,4 +88,32 @@ func exitFor(out any, f failOnSet) (code int, matched []string) {
 		matched = f.matches(g.Findings())
 	}
 	return exitPolicy(own, len(matched) > 0), matched
+}
+
+// computedKinds returns the --fail-on tokens a tool's result computes, and whether the
+// result type says so (registry.Computes). It asks the zero value of the output type, so
+// the method has a value receiver and reads no field.
+func computedKinds(t registry.Tool) ([]string, bool) {
+	c, ok := reflect.New(t.OutputType).Elem().Interface().(registry.Computes)
+	if !ok {
+		return nil, false
+	}
+	return c.FailOnKinds(), true
+}
+
+// checkKinds refuses a --fail-on token that the tool never computes: a usage error that
+// names the token and lists the ones the tool does compute. A tool that does not say
+// which kinds it computes takes every token.
+func checkKinds(t registry.Tool, set failOnSet) error {
+	kinds, ok := computedKinds(t)
+	if !ok {
+		return nil
+	}
+	for _, tok := range set.tokens() {
+		if !slices.Contains(kinds, tok) {
+			return tkerr.New(tkerr.Usage, fmt.Sprintf("`%s %s` does not compute `%s`; it computes %s", t.Meta.Area, t.Meta.Verb, tok, strings.Join(kinds, ", ")),
+				"drop the token from --fail-on, or use one the command computes")
+		}
+	}
+	return nil
 }

@@ -69,7 +69,7 @@ func TestReadCheckedReadsAnUnchangedFile(t *testing.T) {
 	if err := os.WriteFile(p, []byte("A=b\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	want, err := os.Lstat(p)
+	want, err := inspect(p)
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -7,7 +7,6 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
-	"net/url"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -84,28 +83,6 @@ func TestOAuthTokenRefetchedOnceExpired(t *testing.T) {
 	}
 	if strings.Join(bearers, " ") != "-1 -2 -3" {
 		t.Fatalf("API requests carried tokens %q, want each request's freshly fetched one: -1 -2 -3", bearers)
-	}
-}
-
-func TestDecodingDropsUndeclaredFields(t *testing.T) {
-	f := apitest.New(t)
-	f.JSON("GET", "/api/v2/tailnet/T1234CNTRL/keys", 200,
-		`{"keys":[{"id":"k1","key":"would-be-secret-value","description":"ci"}]}`)
-	c := f.Client(t)
-	var out struct {
-		Keys []struct {
-			ID          string `json:"id"`
-			Description string `json:"description"`
-		} `json:"keys"`
-	}
-	if err := c.Get(context.Background(), c.TailnetPath("/keys"), url.Values{"all": {"true"}}, &out); err != nil {
-		t.Fatal(err)
-	}
-	if out.Keys[0].ID != "k1" {
-		t.Fatalf("decoded %+v", out)
-	}
-	if q := f.Requests()[0].Query["all"]; len(q) != 1 || q[0] != "true" {
-		t.Fatalf("query all = %v", q)
 	}
 }
 

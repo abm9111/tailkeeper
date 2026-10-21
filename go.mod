@@ -2,7 +2,7 @@ module github.com/abm9111/tailkeeper
 
 go 1.27
 
-toolchain go1.27.2
+toolchain go1.27.3
 
 require (
 	github.com/google/jsonschema-go v0.4.3

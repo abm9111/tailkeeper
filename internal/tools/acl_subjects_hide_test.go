@@ -89,6 +89,36 @@ func TestHideShowsNothingOfASlashedLoginInAnyEcho(t *testing.T) {
 	}
 }
 
+// A reply may write a login in another letter case than the one that was sent. The address
+// scan masks the plain spelling in any case, but it reads neither the escaped spellings of
+// the at sign nor a slash in the local part, so what masks those in another case is the
+// pattern of the login being blind to letter case.
+func TestHideMasksALoginInAnotherLetterCase(t *testing.T) {
+	bs := string(rune(92))
+	r := resolvedAll(t, "amy@example.com", "ops/bob@example.org")
+	checked := 0
+	for _, in := range []string{
+		"AMY" + bs + "u0040EXAMPLE.COM",
+		"Amy" + bs + "u0040Example.com",
+		"AMY%40EXAMPLE.COM",
+		"AMY" + bs + "u{40}EXAMPLE.COM",
+		"OPS/BOB@EXAMPLE.ORG",
+		"Ops/Bob@Example.org",
+		"OPS/BOB%40EXAMPLE.ORG",
+	} {
+		checked++
+		got := r.Hide("invalid: " + in)
+		for _, leak := range []string{"amy", "bob", "ops/", "example"} {
+			if strings.Contains(strings.ToLower(got), leak) {
+				t.Errorf("Hide(%q) = %q still shows %q", in, got, leak)
+			}
+		}
+	}
+	if checked != 7 {
+		t.Fatalf("checked %d echoes, want 7", checked)
+	}
+}
+
 func TestHideMasksEveryLoginTheResolverHandedOutInEveryEcho(t *testing.T) {
 	r, slashed, plain := resolvedTwo(t)
 	bs := string(rune(92))

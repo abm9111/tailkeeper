@@ -47,7 +47,7 @@ func TestAFifoSwappedInAfterTheCheckIsRefusedNotWaitedOn(t *testing.T) {
 		if err := os.WriteFile(p, []byte("A=b\n"), 0o600); err != nil {
 			t.Fatal(err)
 		}
-		want, err := os.Lstat(p)
+		want, err := inspect(p)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -87,7 +87,7 @@ func TestReadCheckedDoesNotFollowASymlinkToTheCheckedFile(t *testing.T) {
 	if err := os.WriteFile(p, []byte("A=b\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	want, err := os.Lstat(p)
+	want, err := inspect(p)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -127,7 +127,7 @@ func TestReadCheckedRefusesAFifoThatHasTheCheckedFilesDeviceAndInode(t *testing.
 		if err := syscall.Mkfifo(p, 0o600); err != nil {
 			t.Fatal(err)
 		}
-		want, err := os.Lstat(p)
+		want, err := inspect(p)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -160,7 +160,7 @@ func TestReadCheckedRefusesAFileRewrittenInPlaceAfterTheCheck(t *testing.T) {
 	if err := os.WriteFile(p, []byte("A=b\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	want, err := os.Lstat(p)
+	want, err := inspect(p)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -185,7 +185,7 @@ func TestReadCheckedRefusesAFileWhoseChangeTimeMovedAfterTheCheck(t *testing.T) 
 	if err := os.WriteFile(p, []byte("A=b\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	want, err := os.Lstat(p)
+	want, err := inspect(p)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -223,16 +223,16 @@ func TestReadCheckedRefusesASameSizeRewriteWithTheModTimeRestoredWithinTheSecond
 		if err := os.WriteFile(p, []byte("A=b\n"), 0o600); err != nil {
 			t.Fatal(err)
 		}
-		want, err := os.Lstat(p)
+		want, err := inspect(p)
 		if err != nil {
 			t.Fatal(err)
 		}
-		wsec, wnsec := ctime(want)
+		wsec, wnsec := ctime(want.fi)
 		for deadline := time.Now().Add(2 * time.Second); time.Now().Before(deadline); time.Sleep(2 * time.Millisecond) {
 			if err := os.WriteFile(p, []byte("A=c\n"), 0o600); err != nil { // the same size
 				t.Fatal(err)
 			}
-			if err := os.Chtimes(p, want.ModTime(), want.ModTime()); err != nil {
+			if err := os.Chtimes(p, want.fi.ModTime(), want.fi.ModTime()); err != nil {
 				t.Fatal(err)
 			}
 			got, err := os.Lstat(p)
@@ -280,11 +280,11 @@ func TestReadCheckedReadsAnUnchangedFileWhoseAccessTimeMoves(t *testing.T) {
 	if err := os.Chtimes(p, old, old); err != nil {
 		t.Fatal(err)
 	}
-	want, err := os.Lstat(p)
+	want, err := inspect(p)
 	if err != nil {
 		t.Fatal(err)
 	}
-	before := atime(want)
+	before := atime(want.fi)
 	if _, err := os.ReadFile(p); err != nil { // moves the access time on a file system that records it
 		t.Fatal(err)
 	}

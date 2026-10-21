@@ -20,3 +20,14 @@ func sameChangeTime(a, b os.FileInfo) bool {
 	secB, nsecB := ctimeOf(sb)
 	return secA == secB && nsecA == nsecB
 }
+
+// sameOwner reports whether a and b carry the same owner and group. A file without a
+// Stat_t is never the same, as with the change time: the comparison fails closed.
+func sameOwner(a, b os.FileInfo) bool {
+	sa, okA := a.Sys().(*syscall.Stat_t)
+	sb, okB := b.Sys().(*syscall.Stat_t)
+	if !okA || !okB {
+		return false
+	}
+	return sa.Uid == sb.Uid && sa.Gid == sb.Gid
+}

@@ -95,6 +95,9 @@ var wantExit = map[Code]int{
 
 	Internal:       1,
 	OutputWithheld: 1,
+
+	PolicyRejectedOrServerError: 1,
+	ValidateRateLimited:         1,
 	// New codes go here, with the exit the design (§19) gives them.
 }
 
