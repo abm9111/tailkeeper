@@ -135,7 +135,7 @@ jobs:
           if ! grep -q '[^[:space:]]' "$RUNNER_TEMP/notes.md"; then echo "::error::CHANGELOG.md has no section for $TAG"; exit 1; fi
       - name: Release (draft)
         if: github.event_name == 'push'
-        uses: goreleaser/goreleaser-action@f06c13b6b1a9625abc9e6e439d9c05a8f2190e94 # v7.2.3
+        uses: goreleaser/goreleaser-action@a4f02ab5355a589de60d917a659ce617ed19b3de # v7.3.0
         with:
           distribution: goreleaser
           version: v2.18.2
@@ -192,7 +192,7 @@ jobs:
       - name: The changelog stage reads the release notes
         run: make release-notes-check
       - name: Snapshot
-        uses: goreleaser/goreleaser-action@f06c13b6b1a9625abc9e6e439d9c05a8f2190e94 # v7.2.3
+        uses: goreleaser/goreleaser-action@a4f02ab5355a589de60d917a659ce617ed19b3de # v7.3.0
         with:
           distribution: goreleaser
           version: v2.18.2
@@ -219,7 +219,7 @@ jobs:
           go-version-file: go.mod
           cache: false # the rebuild must not depend on a cache
       - name: Rebuild every binary from the tag
-        uses: goreleaser/goreleaser-action@f06c13b6b1a9625abc9e6e439d9c05a8f2190e94 # v7.2.3
+        uses: goreleaser/goreleaser-action@a4f02ab5355a589de60d917a659ce617ed19b3de # v7.3.0
         with:
           distribution: goreleaser
           version: v2.18.2
