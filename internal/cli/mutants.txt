@@ -1,0 +1,112 @@
+# Mutants of internal/cli: each is a change to the code that a test must notice.
+# scripts/mutate.go says what the format is and what the three outcomes mean. The list
+# holds one mutant for each class of defect the tests of the GitHub and markdown formats,
+# of the policy commands' layouts and of the --fail-on help were written to catch.
+
+mutant: a property of an annotation keeps its colons
+file: format_github.go
+old: "\\n", "%0A", ":", "%3A", ",", "%2C")
+new: "\\n", "%0A", ",", "%2C")
+kill: TestTheEscapesAreGitHubs
+
+mutant: the annotations go through the CI-log guard
+file: format_github.go
+old: annotations := o.Trusted\n\tif annotations == nil {\n\t\tannotations = w\n\t}
+new: annotations := w
+kill: TestTheRunnerLeavesTheFormattersOwnAnnotationsAlone
+
+mutant: the layout lines of the GitHub format are not guarded by the formatter itself
+file: format_github.go
+old: io.WriteString(w, guardLine("  "+fmt.Sprintf(format, args...))+"\\n")
+new: io.WriteString(w, "  "+fmt.Sprintf(format, args...)+"\\n")
+kill: TestTheGitHubFormatterGuardsItsOwnLayoutLines
+
+mutant: markdown leaves an at sign as it is
+file: format_markdown.go
+old: b.WriteString("&#64;")
+new: b.WriteString("@")
+kill: TestMarkdownNeutralisesMentionsLinksHTMLAndTables
+
+mutant: standard input is named like a file in the GitHub format
+file: flags.go
+old: names[f.flag] = "<stdin>"
+new: names[f.flag] = "stdin"
+kill: TestTheACLCommandsMatchTheirGoldens
+
+mutant: a command that needs no credential starts the exec provider's wrapper
+file: cli.go
+old: if p.NeedsCredential(b.given()) {
+new: if true {
+kill: TestAnOfflineCommandReadsItsOwnStandardInputAndSkipsTheWrapper|TestADiffOfAPipedPolicyPassesThroughTheExecWrapperOnlyWhenItNeedsTheCredential
+
+mutant: --quiet prints a command that succeeded
+file: cli.go
+old: if !(*quiet && code == 0) {
+new: if !(*quiet && code == 1) {
+kill: TestQuietPrintsNothingOnExit0ForValidateAndDiff
+
+mutant: the --fail-on help lists every kind for a command that computes some
+file: cli.go
+old: if computed, ok := computedKinds(t); ok {
+new: if computed, ok := computedKinds(t); ok && false {
+kill: TestTheFailOnHelpListsTheKindsTheCommandComputes
+
+mutant: the file of an annotation ignores the directory below the root of the repository
+file: format_github.go
+old: p = path.Join(dir, p)
+new: p = path.Join("", p)
+kill: TestTheFileIsRepoRelativeOrOmitted
+
+mutant: a command that ran outside the repository names its files
+file: format_github.go
+old: if f.Source != "" && !o.Outside {
+new: if f.Source != "" {
+kill: TestTheFileIsRepoRelativeOrOmitted|TestTheRunnerNamesTheFileFromTheRepositoryRoot
+
+mutant: the Runner ignores the root of the checkout
+file: layout.go
+old: if root == "" {
+new: if true {
+kill: TestTheRunnerNamesTheFileFromTheRepositoryRoot
+
+mutant: markdown leaves an issue reference of the GH- form
+file: format_markdown.go
+old: strings.EqualFold(rest[:3], "gh-")
+new: strings.EqualFold(rest[:3], "gh_")
+kill: TestMarkdownNeutralisesMentionsLinksHTMLAndTables
+
+mutant: --fail-on is accepted with --offline
+file: cli.go
+old: checkKinds(t, gate, b.given()["offline"])
+new: checkKinds(t, gate, false)
+kill: TestAnOfflineCheckRefusesEveryFailOnKindBeforeAnythingLoads
+
+mutant: a directory with a control character names a file of the repository
+file: format_github.go
+old: sanitize.String(typed, 0) != typed || sanitize.String(dir, 0) != dir
+new: sanitize.String(typed, 0) != typed
+kill: TestTheFileIsRepoRelativeOrOmitted
+
+mutant: a command that ran in the parent of the checkout names its files from the checkout
+file: layout.go
+old: err != nil || rel == ".." || strings.HasPrefix
+new: err != nil || strings.HasPrefix
+kill: TestTheRunnerNamesTheFileFromTheRepositoryRoot
+
+mutant: an absolute path below the checkout is no file of the repository
+file: format_github.go
+old: if (base == "" && root != "/") || !strings.HasPrefix(p, base+"/") {
+new: if true {
+kill: TestTheFileIsRepoRelativeOrOmitted|TestTheRunnerNamesTheFileFromTheRepositoryRoot
+
+mutant: an absolute path below the checkout is joined to the directory the command ran in
+file: format_github.go
+old: p, dir = p[len(base)+1:], ""
+new: p = p[len(base)+1:]
+kill: TestTheFileIsRepoRelativeOrOmitted
+
+mutant: the layouts print Tailscale's findings among the report's own
+file: layout.go
+old: if f.Untrusted {\n\t\t\ttheirs = append(theirs, f)
+new: if !f.Untrusted {\n\t\t\ttheirs = append(theirs, f)
+kill: TestFindingsSplitIntoTheReportsOwnAndTailscales

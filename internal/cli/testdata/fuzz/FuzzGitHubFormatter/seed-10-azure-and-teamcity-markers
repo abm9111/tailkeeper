@@ -1,0 +1,12 @@
+go test fuzz v1
+string("v")
+string("c")
+string("notice")
+string("from")
+string("p.hujson")
+string("")
+string("x ##vso[task.setvariable variable=a]b ##teamcity[buildProblem description='x']")
+int(3)
+int(3)
+bool(true)
+uint8(4)

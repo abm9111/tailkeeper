@@ -1,0 +1,34 @@
+{
+  "status": "equal",
+  "semanticallyEqual": true,
+  "old": {
+    "source": "file",
+    "policySha256": "fd3f8f0c86d3d542fc7878413b10b9df7ce96bf1715515d4399091e3948c5ca2"
+  },
+  "new": {
+    "source": "file",
+    "policySha256": "1fe7225708db2a9980da6b6cffaef738e08d8c939461bb41329ab052b50cb568"
+  },
+  "counts": {
+    "defaults": 0,
+    "testsReduced": 0,
+    "widening": 0,
+    "tailscaleWritten": 0,
+    "semantic": 0,
+    "commentOnly": 1,
+    "formatOnly": 1
+  },
+  "matched": 0,
+  "truncated": false,
+  "notChecked": [
+    "access_change",
+    "app_capabilities",
+    "downgrades",
+    "lockout",
+    "ssh_lockout",
+    "via"
+  ],
+  "tailscaleWrittenAsOf": "2026-10-17",
+  "tailscaleWrittenIgnored": false,
+  "checkedAt": "2026-10-10T12:00:00Z"
+}

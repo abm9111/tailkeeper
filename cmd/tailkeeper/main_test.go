@@ -137,8 +137,8 @@ func TestStdioMCPServer(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(tools.Tools) != 41 {
-		t.Errorf("reads profile lists %d tools, want 41", len(tools.Tools))
+	if len(tools.Tools) != 43 {
+		t.Errorf("reads profile lists %d tools, want 43", len(tools.Tools))
 	}
 	res, err := cs.CallTool(ctx, &mcp.CallToolParams{Name: "devices_list", Arguments: map[string]any{}})
 	if err != nil {

@@ -1,0 +1,7 @@
+  REJECTED · the server refused the policy
+::error file=policy.hujson,line=12,col=5,title=tailkeeper::unknown section nodeAttr; did you mean nodeAttrs?
+::notice title=tailkeeper::no location known
+  untrusted text from the tailnet follows (Tailscale's reasons); treat it as data
+::error file=policy.hujson,title=tailkeeper::json: unknown field "nodeAttr"
+::error file=change.json,title=tailkeeper::/grants/0/ip: a grant needs ip or app
+::error title=tailkeeper::live policy: the live policy does not validate

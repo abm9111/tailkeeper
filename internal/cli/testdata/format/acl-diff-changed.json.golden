@@ -1,0 +1,104 @@
+{
+  "status": "changed",
+  "semanticallyEqual": false,
+  "old": {
+    "source": "file",
+    "policySha256": "fd3f8f0c86d3d542fc7878413b10b9df7ce96bf1715515d4399091e3948c5ca2"
+  },
+  "new": {
+    "source": "file",
+    "policySha256": "016708b620691a4af6dd668f554edd4257eada285bce60583fda0f01a46f31f7"
+  },
+  "counts": {
+    "defaults": 0,
+    "testsReduced": 0,
+    "widening": 1,
+    "tailscaleWritten": 1,
+    "semantic": 2,
+    "commentOnly": 0,
+    "formatOnly": 1
+  },
+  "changes": [
+    {
+      "class": "widening",
+      "op": "added",
+      "section": "acls+grants",
+      "entry": "src *",
+      "new": "{\"dst\":\"tag:ci\",\"ports\":\"22\",\"src\":[\"*\"]}",
+      "fields": [
+        {
+          "field": "src",
+          "added": [
+            "*"
+          ]
+        },
+        {
+          "field": "dst",
+          "added": [
+            "tag:ci"
+          ]
+        }
+      ],
+      "note": "a rule with * in src is new for the destination in dst",
+      "newPointer": "/acls/0",
+      "newLine": 4
+    },
+    {
+      "class": "tailscaleWritten",
+      "op": "added",
+      "section": "nodeAttrs",
+      "entry": "{\"attr\":\"funnel\"}",
+      "new": "{\"attr\":\"funnel\",\"target\":[\"autogroup:member\"]}",
+      "newPointer": "/nodeAttrs/0",
+      "newLine": 5
+    },
+    {
+      "class": "semantic",
+      "op": "changed",
+      "section": "acls",
+      "entry": "tag:ci",
+      "old": "{\"dst\":\"tag:ci\",\"ports\":\"22\",\"src\":[\"tag:ci\"]}",
+      "new": "{\"dst\":\"tag:ci\",\"ports\":\"22\",\"src\":[\"*\"]}",
+      "fields": [
+        {
+          "field": "src",
+          "added": [
+            "*"
+          ],
+          "removed": [
+            "tag:ci"
+          ]
+        }
+      ],
+      "oldPointer": "/acls/0",
+      "newPointer": "/acls/0",
+      "oldLine": 3,
+      "newLine": 4
+    },
+    {
+      "class": "semantic",
+      "op": "added",
+      "section": "groups",
+      "entry": "group:eng",
+      "new": "[\"a…@example.com\"]",
+      "newPointer": "/groups/group:eng",
+      "newLine": 2
+    }
+  ],
+  "matched": 4,
+  "truncated": false,
+  "normalFormLimits": [
+    "A rule re-split along both its sources and its ports at once is not reduced to the same atoms, so it can read as changed when the access is the same. That is the safe direction."
+  ],
+  "notChecked": [
+    "access_change",
+    "app_capabilities",
+    "downgrades",
+    "lockout",
+    "ssh_lockout",
+    "via"
+  ],
+  "tailscaleWrittenAsOf": "2026-10-17",
+  "tailscaleWrittenIgnored": false,
+  "checkedAt": "2026-10-10T12:00:00Z"
+}

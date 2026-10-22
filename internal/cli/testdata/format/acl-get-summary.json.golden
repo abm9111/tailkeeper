@@ -1,0 +1,148 @@
+{
+  "policy": "",
+  "fromLine": 0,
+  "toLine": 0,
+  "lines": 10,
+  "nextLine": 0,
+  "truncated": false,
+  "masked": true,
+  "bytes": 322,
+  "sha256": "c107da800fb7fe3a72db24272c126780f16425982705a40965a18251201667ec",
+  "policySha256": "c107da800fb7fe3a72db24272c126780f16425982705a40965a18251201667ec",
+  "checkedAt": "2026-10-10T12:00:00Z",
+  "summary": {
+    "sections": [
+      {
+        "name": "acls",
+        "known": true,
+        "state": "non-empty",
+        "count": 1
+      },
+      {
+        "name": "autoApprovers",
+        "known": true,
+        "state": "absent",
+        "count": 0
+      },
+      {
+        "name": "grants",
+        "known": true,
+        "state": "absent",
+        "count": 0
+      },
+      {
+        "name": "groups",
+        "known": true,
+        "state": "non-empty",
+        "count": 1
+      },
+      {
+        "name": "hosts",
+        "known": true,
+        "state": "absent",
+        "count": 0
+      },
+      {
+        "name": "ipsets",
+        "known": true,
+        "state": "absent",
+        "count": 0
+      },
+      {
+        "name": "nodeAttrs",
+        "known": true,
+        "state": "absent",
+        "count": 0
+      },
+      {
+        "name": "postures",
+        "known": true,
+        "state": "absent",
+        "count": 0
+      },
+      {
+        "name": "ssh",
+        "known": true,
+        "state": "absent",
+        "count": 0
+      },
+      {
+        "name": "sshTests",
+        "known": true,
+        "state": "absent",
+        "count": 0
+      },
+      {
+        "name": "tagOwners",
+        "known": true,
+        "state": "non-empty",
+        "count": 2
+      },
+      {
+        "name": "tests",
+        "known": true,
+        "state": "non-empty",
+        "count": 2
+      },
+      {
+        "name": "derpMap",
+        "known": true,
+        "state": "absent",
+        "count": 0
+      },
+      {
+        "name": "disableIPv4",
+        "known": true,
+        "state": "absent",
+        "count": 0
+      },
+      {
+        "name": "OneCGNATRoute",
+        "known": true,
+        "state": "absent",
+        "count": 0
+      },
+      {
+        "name": "randomizeClientPort",
+        "known": true,
+        "state": "absent",
+        "count": 0
+      },
+      {
+        "name": "defaultSrcPosture",
+        "known": true,
+        "state": "absent",
+        "count": 0
+      },
+      {
+        "name": "extraDNSRecords",
+        "known": true,
+        "state": "absent",
+        "count": 0
+      },
+      {
+        "name": "externalTailnets",
+        "known": true,
+        "state": "absent",
+        "count": 0
+      },
+      {
+        "name": "attrConfig",
+        "known": true,
+        "state": "absent",
+        "count": 0
+      }
+    ],
+    "groups": [
+      "group:eng"
+    ],
+    "tagOwners": [
+      "tag:ci",
+      "tag:web"
+    ],
+    "namesTruncated": false,
+    "tests": 2,
+    "sshTests": 0
+  },
+  "externallyManaged": "false"
+}

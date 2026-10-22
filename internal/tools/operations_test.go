@@ -11,6 +11,7 @@ import (
 
 	"github.com/abm9111/tailkeeper/internal/api/apitest"
 	"github.com/abm9111/tailkeeper/internal/api/openapi"
+	"github.com/abm9111/tailkeeper/internal/privacy"
 	"github.com/abm9111/tailkeeper/internal/registry"
 )
 
@@ -19,8 +20,10 @@ import (
 // resolved through the device list first, a route lookup with includeHa lists the
 // devices again, and the log stream is read for both log types.
 var operationCalls = map[string][]string{
-	"acl_get":                   {`{}`},
+	"acl_get":                   {`{}`, `{"view":"summary"}`},
 	"acl_test":                  {`{"src":"tag:a","accept":["tag:b:22"]}`},
+	"acl_diff":                  {`{"against":"{}\n"}`, `{"patch":"[{\"op\":\"add\",\"path\":\"/groups/group:eng\",\"value\":[\"p:abcdefghij\"]}]"}`},
+	"acl_validate":              {`{}`, `{"patch":"[{\"op\":\"add\",\"path\":\"/groups/group:eng\",\"value\":[\"p:abcdefghij\"]}]"}`},
 	"contacts_get":              {`{}`},
 	"device_get":                {`{"device":"nAAA1CNTRL"}`, `{"device":"host-a"}`},
 	"devices_list":              {`{}`},
@@ -113,11 +116,14 @@ func TestOperationOfMapsPathsToTemplates(t *testing.T) {
 }
 
 // fallbackBody answers any request a tool makes with data it can read to the end:
-// one device for the device list, a tailnet with flow logging on, an empty object
-// for the rest.
+// one device for the device list, a tailnet with flow logging on, the policy in the form
+// acl_get reads (from the shape ledger, as a test may not write it by hand), an empty
+// object for the rest.
 func fallbackBody(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	switch {
+	case strings.HasSuffix(r.URL.Path, "/acl"):
+		apitest.DetailsOK("{}\n", `"e1"`, nil, nil).Write(w)
 	case strings.HasSuffix(r.URL.Path, "/devices"):
 		_, _ = w.Write([]byte(`{"devices":[{"id":"1001","nodeId":"nAAA1CNTRL","name":"host-a.example.ts.net","hostname":"host-a"}]}`))
 	case strings.HasSuffix(r.URL.Path, "/settings"):
@@ -151,7 +157,12 @@ func TestEveryToolSendsExactlyTheOperationsItDeclares(t *testing.T) {
 		}
 		f := apitest.New(t)
 		f.Fallback(fallbackBody)
-		env := &registry.Env{API: f.Client(t), Now: func() time.Time { return now }}
+		// A privacy key, so that a call that names a user by pseudonym reaches the users.
+		key, err := privacy.Parse(strings.Repeat("5a", 32))
+		if err != nil {
+			t.Fatal(err)
+		}
+		env := &registry.Env{API: f.Client(t), Privacy: key, Now: func() time.Time { return now }}
 		for _, args := range calls {
 			// A tool may fail, as one given no usable answer does; it must still
 			// have sent the requests it declares.

@@ -4,6 +4,7 @@ package cli
 
 import (
 	"bytes"
+	"cmp"
 	"context"
 	"io"
 	"os"
@@ -13,11 +14,13 @@ import (
 	"testing"
 	"time"
 
+	"github.com/abm9111/tailkeeper/internal/api"
 	"github.com/abm9111/tailkeeper/internal/api/apitest"
 	"github.com/abm9111/tailkeeper/internal/app"
 	"github.com/abm9111/tailkeeper/internal/config"
 	"github.com/abm9111/tailkeeper/internal/creds"
 	"github.com/abm9111/tailkeeper/internal/registry"
+	"github.com/abm9111/tailkeeper/internal/tkerr"
 )
 
 // TestHelperProcess is the process the stand-in wrapper starts in place of the
@@ -43,6 +46,36 @@ func TestHelperProcess(t *testing.T) {
 	os.Exit(r.Run(context.Background(), args))
 }
 
+// TestHelperACLProcess is the same process for the policy commands: the product's tools, with
+// the API client of the fake the parent serves at the address in TK_CLI_FAKE_URL. It does
+// nothing in an ordinary test run.
+func TestHelperACLProcess(t *testing.T) {
+	url := os.Getenv("TK_CLI_FAKE_URL")
+	if os.Getenv("TK_CLI_HELPER") != "1" || url == "" {
+		t.Skip("only runs as the re-executed process of the tests below")
+	}
+	args := os.Args
+	for i, a := range os.Args {
+		if a == "--" {
+			args = os.Args[i+1:]
+			break
+		}
+	}
+	client, err := api.New(context.Background(), apitest.Tailnet,
+		creds.Read{Kind: creds.KindOAuth, ClientID: apitest.ClientID, ClientSecret: creds.NewSecret(apitest.ClientSecret), Provider: "env"},
+		api.Options{BaseURL: url})
+	if err != nil {
+		t.Fatal(err)
+	}
+	reg := newRegistry()
+	a := &app.App{Registry: reg, Context: "helper", Tailnet: apitest.Tailnet, AuditReads: "none",
+		Env: &registry.Env{Now: time.Now, API: client, LocalErr: tkerr.New(tkerr.LocalBinaryMissing, "no tailscale CLI found", "")}}
+	r := &Runner{Stdout: os.Stdout, Stderr: os.Stderr, Stdin: os.Stdin,
+		Registry: func() *registry.Registry { return reg },
+		Build:    func(context.Context, string) (*app.App, error) { return a, nil }}
+	os.Exit(r.Run(context.Background(), args))
+}
+
 // fileReader counts the reads of a file.
 type fileReader struct {
 	f     *os.File
@@ -61,6 +94,14 @@ type standIn struct {
 	out    bytes.Buffer
 	stdin  *os.File
 	args   []string
+	helper string   // the test the wrapper starts; TestHelperProcess when empty
+	env    []string // more of the environment of the process it starts
+}
+
+// forACL makes the process the wrapper starts run the policy commands against the fake at url.
+func (s *standIn) forACL(url string) *standIn {
+	s.helper, s.env = "TestHelperACLProcess", []string{"TK_CLI_FAKE_URL=" + url}
+	return s
 }
 
 func newStandIn(t *testing.T, args []string) *standIn {
@@ -86,9 +127,10 @@ func newStandIn(t *testing.T, args []string) *standIn {
 
 func (s *standIn) reexec(wrapper string) func(config.Provider) error {
 	return func(config.Provider) error {
-		argv := append([]string{os.Args[0], "-test.run=^TestHelperProcess$", "--"}, s.args...)
+		helper := cmp.Or(s.helper, "TestHelperProcess")
+		argv := append([]string{os.Args[0], "-test.run=^" + helper + "$", "--"}, s.args...)
 		cmd := exec.Command(wrapper, argv...)
-		cmd.Env = append(os.Environ(), "TK_CLI_HELPER=1", "TK_MARKER="+s.marker, creds.EnvReexec+"=1")
+		cmd.Env = append(append(os.Environ(), "TK_CLI_HELPER=1", "TK_MARKER="+s.marker, creds.EnvReexec+"=1"), s.env...)
 		cmd.Stdin, cmd.Stdout = s.stdin, &s.out
 		return cmd.Run()
 	}
@@ -174,5 +216,103 @@ func TestABadPathNeverStartsTheStandInWrapper(t *testing.T) {
 	}
 	if n := s.wrapperRuns(t); n != 0 || *ran != 0 || s.out.Len() != 0 {
 		t.Errorf("the wrapper ran %d times, the tool %d times, the child printed %q; want none", n, *ran, s.out.String())
+	}
+}
+
+// execPolicyHarness is a harness whose credential comes from the exec provider's wrapper,
+// which starts the policy-command process against the fake at f; stdin counts the reads of
+// the first process.
+func execPolicyHarness(t *testing.T, f *apitest.Fake, args []string) (h *harness, s *standIn, stdin *fileReader) {
+	t.Helper()
+	s = newStandIn(t, args).forACL(f.URL())
+	h = newHarness(t, nil)
+	h.app.Env.APIErr = creds.ErrReexecRequired
+	h.app.Provider = config.Provider{Provider: "exec", Command: []string{"/ignored"}}
+	stdin = &fileReader{f: s.stdin}
+	h.r.Stdin = stdin
+	h.r.Reexec = s.reexec(filepath.Join(filepath.Dir(s.marker), "wrapper.sh"))
+	return h, s, stdin
+}
+
+// A policy piped to a policy command whose credential comes from the exec provider's wrapper
+// reaches the process the wrapper starts, byte for byte, and Tailscale is asked about it
+// from there: the first process reads nothing and gives no verdict.
+func TestAPolicyFromStandardInputPassesThroughTheExecWrapper(t *testing.T) {
+	f := apitest.New(t)
+	serveLiveFor(f, "{}\n")
+	f.ServeValidate(apitest.TestsPassEmptyObject())
+	args := []string{"--json", "acl", "validate", "--from", "-"}
+	h, s, stdin := execPolicyHarness(t, f, args)
+	h.run(args...)
+	// What the first process prints is the stand-in's doing (a real wrapper replaces the
+	// process and never returns); it must not be a verdict.
+	if stdin.reads != 0 || strings.Contains(h.out.String(), `"status"`) {
+		t.Errorf("the first process read standard input %d times and printed %q; want no read and no verdict", stdin.reads, h.out)
+	}
+	if n := s.wrapperRuns(t); n != 1 {
+		t.Errorf("the wrapper ran %d times, want 1", n)
+	}
+	if out := validateJSON(t, s.out.String()); out.Status != "pass" || !out.ServerChecked || out.TestsAfter != 0 {
+		t.Errorf("the process the wrapper started answered %+v", out)
+	}
+	var posts [][]byte
+	for _, r := range f.Requests() {
+		if r.Method == "POST" {
+			posts = append(posts, r.Body)
+		}
+	}
+	if len(posts) != 1 || string(posts[0]) != pipedPolicy {
+		t.Errorf("Tailscale was sent %q, want the piped policy once: %q", posts, pipedPolicy)
+	}
+}
+
+// acl diff takes the piped policy for its new side. The old side is the live policy, which
+// needs the credential, so the wrapper runs and the process it starts reads standard input;
+// with --offline and a file for the old side nothing needs the credential, the first process
+// reads standard input itself and the wrapper never starts.
+func TestADiffOfAPipedPolicyPassesThroughTheExecWrapperOnlyWhenItNeedsTheCredential(t *testing.T) {
+	f := apitest.New(t)
+	serveLiveFor(f, "{}\n")
+	args := []string{"--json", "acl", "diff", "--from", "-"}
+	h, s, stdin := execPolicyHarness(t, f, args)
+	h.run(args...)
+	if n := s.wrapperRuns(t); n != 1 || stdin.reads != 0 {
+		t.Errorf("against the live policy the wrapper ran %d times and the first process read standard input %d times; want 1 and 0", n, stdin.reads)
+	}
+	if out := diffJSON(t, s.out.String()); out.Old.Source != "live" || out.New.Source != "file" || out.Status != "changed" {
+		t.Errorf("the process the wrapper started answered %+v", out)
+	}
+	older := writeFile(t, "old.hujson", "{}\n")
+	args = []string{"--json", "acl", "diff", "--offline", "--against", older, "--from", "-"}
+	h, s, stdin = execPolicyHarness(t, f, args)
+	if code := h.run(args...); code != 0 {
+		t.Fatalf("offline: exit %d: %s", code, h.err)
+	}
+	if n := s.wrapperRuns(t); n != 0 || stdin.reads == 0 || diffJSON(t, h.out.String()).Status != "changed" {
+		t.Errorf("offline the wrapper ran %d times and standard input was read %d times, answer %s; want 0, some and a change", n, stdin.reads, h.out)
+	}
+}
+
+// A bad path never starts the wrapper, for the real commands: the file is checked before the
+// configuration loads, so a typing mistake costs no secret-manager unlock (the process of
+// the wrapper never exists, and the marker shows it).
+func TestABadPathNeverStartsTheWrapperForThePolicyCommands(t *testing.T) {
+	dir := t.TempDir()
+	missing := filepath.Join(dir, "missing.hujson")
+	for _, args := range [][]string{
+		{"--json", "acl", "validate", "--from", dir},
+		{"--json", "acl", "validate", "--patch", missing},
+		{"--json", "acl", "diff", "--from", dir},
+		{"--json", "acl", "diff", "--against", missing, "--from", "-"},
+		{"--json", "acl", "diff", missing},
+	} {
+		f := apitest.New(t)
+		h, s, stdin := execPolicyHarness(t, f, args)
+		if code := h.run(args...); code != 2 {
+			t.Errorf("%v: exit %d, want 2 (stdout %q)", args, code, h.out)
+		}
+		if n := s.wrapperRuns(t); n != 0 || s.out.Len() != 0 || stdin.reads != 0 || len(f.Requests()) != 0 {
+			t.Errorf("%v: the wrapper ran %d times, the child printed %q, standard input was read %d times, %d requests were made; want none", args, n, s.out.String(), stdin.reads, len(f.Requests()))
+		}
 	}
 }

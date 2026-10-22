@@ -425,7 +425,7 @@ func TestACLTestCanary(t *testing.T) {
 	} {
 		f, a := newApp(t, allReadScopes(t))
 		f.JSON("GET", keyPath, 200, `{"id":"test-client-id","keyType":"client"}`)
-		f.Raw("GET", "/api/v2/tailnet/T1234CNTRL/acl", 200, "{\"acls\": []}\n", nil)
+		f.ServeDetails(apitest.DetailsOK("{\"acls\": []}\n", `"e1"`, nil, nil))
 		f.ServeValidate(c.shape)
 		r := Run(context.Background(), Input{App: a, Now: now, Probe: true})
 		if got := status(r, "probe acl_test"); len(got) != 1 || got[0] != c.want {
@@ -467,7 +467,7 @@ func TestCanaryRefusedLocallyFails(t *testing.T) {
 func TestProbeReadsAOneLinePolicy(t *testing.T) {
 	f, a := newApp(t, allReadScopes(t))
 	f.JSON("GET", keyPath, 200, `{"id":"test-client-id","keyType":"client"}`)
-	f.Raw("GET", "/api/v2/tailnet/T1234CNTRL/acl", 200, `{"acls":[`+strings.Repeat(`{"action":"accept","src":["tag:ci"],"dst":["tag:prod:22"]},`, 60)+`]}`, nil)
+	f.ServeDetails(apitest.DetailsOK(`{"acls":[`+strings.Repeat(`{"action":"accept","src":["tag:ci"],"dst":["tag:prod:22"]},`, 60)+`]}`, `"e1"`, nil, nil))
 	r := Run(context.Background(), Input{App: a, Now: now, Probe: true})
 	if got := status(r, "probe acl_get"); len(got) != 1 || got[0] != OK {
 		t.Errorf("probe acl_get = %v", got)

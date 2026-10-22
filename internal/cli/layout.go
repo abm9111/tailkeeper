@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"path/filepath"
 	"sort"
 	"strings"
 	"unicode"
@@ -19,6 +20,22 @@ type formatOptions struct {
 	// flag named, or <stdin>. A source missing here keeps its own name.
 	Names map[string]string
 	Color bool
+	// Trusted is the writer behind the CI-log guard. A formatter whose lines must reach a
+	// runner as they are (the GitHub annotations) writes those lines here, and only
+	// those. Nil means there is none: everything goes to the writer the formatter was
+	// given, which is what a test of the layout wants.
+	Trusted io.Writer
+	// Dir is the directory the command ran in, relative to the root of the repository, with
+	// forward slashes: a path typed relative to it names the file Dir/path of the repository.
+	// It is empty at the root, and where no root is known (the command line then takes the
+	// directory it runs in for the root, as a step of a workflow does that sets no working
+	// directory). Outside says that the command ran outside the repository: no typed path
+	// names a file of it. Root is the root as the runner names it (GITHUB_WORKSPACE), empty
+	// when none is known: an absolute path typed below it names a file of the repository
+	// too. Only the GitHub formatter reads them.
+	Dir     string
+	Root    string
+	Outside bool
 }
 
 // formatter writes a report in one --format.
@@ -26,7 +43,7 @@ type formatter func(w io.Writer, rep registry.Report, o formatOptions) error
 
 // formatters are the formats --format offers besides json. A new format registers
 // here.
-var formatters = map[string]formatter{"text": formatText}
+var formatters = map[string]formatter{"text": formatText, "github": formatGitHub, "markdown": formatMarkdown}
 
 // formatNames lists the formats --format accepts, json first among the rest.
 func formatNames() []string {
@@ -87,8 +104,37 @@ func formatText(w io.Writer, rep registry.Report, o formatOptions) error {
 		return err
 	}
 	esc := func(s string) string { return sanitize.String(s, 0) }
+	if err := writePreamble(line, rep, esc, func(verdict string) string {
+		return paint(o.Color, levelColor(rep.Level), verdict)
+	}); err != nil {
+		return err
+	}
+	trusted, untrusted := splitByTrust(rep.Findings)
+	for _, f := range trusted {
+		if err := line("%s", findingLine(f, o, esc)); err != nil {
+			return err
+		}
+	}
+	if len(untrusted) > 0 {
+		if err := line("%s", registry.UntrustedReasonsNotice); err != nil {
+			return err
+		}
+		for _, f := range untrusted {
+			if err := line("%s", findingLine(f, o, esc)); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
+}
+
+// writePreamble writes what the text and GitHub layouts print before the findings: the
+// verdict, what was not checked and the counts by class. line writes one line (the
+// layout decides its indentation and its guard), esc escapes a string, and style is
+// applied to the escaped verdict.
+func writePreamble(line func(format string, args ...any) error, rep registry.Report, esc func(string) string, style func(string) string) error {
 	if rep.Verdict != "" {
-		if err := line("%s", paint(o.Color, levelColor(rep.Level), esc(rep.Verdict))); err != nil {
+		if err := line("%s", style(esc(rep.Verdict))); err != nil {
 			return err
 		}
 	}
@@ -115,30 +161,21 @@ func formatText(w io.Writer, rep registry.Report, o formatOptions) error {
 			}
 		}
 	}
-	var trusted, untrusted []registry.Finding
-	for _, f := range rep.Findings {
-		if f.Untrusted {
-			untrusted = append(untrusted, f)
-		} else {
-			trusted = append(trusted, f)
-		}
-	}
-	for _, f := range trusted {
-		if err := line("%s", findingLine(f, o, esc)); err != nil {
-			return err
-		}
-	}
-	if len(untrusted) > 0 {
-		if err := line("%s", registry.UntrustedReasonsNotice); err != nil {
-			return err
-		}
-		for _, f := range untrusted {
-			if err := line("%s", findingLine(f, o, esc)); err != nil {
-				return err
-			}
-		}
-	}
 	return nil
+}
+
+// splitByTrust separates the findings the report makes itself from the ones that hold
+// Tailscale's text, each in its order. Every layout prints the first group, then the
+// notice that the second is untrusted, then the second.
+func splitByTrust(findings []registry.Finding) (ours, theirs []registry.Finding) {
+	for _, f := range findings {
+		if f.Untrusted {
+			theirs = append(theirs, f)
+		} else {
+			ours = append(ours, f)
+		}
+	}
+	return ours, theirs
 }
 
 // guardLine keeps one line of CLI text from acting on a CI log parser. Runner.Run
@@ -224,18 +261,74 @@ func (g *lineGuard) Flush() error {
 	return g.err
 }
 
+// Trusted returns the writer behind the guard, for the lines of a formatter that must
+// reach a runner as they are. The unfinished line the guard holds is written first,
+// guarded and ended, so that what the caller writes next starts a line of its own.
+// Whoever writes to it is the guard for those lines.
+func (g *lineGuard) Trusted() io.Writer {
+	if len(g.buf) > 0 && g.err == nil {
+		line := string(g.buf)
+		g.buf = nil
+		_, g.err = io.WriteString(g.w, guardLine(line)+"\n")
+	}
+	return g.w
+}
+
+// repoDir says where in the repository a command runs, for the file property of a GitHub
+// annotation, which is a path from the root of the repository. A runner names the root in
+// GITHUB_WORKSPACE; the Runner reads it, and the formatter reads nothing. With it unset there
+// is no root to compare with. When the directory is not below the root, or cannot be read,
+// no typed path is a file of the repository, and the annotations carry their location in
+// the message instead. The root is returned as the runner wrote it, so that an absolute
+// path typed below it can be made relative to it.
+func (r *Runner) repoDir() (dir, root string, outside bool) {
+	getenv := r.Getenv
+	if getenv == nil {
+		getenv = os.Getenv
+	}
+	root = getenv("GITHUB_WORKSPACE")
+	if root == "" {
+		return "", "", false
+	}
+	cwd, err := os.Getwd()
+	if err != nil {
+		return "", root, true
+	}
+	rel, err := filepath.Rel(root, cwd)
+	if err != nil || rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
+		return "", root, true
+	}
+	if rel == "." {
+		return "", root, false
+	}
+	return filepath.ToSlash(rel), root, false
+}
+
+// plainText is s with every character that does not print visibly written as an
+// escape, and no cap.
+func plainText(s string) string { return sanitize.String(s, 0) }
+
+// findingWhere is "name:line:column", dropping what is unknown, and "" when the finding
+// has no source.
+func findingWhere(f registry.Finding, o formatOptions, esc func(string) string) string {
+	if f.Source == "" {
+		return ""
+	}
+	where := esc(sourceName(f.Source, o.Names))
+	if f.Line > 0 {
+		where += fmt.Sprintf(":%d", f.Line)
+		if f.Column > 0 {
+			where += fmt.Sprintf(":%d", f.Column)
+		}
+	}
+	return where
+}
+
 // findingLine is "name:line:column: severity: message", dropping what is unknown.
 func findingLine(f registry.Finding, o formatOptions, esc func(string) string) string {
-	var loc strings.Builder
-	if f.Source != "" {
-		loc.WriteString(esc(sourceName(f.Source, o.Names)))
-		if f.Line > 0 {
-			fmt.Fprintf(&loc, ":%d", f.Line)
-			if f.Column > 0 {
-				fmt.Fprintf(&loc, ":%d", f.Column)
-			}
-		}
-		loc.WriteString(": ")
+	loc := findingWhere(f, o, esc)
+	if loc != "" {
+		loc += ": "
 	}
 	sev := esc(f.Severity)
 	switch f.Severity {
@@ -248,7 +341,7 @@ func findingLine(f registry.Finding, o formatOptions, esc func(string) string) s
 	if f.Pointer != "" {
 		msg = esc(f.Pointer) + ": " + msg
 	}
-	return loc.String() + sev + ": " + msg
+	return loc + sev + ": " + msg
 }
 
 // isTerminal reports whether w is a terminal: a character device.

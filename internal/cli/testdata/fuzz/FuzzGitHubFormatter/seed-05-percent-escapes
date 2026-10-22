@@ -1,0 +1,12 @@
+go test fuzz v1
+string("%0A%0D%25 100%")
+string("%0A")
+string("warning")
+string("patch")
+string("a%0Ab%2C.hujson")
+string("/a%0A")
+string("%0A%0D%25 100%")
+int(7)
+int(2)
+bool(false)
+uint8(2)

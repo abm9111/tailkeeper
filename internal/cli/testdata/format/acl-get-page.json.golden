@@ -1,0 +1,17 @@
+{
+  "policy": "// a proposal\n{\n\t\"groups\": {\"group:eng\": [\"a…@example.com\"]},\n\t\"tagOwners\": {\"tag:web\": [\"group:eng\"], \"tag:ci\": [\"autogroup:admin\"]},\n\t\"acls\": [{\"action\": \"accept\", \"src\": [\"tag:ci\"], \"dst\": [\"tag:web:22\"]}],\n\t\"tests\": [\n\t\t{\"src\": \"tag:ci\", \"accept\": [\"tag:web:22\"]},\n\t\t{\"src\": \"tag:web\", \"deny\": [\"tag:ci:22\"]},\n\t],\n}\n",
+  "fromLine": 1,
+  "toLine": 10,
+  "lines": 10,
+  "nextLine": 0,
+  "truncated": false,
+  "masked": true,
+  "bytes": 322,
+  "sha256": "c107da800fb7fe3a72db24272c126780f16425982705a40965a18251201667ec",
+  "policySha256": "c107da800fb7fe3a72db24272c126780f16425982705a40965a18251201667ec",
+  "checkedAt": "2026-10-10T12:00:00Z",
+  "warnings": [
+    "host alias \"old\" is unused"
+  ],
+  "externallyManaged": "false"
+}

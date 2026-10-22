@@ -1,0 +1,12 @@
+**VALID, CHECKED HERE ONLY, NOT SENT TO TAILSCALE · 2 tests in the proposal, not run · invariants: none**
+
+Not checked:
+
+- access\_change
+- app\_capabilities
+- downgrades
+- lockout
+- ssh\_lockout
+- via
+- server\_validation
+- tests

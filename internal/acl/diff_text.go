@@ -17,16 +17,29 @@ const textRoom = maxPointer + 4
 type textBuf struct {
 	b    []byte
 	full int
+	// show is how a caller sees the policy text written with addText and quoted; nil writes
+	// it as it is. The room is spent on what the caller sees, so that where the text is cut,
+	// and whether it is, tells nothing about the text show hides. full then counts the shown
+	// text.
+	show Show
 }
 
 func (t *textBuf) room() int { return textRoom - len(t.b) }
 
-// add writes s as it is.
+// add writes s as it is: a literal of the text's own, never policy text.
 func (t *textBuf) add(s string) {
 	t.full += len(s)
 	if r := t.room(); r > 0 {
 		t.b = append(t.b, s[:min(len(s), r)]...)
 	}
+}
+
+// addText writes s, which is policy text, as a caller sees it.
+func (t *textBuf) addText(s string) {
+	if r := t.room(); t.show != nil && r > 0 {
+		s = t.show(s, r)
+	}
+	t.add(s)
 }
 
 func (t *textBuf) addBytes(p []byte) {
@@ -47,6 +60,9 @@ func (t *textBuf) quoted(m *meter, s string) error {
 	room := t.room()
 	if room <= 0 {
 		return t.count(m, s, 2)
+	}
+	if t.show != nil {
+		s = t.show(s, room)
 	}
 	if len(s) <= room {
 		t.addBytes(appendJSONString(nil, s))
@@ -77,7 +93,9 @@ func (t *textBuf) set(m *meter, s *idSet) error {
 	written := 0
 	for i, it := range s.items {
 		if t.done() {
-			t.skip(s.quoted - written)
+			if t.show == nil {
+				t.skip(s.quoted - written)
+			}
 			break
 		}
 		if i > 0 {
@@ -153,30 +171,39 @@ type FieldDelta struct {
 
 const maxDeltaItems = 50
 
-func fieldDelta(m *meter, field string, added, removed []string) (FieldDelta, error) {
+// fieldDelta makes the delta of one field: the items gained are the new policy's, shown as
+// its Doc shows them, and the items lost the old one's.
+func fieldDelta(m *meter, field string, added, removed []string, newView, oldView view) (FieldDelta, error) {
 	f := FieldDelta{Field: field}
 	var err error
-	if f.Added, f.AddedMore, err = capList(m, added); err != nil {
+	if f.Added, f.AddedMore, err = capList(m, added, newView); err != nil {
 		return f, err
 	}
-	f.Removed, f.RemovedMore, err = capList(m, removed)
+	f.Removed, f.RemovedMore, err = capList(m, removed, oldView)
 	return f, err
 }
 
 // capList lists at most maxDeltaItems of the items, the selectors that widen access first
-// and the rest in their order, each cut at 1 KiB, and counts the items left out.
-func capList(m *meter, items []string) ([]string, int, error) {
+// and the rest in their order, each cut at 1 KiB, as far as their cost goes (listCost), and
+// counts the items left out. It stops at the first item that does not fit.
+func capList(m *meter, items []string, v view) ([]string, int, error) {
 	if err := m.tick(len(items)); err != nil {
 		return nil, 0, err
 	}
 	out := make([]string, 0, min(len(items), maxDeltaItems))
+	cost := 0
+list:
 	for _, wide := range []bool{true, false} {
 		for _, it := range items {
 			if len(out) == maxDeltaItems {
-				break
+				break list
 			}
 			if (wideBit(it) != 0) == wide {
-				out = append(out, capText(it))
+				shown := v.cut(it)
+				if cost += DisplayCost(shown) + 3; cost > listCost {
+					break list
+				}
+				out = append(out, shown)
 			}
 		}
 	}
@@ -241,7 +268,7 @@ func (d *comparer) atomsDelta(oa, na []*atom) ([]FieldDelta, error) {
 		return nil, err
 	}
 	if len(added)+len(removed) > 0 {
-		f, err := fieldDelta(m, "src", added, removed)
+		f, err := fieldDelta(m, "src", added, removed, d.nv, d.ov)
 		if err != nil {
 			return nil, err
 		}
@@ -266,7 +293,7 @@ func (d *comparer) atomsDelta(oa, na []*atom) ([]FieldDelta, error) {
 		premoved = append(premoved, s)
 	}
 	if len(padded)+len(premoved) > 0 {
-		f, err := fieldDelta(m, "ports", padded, premoved)
+		f, err := fieldDelta(m, "ports", padded, premoved, d.nv, d.ov)
 		if err != nil {
 			return nil, err
 		}
@@ -319,21 +346,21 @@ func (d *comparer) writeAtom(tb *textBuf, a *atom) error {
 	}
 	if a.posture != "" {
 		tb.add(`,"srcPosture":[`)
-		tb.add(a.posture)
+		tb.addText(a.posture)
 		tb.add("]")
 	}
 	if a.via != "" {
 		tb.add(`,"via":[`)
-		tb.add(a.via)
+		tb.addText(a.via)
 		tb.add("]")
 	}
 	if a.app != "" {
 		tb.add(`,"app":`)
-		tb.add(a.app)
+		tb.addText(a.app)
 	}
 	if a.extra != "" {
 		tb.add(`,"extra":`)
-		tb.add(a.extra)
+		tb.addText(a.extra)
 	}
 	tb.add("}")
 	return nil
@@ -362,10 +389,10 @@ const wholePrefix = "whole" + sep
 // attrText writes a node attribute entry with its targets.
 func (d *comparer) attrText(tb *textBuf, e *nfEntry) error {
 	if rest, ok := strings.CutPrefix(e.key, wholePrefix); ok {
-		tb.add(rest)
+		tb.addText(rest)
 		return nil
 	}
-	tb.add(strings.TrimSuffix(e.val, "}"))
+	tb.addText(strings.TrimSuffix(e.val, "}"))
 	tb.add(`,"target":`)
 	if err := tb.set(d.m, e.targets); err != nil {
 		return err
@@ -374,19 +401,20 @@ func (d *comparer) attrText(tb *textBuf, e *nfEntry) error {
 	return nil
 }
 
-// attrKey names a node attribute entry for a reader.
-func attrKey(e *nfEntry) string {
+// attrKey names a node attribute entry for a reader, as the Doc it is in shows it.
+func attrKey(v view, e *nfEntry) string {
 	if rest, ok := strings.CutPrefix(e.key, wholePrefix); ok {
-		return capText(rest)
+		return v.cut(rest)
 	}
-	return capText(e.key)
+	return v.cut(e.key)
 }
 
-// atomKey names an atom for a reader: its destination and protocol.
-func atomKey(a *atom) string {
-	k := capText(a.dst)
+// atomKey names an atom for a reader: its destination and protocol, as the Doc it is in shows
+// them.
+func atomKey(v view, a *atom) string {
+	k := v.cut(a.dst)
 	if a.proto != "" {
-		k += " " + capText(a.proto)
+		k += " " + v.cut(a.proto)
 	}
 	return capText(k)
 }
@@ -394,16 +422,27 @@ func atomKey(a *atom) string {
 // assertionKey shows the identity of an assertion of a test or an SSH test as words. The
 // identity holds the source, protocol, destination and item JSON-quoted, so none can
 // run into the next; they are decoded here, each only as far as a reader can see.
-func assertionKey(key string) string {
+func assertionKey(key string) string { return view{}.assertionKey(key) }
+
+// assertionKey is assertionKey for an assertion of the policy in v, whose words are cut after
+// v shows them.
+func (v view) assertionKey(key string) string {
 	if rest, ok := strings.CutPrefix(key, wholePrefix); ok {
-		return capText("whole " + capText(rest))
+		return capText("whole " + v.cut(rest))
 	}
 	parts := strings.Split(key, sep)
 	if len(parts) != 8 {
-		return capText(strings.ReplaceAll(key, sep, " "))
+		return v.cut(strings.ReplaceAll(key, sep, " "))
 	}
-	kind, src, proto, attrs, extra, polarity, dst, item := parts[0], unquoteHead(parts[1], textRoom), unquoteHead(parts[2], textRoom),
-		parts[3], parts[4], parts[5], unquoteHead(parts[6], textRoom), unquoteHead(parts[7], textRoom)
+	// A word is read from its quoted form as far as a cut of what a caller sees can reach: a
+	// login masked is shorter than the bytes that make it.
+	read := textRoom
+	if v.show != nil {
+		read *= shownRead
+	}
+	word := func(q string) string { return v.shown(unquoteHead(q, read), textRoom) }
+	kind, src, proto, attrs, extra, polarity, dst, item := parts[0], word(parts[1]), word(parts[2]),
+		parts[3], parts[4], parts[5], word(parts[6]), word(parts[7])
 	var words []string
 	if kind == "ssh" {
 		words = []string{src, "->", dst, polarity, item}
@@ -411,10 +450,10 @@ func assertionKey(key string) string {
 		words = []string{src, proto, polarity, dst}
 	}
 	if attrs != "" {
-		words = append(words, "srcPostureAttrs="+capText(attrs))
+		words = append(words, "srcPostureAttrs="+v.cut(attrs))
 	}
 	if extra != "" {
-		words = append(words, "extra="+capText(extra))
+		words = append(words, "extra="+v.cut(extra))
 	}
 	var b strings.Builder
 	for _, w := range words {
@@ -486,9 +525,9 @@ func hexValue(c byte) byte {
 // text. Everything it builds is bounded by the cut, and what it reads is paid for.
 func (d *comparer) materialise(c *rawChange) (Change, error) {
 	m := d.m
-	ch := Change{Class: classNames[c.class], Op: opNames[c.op], Section: c.secName(), Key: c.displayKey()}
+	ch := Change{Class: classNames[c.class], Op: opNames[c.op], Section: c.secName(), Key: d.displayKey(c)}
 	if !c.known() {
-		ch.Section = capText(ch.Section)
+		ch.Section = d.viewOf(c).cut(ch.Section)
 	}
 	if err := m.tick(1); err != nil {
 		return ch, err
@@ -498,9 +537,9 @@ func (d *comparer) materialise(c *rawChange) (Change, error) {
 	case kDefault:
 		ch.Old, ch.New, ch.Note = capped(c.x.oldText), capped(c.x.newText), c.x.note
 	case kWide:
-		ch.Fields, ch.Note = c.x.fields, c.x.note
+		ch.Fields, ch.Note = d.shownFields(c.x.fields), c.x.note
 		if c.x.atomTexts {
-			var o, n textBuf
+			o, n := textBuf{show: d.ov.show}, textBuf{show: d.nv.show}
 			if err := d.atomsText(&o, c.oa); err != nil {
 				return ch, err
 			}
@@ -509,7 +548,7 @@ func (d *comparer) materialise(c *rawChange) (Change, error) {
 			}
 			ch.Old, ch.New = o.text(), n.text()
 		} else {
-			ch.Old, ch.New = capped(c.x.oldText), capped(c.x.newText)
+			ch.Old, ch.New = d.ov.capped(c.x.oldText), d.nv.capped(c.x.newText)
 		}
 		if len(c.oa) > 0 {
 			oldAt = &c.oa[0].ref
@@ -524,7 +563,7 @@ func (d *comparer) materialise(c *rawChange) (Change, error) {
 			newAt = &c.ne.ref
 		}
 	case kAtoms:
-		var o, n textBuf
+		o, n := textBuf{show: d.ov.show}, textBuf{show: d.nv.show}
 		if err := d.atomsText(&o, c.oa); err != nil {
 			return ch, err
 		}
@@ -547,25 +586,25 @@ func (d *comparer) materialise(c *rawChange) (Change, error) {
 		}
 	case kEntry, kAssertion:
 		if c.oe != nil {
-			ch.Old = entryText(c.oe, c.kind)
+			ch.Old = entryText(d.ov, c.oe, c.kind)
 			oldAt = &c.oe.ref
 			ch.OldN = noteCount(c, c.oe)
 		}
 		if c.ne != nil {
-			ch.New = entryText(c.ne, c.kind)
+			ch.New = entryText(d.nv, c.ne, c.kind)
 			newAt = &c.ne.ref
 			ch.NewN = noteCount(c, c.ne)
 		}
 		if c.kind == kEntry && c.sec.name == "tagOwners" && c.oe != nil && c.ne != nil &&
 			(c.oe.val == "[]" && c.ne.val == `["autogroup:admin"]` || c.oe.val == `["autogroup:admin"]` && c.ne.val == "[]") {
-			ch.Note = "tagOwners [] is documented as equivalent to [\"autogroup:admin\"]; it is reported, not equated"
+			ch.Note = tagOwnersNote
 		}
 	case kAttr:
 		for i, e := range []*nfEntry{c.oe, c.ne} {
 			if e == nil {
 				continue
 			}
-			var tb textBuf
+			tb := textBuf{show: []Show{d.ov.show, d.nv.show}[i]}
 			if err := d.attrText(&tb, e); err != nil {
 				return ch, err
 			}
@@ -584,7 +623,7 @@ func (d *comparer) materialise(c *rawChange) (Change, error) {
 			if err != nil {
 				return ch, err
 			}
-			f, err := fieldDelta(m, "target", added, removed)
+			f, err := fieldDelta(m, "target", added, removed, d.nv, d.ov)
 			if err != nil {
 				return ch, err
 			}
@@ -592,14 +631,14 @@ func (d *comparer) materialise(c *rawChange) (Change, error) {
 		}
 	case kSection:
 		ch.Note = c.x.note
-		ch.Old, oldAt = d.sectionText(c.x.osec, d.oa)
-		ch.New, newAt = d.sectionText(c.x.nsec, d.ob)
+		ch.Old, oldAt = d.sectionText(c.x.osec, d.ov)
+		ch.New, newAt = d.sectionText(c.x.nsec, d.nv)
 	}
 	if oldAt != nil {
-		ch.OldPointer, ch.OldLine = d.pointerLine(d.oa, *oldAt)
+		ch.OldPointer, ch.OldLine = d.pointerLine(d.ov, *oldAt)
 	}
 	if newAt != nil {
-		ch.NewPointer, ch.NewLine = d.pointerLine(d.ob, *newAt)
+		ch.NewPointer, ch.NewLine = d.pointerLine(d.nv, *newAt)
 	}
 	return ch, m.tick(len(ch.Old.Text) + len(ch.New.Text) + len(ch.Key))
 }
@@ -612,28 +651,29 @@ func noteCount(c *rawChange, e *nfEntry) int {
 	return 0
 }
 
-// entryText shows a keyed entry's canonical value, or an element's canonical text.
-func entryText(e *nfEntry, k kind) Text {
+// entryText shows a keyed entry's canonical value, or an element's canonical text, as the Doc
+// the entry is in shows it.
+func entryText(v view, e *nfEntry, k kind) Text {
 	if k == kAssertion {
-		return capped(assertionKey(e.key))
+		return capped(v.assertionKey(e.key))
 	}
 	if e.val != "" {
-		return capped(e.val)
+		return v.capped(e.val)
 	}
-	return capped(e.key)
+	return v.capped(e.key)
 }
 
 // sectionText shows what a section holds when it is compared as a whole.
-func (d *comparer) sectionText(s *nfSec, doc *Doc) (Text, *ref) {
+func (d *comparer) sectionText(s *nfSec, v view) (Text, *ref) {
 	if s == nil || s.state == StateAbsent {
 		return Text{}, nil
 	}
 	var r *ref
 	if s.top >= 0 {
-		r = &ref{val: doc.top[s.top].val, top: s.top, idx: -1}
+		r = &ref{val: v.doc.top[s.top].val, top: s.top, idx: -1}
 	}
 	if s.whole {
-		return capped(s.entries[0].val), r
+		return v.capped(s.entries[0].val), r
 	}
 	if s.state == StateEmpty {
 		return Text{Text: "empty", Len: len("empty")}, r
@@ -642,9 +682,9 @@ func (d *comparer) sectionText(s *nfSec, doc *Doc) (Text, *ref) {
 	return Text{Text: t, Len: len(t)}, r
 }
 
-func (d *comparer) pointerLine(doc *Doc, r ref) (string, int) {
-	line, _ := doc.lineOf(r)
-	return doc.pointerOf(r), line
+func (d *comparer) pointerLine(v view, r ref) (string, int) {
+	line, _ := v.doc.lineOf(r)
+	return v.pointerOf(r), line
 }
 
 // firstRef is the ref of the atom that comes first in its text.
@@ -656,4 +696,30 @@ func firstRef(as []*atom) *ref {
 		}
 	}
 	return best
+}
+
+// viewOf is the policy a change is read from, as its side shows it: the new one when the
+// change has a new side, the old one otherwise.
+func (d *comparer) viewOf(c *rawChange) view {
+	if c.ne != nil || len(c.na) > 0 {
+		return d.nv
+	}
+	return d.ov
+}
+
+// shownFields returns the deltas a detector built with the text of the policies in them, as
+// the callers of the two policies see that text: the items gained are the new policy's, the
+// items lost the old one's. Each item is cut after it is shown.
+func (d *comparer) shownFields(in []FieldDelta) []FieldDelta {
+	out := make([]FieldDelta, len(in))
+	for i, f := range in {
+		out[i] = FieldDelta{Field: f.Field, AddedMore: f.AddedMore, RemovedMore: f.RemovedMore}
+		for _, s := range f.Added {
+			out[i].Added = append(out[i].Added, d.nv.cut(s))
+		}
+		for _, s := range f.Removed {
+			out[i].Removed = append(out[i].Removed, d.ov.cut(s))
+		}
+	}
+	return out
 }

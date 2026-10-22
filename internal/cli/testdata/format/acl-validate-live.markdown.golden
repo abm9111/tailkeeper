@@ -1,0 +1,18 @@
+**VALID · 0 new warnings (0 existing) · 0 tests passed · invariants: none**
+
+Not checked:
+
+- access\_change
+- app\_capabilities
+- downgrades
+- lockout
+- ssh\_lockout
+- via
+
+Changes:
+
+- defaults: 0
+- tests reduced: 0
+- widening: 0
+- tailscale-written: 0 (expected)
+- semantic: 0

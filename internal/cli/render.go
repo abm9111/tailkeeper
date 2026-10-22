@@ -76,8 +76,11 @@ func renderStruct(w io.Writer, v reflect.Value, out any) error {
 		}
 	}
 	if isBlock {
-		first, text := block.Block()
-		return document(w, first, text)
+		// A result with no text to show (acl get's summary view) prints no document: a
+		// notice that text follows, and a rule, with nothing under them, would mislead.
+		if first, text := block.Block(); text != "" {
+			return document(w, first, text)
+		}
 	}
 	return nil
 }

@@ -64,7 +64,7 @@ func TestNoConfigurationKeepsLocalToolsAvailable(t *testing.T) {
 	if code(a.Env.APIErr) != tkerr.ConfigMissing || code(a.Env.LocalErr) != tkerr.LocalBinaryMissing {
 		t.Fatalf("APIErr = %v, LocalErr = %v", a.Env.APIErr, a.Env.LocalErr)
 	}
-	if len(a.Registry.All()) != 43 {
+	if len(a.Registry.All()) != 45 {
 		t.Errorf("registry has %d tools", len(a.Registry.All()))
 	}
 }

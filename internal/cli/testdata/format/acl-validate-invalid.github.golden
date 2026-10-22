@@ -1,0 +1,4 @@
+  INVALID · 1 problem found before anything was sent to Tailscale
+  not checked: access_change, app_capabilities, downgrades, lockout, ssh_lockout, via
+::error file=policy.hujson,line=4,col=2,title=tailkeeper::/groups: Tailscale refuses a key written twice here (also at line 2)
+::notice title=tailkeeper::Lines are counted by line feed and columns in bytes, as Tailscale counts them: an editor that counts a lone carriage return may disagree.

@@ -2,7 +2,7 @@
 
 A Tailscale command line and MCP server for agents and the people who supervise them.
 
-**Status: 0.x pre-release, read-only.** tailkeeper reads the Tailscale API (28 tools, two of them for alpha features, which MCP lists only with `--enable-alpha`) and this node's Tailscale state (15 tools). It cannot change a tailnet: apart from the credential's own token request, the only API request it sends other than GET is `POST .../acl/validate`, which tests the live policy and which Tailscale documents as never changing it, and the API client refuses any other. Write tools arrive in milestone M2, behind an approval gate. Until 1.0, a minor release may change the CLI or the MCP tool list (see `CHANGELOG.md`).
+**Status: 0.x pre-release, read-only.** tailkeeper reads the Tailscale API (30 tools, two of them for alpha features, which MCP lists only with `--enable-alpha`) and this node's Tailscale state (15 tools). It cannot change a tailnet: apart from the credential's own token request, the only API request it sends other than GET is `POST .../acl/validate`, to which `acl_test` and `acl_validate` send a test, the live policy or a proposed policy for validation, which Tailscale documents as never changing the policy, and nothing else; the API client refuses any other. Write tools arrive in milestone M2, behind an approval gate. Until 1.0, a minor release may change the CLI or the MCP tool list (see `CHANGELOG.md`).
 
 **Personal mode protects against misuse through tool calls, not against code that runs as you.** tailkeeper runs as your user, so an agent with an unsandboxed shell can rewrite its configuration and audit log. Run your agent in a sandbox that cannot write tailkeeper's configuration directory. Hardened mode, which moves tailkeeper to its own service account, is on the roadmap.
 
@@ -145,7 +145,7 @@ Put `TAILKEEPER_PRIVACY_KEY`, 64 hexadecimal characters (`openssl rand -hex 32`)
 | `mcp.profile` | `reads` (the default), `core` or `full` (the same tools in 0.x) |
 | `mcp.enableAlpha` | `true` also advertises the tools for alpha Tailscale features |
 | `audit.reads` | `metadata` (the default: which tool ran, for whom, how much it returned) or `none` |
-| `acl.invariantsFile` | absolute path of the invariants file the policy checks add to every validation; unset by default. No command reads it yet. A path that is set and cannot be read fails every call that uses it. A 0.5.0 binary refuses this key, so set it in a context only 0.6.0 uses |
+| `acl.invariantsFile` | absolute path of the invariants file (a HuJSON object with `tests` and `sshTests` and nothing else) that `acl_validate` and `acl validate` add to every validation, the live policy's included; unset by default (`--invariants FILE` replaces it for one command, `--no-invariants` leaves it out). It must be a regular file that you own, in a directory you own, and writable by no one else (on Windows only the regular file is checked). A path that is set and cannot be read fails every call that uses it: `config_invalid` for a file that is missing or unreadable, `config_unsafe` for the wrong owner or mode, both exit 6. A 0.5.0 binary refuses this key, so set it in a context only 0.6.0 uses |
 | `acl.validatePerMinute` | a whole number from 1 to 120 (default 30): how many policy validation requests one tailkeeper process decides to send per minute (a retry of a request takes no token). A 0.5.0 binary refuses this key |
 | `personalData` | `mask` (the default) or `show` |
 
@@ -200,13 +200,13 @@ Other MCP hosts start the same stdio server. Give them the absolute path of the 
 | Code | Meaning |
 |---|---|
 | 0 | Success. |
-| 1 | An error with no code of its own below: Tailscale's API returned an error (not found, rate limited, a feature your plan lacks, and so on) or could not be reached, the local `tailscale` command failed, a result was withheld, or an internal error. |
-| 2 | Usage or validation error: an unknown command or flag, a bad parameter, or a filter refused while masking is on (`filter_refused`). |
+| 1 | An error with no code of its own below: Tailscale's API returned an error (not found, rate limited, a feature your plan lacks, and so on) or could not be reached, the local `tailscale` command failed, a result was withheld, or an internal error. `acl validate` also exits 1 when its status is `unknown` (the answer is not one tailkeeper recognises, or the invariants gave no clear answer: never a pass, and not exit 9 even when a test of the policy also failed). |
+| 2 | Usage or validation error: an unknown command or flag, a bad parameter, or a filter refused while masking is on (`filter_refused`). `acl validate` exits 2 for a text that is invalid, rejected by Tailscale or has a test that does not resolve, and `acl diff` for a side that is not a policy. |
 | 5 | The read credential is unavailable or was rejected, a scope is missing, or the privacy key is unavailable. |
 | 6 | The configuration is missing, invalid or unsafe. |
 | 7 | The audit log is unavailable or damaged (`audit verify` found a break). |
-| 8 | `doctor` found a failing check. |
-| 9 | `acl test` ran, and at least one destination did not behave as asked (an `--accept` it cannot reach, or a `--deny` it can). |
+| 8 | `doctor` found a failing check, or a policy command's `--fail-on` named a kind that its result has. |
+| 9 | `acl test` ran, and at least one destination did not behave as asked (an `--accept` it cannot reach, or a `--deny` it can); or `acl validate` ran, and a test of the policy or of the invariants failed. |
 
 The design reserves 3, 4, 10 and 11 (denied, precondition failed, approval required, outcome unknown) for the write tools; nothing returns them yet.
 

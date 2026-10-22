@@ -1,0 +1,2 @@
+[33mVALID, CHECKED HERE ONLY, NOT SENT TO TAILSCALE · 2 tests in the proposal, not run · invariants: none[0m
+not checked: access_change, app_capabilities, downgrades, lockout, ssh_lockout, via, server_validation, tests

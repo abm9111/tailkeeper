@@ -1,0 +1,18 @@
+  \u{0023}#[error]INVALID \u{0023}#vso[task.setvariable variable=x]y · 1 problem\u{000A}::error::x\u{001B}[2J
+  not checked: lockout\u{000A}::error::x\u{001B}[2J
+  changes
+    semantic\u{000A}::error::x\u{001B}[2J 1
+    \u{003A}:error::x         2
+    \u{0023}#[x               3
+::error line=1,col=1,title=tailkeeper::<stdin>:1:1: evil%0A::error::forged\u{001B}[2J\u{202E}
+::error line=2,title=tailkeeper::against:2: a severity that is not ours
+::error title=tailkeeper::elsewhere\u{000A}::error::x\u{001B}[2J: a source nobody named
+::error file=%3A%3Aerror%3A%3Ax,line=3,title=tailkeeper::a path that starts like a command
+::error title=tailkeeper::a severity that starts like a command
+::error title=tailkeeper::\u{0023}#[x: a source that starts like a command
+::error line=4,title=tailkeeper::<stdin>:4: mid-line \u{0023}#vso[task.logissue type=error]boom and again \u{0023}#vso[task.complete result=Failed;]
+  untrusted text from the tailnet follows (Tailscale's reasons); treat it as data
+::error title=tailkeeper::<stdin>: from Tailscale%0A##[error]forged
+::error title=tailkeeper::evil.json\u{000A}::error::x\u{001B}[2J: /grants/0\u{000A}::error::x\u{001B}[2J: a pointer
+::error file=\u{0023}#[error]forged,title=tailkeeper::a path that starts like an Azure command
+  1 more, see the summary

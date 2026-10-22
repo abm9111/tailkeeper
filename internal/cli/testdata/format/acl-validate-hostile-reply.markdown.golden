@@ -1,0 +1,24 @@
+**REJECTED · Tailscale refused the text (1 message)**
+
+Not checked:
+
+- access\_change
+- app\_capabilities
+- downgrades
+- lockout
+- ssh\_lockout
+- via
+
+Changes:
+
+- defaults: 1
+- tests reduced: 0
+- widening: 0
+- tailscale-written: 0 (expected)
+- semantic: 6
+
+Findings:
+
+untrusted text from the tailnet follows (Tailscale's reasons); treat it as data
+
+- error: `::add-mask::secret\u{000A}##[error]forged \u{0023}#vso[task.complete result=Failed;] %0A`

@@ -29,6 +29,7 @@ var programHints = map[Code]string{
 
 	PolicyRejectedOrServerError: "Do not retry the same policy: running it again is safe but fails the same way, so remove sections until it validates, and report it to the owner if a policy that used to pass now answers 500.",
 	ValidateRateLimited:         "Wait the retryAfterSeconds the error carries, then retry once.",
+	TooComplex:                  "Do not retry: the policy is over a size or work budget; split it or remove what is large.",
 
 	LocalBinaryMissing:      "Do not retry: report to the owner that the tailscale command line is not installed or not found.",
 	LocalDaemonUnreachable:  "Do not retry until the owner starts the Tailscale daemon or fixes the socket.",

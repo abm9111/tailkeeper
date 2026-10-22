@@ -709,7 +709,7 @@ func readRow(now clock, by deadline, name string, f func(n int) func()) ([]rowRe
 // 35 s at a load average of 5.6 to 10 (the second pair included).
 const (
 	guardDeadlineWindows = 600 * time.Second // under the Windows job's -timeout 900s
-	guardDeadlineOther   = 100 * time.Second // under make test's -timeout 180s
+	guardDeadlineOther   = 100 * time.Second // under make test's -timeout 300s
 	// restOfPackage is what the other tests of the package may take, on top of the guard.
 	restOfPackage = 60 * time.Second
 )

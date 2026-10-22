@@ -1,0 +1,21 @@
+  UNRESOLVED · 64 tests cannot be evaluated: a name or destination does not resolve
+  not checked: access_change, app_capabilities, downgrades, lockout, ssh_lockout, via
+  changes
+    defaults           1
+    tests reduced      0
+    widening           0
+    tailscale-written  0  (expected)
+    semantic           6
+::notice title=tailkeeper::1 problem is not listed
+  untrusted text from the tailnet follows (Tailscale's reasons); treat it as data
+::error title=tailkeeper::user or host is invalid: tag:t00 not found
+::error title=tailkeeper::user or host is invalid: tag:t01 not found
+::error title=tailkeeper::user or host is invalid: tag:t02 not found
+::error title=tailkeeper::user or host is invalid: tag:t03 not found
+::error title=tailkeeper::user or host is invalid: tag:t04 not found
+::error title=tailkeeper::user or host is invalid: tag:t05 not found
+::error title=tailkeeper::user or host is invalid: tag:t06 not found
+::error title=tailkeeper::user or host is invalid: tag:t07 not found
+::error title=tailkeeper::user or host is invalid: tag:t08 not found
+::error title=tailkeeper::user or host is invalid: tag:t09 not found
+  54 more, see the summary

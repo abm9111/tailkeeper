@@ -27,6 +27,7 @@ The suite runs on Windows in CI (the `test-os` job). These tests do not run ther
 - `TestHarnessWithNothingToAnswer` (`cmd/tailkeeper`): the stand-in binary is a POSIX shell script.
 - `TestHarnessCredentialWithoutScope` (`cmd/tailkeeper`): the stand-in binary is a POSIX shell script.
 - `TestHarnessFailsWhenDiscoveryFindsNoID` (`cmd/tailkeeper`): the stand-in binary is a POSIX shell script.
+- `TestHarnessRunsTheTwoPolicyToolsWithTheSmallestHonestCalls` (`cmd/tailkeeper`): the stand-in binary is a POSIX shell script.
 - `TestACLTestFailureIsAnAnswer` (`cmd/tailkeeper`): the stand-in binary is a POSIX shell script.
 - `TestAnErrorDocumentThatExitsZeroIsAProblem` (`cmd/tailkeeper`): the stand-in binary is a POSIX shell script.
 - `TestACredentialShapeInAnErrorDocumentIsCaught` (`cmd/tailkeeper`): the stand-in binary is a POSIX shell script.
@@ -152,8 +153,13 @@ These files carry `//go:build !windows`. Their tests need the file lock (`syscal
 - `TestAuditWarningRearmsAfterRecovery` (`internal/mcpserver`): holds the audit log's file lock with `syscall.Flock`.
 - `TestAFifoIsRefusedNotWaitedOn` (`internal/safefile`): needs FIFOs (`syscall.Mkfifo`).
 - `TestAFifoSwappedInAfterTheInspectionIsRefusedNotWaitedOn` (`internal/safefile`): needs FIFOs (`syscall.Mkfifo`) and `O_NOFOLLOW`.
+- `TestTheConfiguredInvariantsFileIsReadWithOwnershipChecks` (`internal/tools`): reads the owner and group of a file from `syscall.Stat_t`, which Windows lacks.
 - `TestAPipedPolicyReachesTheProcessThatHoldsTheCredential` (`internal/cli`): the stand-in wrapper is a POSIX shell script, and the `exec` provider re-executes with `execve`, which Windows lacks.
 - `TestAnOfflineCommandReadsItsOwnStandardInputAndSkipsTheWrapper` (`internal/cli`): the stand-in wrapper is a POSIX shell script.
 - `TestABadPathNeverStartsTheStandInWrapper` (`internal/cli`): the stand-in wrapper is a POSIX shell script.
-- `TestHelperProcess` (`internal/cli`): the process the stand-in wrapper starts; it runs only for the three tests above.
+- `TestAPolicyFromStandardInputPassesThroughTheExecWrapper` (`internal/cli`): the stand-in wrapper is a POSIX shell script, and the `exec` provider re-executes with `execve`, which Windows lacks.
+- `TestADiffOfAPipedPolicyPassesThroughTheExecWrapperOnlyWhenItNeedsTheCredential` (`internal/cli`): the stand-in wrapper is a POSIX shell script.
+- `TestABadPathNeverStartsTheWrapperForThePolicyCommands` (`internal/cli`): the stand-in wrapper is a POSIX shell script.
+- `TestHelperProcess` (`internal/cli`): the process the stand-in wrapper starts; it runs only for the three tests that start it with the test tool.
+- `TestHelperACLProcess` (`internal/cli`): the process the stand-in wrapper starts for the policy commands; it runs only for the three tests that start it with them.
 <!-- windows-excluded:end -->

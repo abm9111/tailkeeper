@@ -40,6 +40,19 @@ func apiEnv(t *testing.T) (*apitest.Fake, *registry.Registry, *registry.Env) {
 	return f, newRegistry(t), &registry.Env{API: f.Client(t), Now: func() time.Time { return now }}
 }
 
+// servePolicy answers the policy read of the live API, GET .../acl?details=true, with text
+// and etag, no warnings and no errors: the form acl_get reads. A request without
+// details=true fails the test. The answer comes from the shape ledger, because a test
+// may not write the details JSON by hand.
+func servePolicy(f *apitest.Fake, text, etag string) {
+	servePolicyWith(f, text, etag, nil, nil)
+}
+
+// servePolicyWith is servePolicy with the warnings and the stored errors Tailscale reports.
+func servePolicyWith(f *apitest.Fake, text, etag string, warnings, errs []string) {
+	f.ServeDetails(apitest.DetailsOK(text, etag, warnings, errs))
+}
+
 // call runs a tool with JSON arguments and returns its output marshalled as JSON.
 func call(t *testing.T, reg *registry.Registry, env *registry.Env, name, args string) (string, error) {
 	t.Helper()

@@ -49,9 +49,9 @@ func TestDescribeCarriesTitleOpenWorldAndOptionalScopes(t *testing.T) {
 	}
 }
 
-// acl_test sends the test to Tailscale for evaluation (POST .../acl/validate), so
-// it is the one open-world tool of 0.5.0's 43.
-func TestOnlyACLTestIsOpenWorld(t *testing.T) {
+// acl_test and acl_validate send what the caller gave them to Tailscale (POST
+// .../acl/validate), so they are the open-world tools.
+func TestOnlyACLTestAndACLValidateAreOpenWorld(t *testing.T) {
 	reg := registry.New()
 	tools.Register(reg)
 	var open []string
@@ -66,7 +66,7 @@ func TestOnlyACLTestIsOpenWorld(t *testing.T) {
 			open = append(open, tl.Meta.Name)
 		}
 	}
-	if strings.Join(open, ",") != "acl_test" {
-		t.Errorf("open-world tools = %v, want [acl_test]", open)
+	if strings.Join(open, ",") != "acl_test,acl_validate" {
+		t.Errorf("open-world tools = %v, want [acl_test acl_validate]", open)
 	}
 }

@@ -1,0 +1,35 @@
+{
+  "status": "invalid",
+  "serverChecked": false,
+  "errors": [
+    {
+      "kind": "duplicate_key",
+      "severity": "error",
+      "source": "from",
+      "line": 4,
+      "column": 2,
+      "pointer": "/groups",
+      "message": "Tailscale refuses a key written twice here (also at line 2)",
+      "fromTailscale": false
+    }
+  ],
+  "testsBefore": 0,
+  "testsAfter": 0,
+  "sshTestsBefore": 0,
+  "sshTestsAfter": 0,
+  "invariantsApplied": 0,
+  "invariantsSignature": "none",
+  "notChecked": [
+    "access_change",
+    "app_capabilities",
+    "downgrades",
+    "lockout",
+    "ssh_lockout",
+    "via"
+  ],
+  "dependsOnLiveState": false,
+  "liveChanged": false,
+  "identicalToLive": false,
+  "checkedAt": "2026-10-10T12:00:00Z",
+  "externallyManaged": "unknown"
+}

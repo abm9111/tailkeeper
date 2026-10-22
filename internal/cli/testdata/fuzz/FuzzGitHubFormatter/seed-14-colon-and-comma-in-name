@@ -1,0 +1,12 @@
+go test fuzz v1
+string("v")
+string("c")
+string("warning")
+string("from")
+string("dir/a:b,c=d.hujson")
+string("")
+string("m")
+int(1)
+int(1)
+bool(false)
+uint8(1)

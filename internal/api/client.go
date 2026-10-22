@@ -557,8 +557,12 @@ func (c *Client) readAll(body io.Reader) ([]byte, error) {
 	return b, err
 }
 
+// maxErrorMessage is the most of an error body that statusError reads, and the most of a
+// message that statusErrorBody keeps.
+const maxErrorMessage = 64 << 10
+
 func statusError(resp *http.Response) error {
-	data, _ := io.ReadAll(io.LimitReader(resp.Body, 64<<10))
+	data, _ := io.ReadAll(io.LimitReader(resp.Body, maxErrorMessage))
 	return statusErrorBody(resp, data)
 }
 
@@ -567,10 +571,17 @@ func statusErrorBody(resp *http.Response, data []byte) error {
 	var body struct {
 		Message string `json:"message"`
 	}
-	_ = json.Unmarshal(data, &body)
-	// Longer than the registry's cap: a tool's error is masked there, then cut to
-	// 1024 bytes, so an address cut here never reaches a result half-parsed.
-	msg := sanitize.String(body.Message, 4096)
+	if err := json.Unmarshal(data, &body); err != nil && len(data) >= maxErrorMessage {
+		// The body filled what is read, so the object is cut off. Its message is not dropped
+		// for that: that the message was long would show, and how long what it quotes is.
+		body.Message = cutMessage(data)
+	}
+	// Kept whole, up to maxErrorMessage: what a result shows of an error is cut
+	// after the message is masked (by the registry, which masks and then cuts to 1 KiB, and
+	// by the resolver of a call that resolved pseudonyms, which reads as far as the masked
+	// form needs), so a cut made here, on the real text, would let the length of a login in
+	// the message decide how much of the rest is shown.
+	msg := sanitize.String(body.Message, maxErrorMessage)
 	if msg == "" {
 		msg = http.StatusText(resp.StatusCode)
 	}
@@ -586,6 +597,37 @@ func statusErrorBody(resp *http.Response, data []byte) error {
 		}
 	}
 	return e
+}
+
+// messageKey finds where the value of the message field of an error body starts.
+var messageKey = regexp.MustCompile(`"message"\s*:\s*"`)
+
+// cutMessage reads the message of an error body that ends before the object does: the text
+// of the string up to the end of the body, less an escape the end cuts through.
+func cutMessage(data []byte) string {
+	loc := messageKey.FindIndex(data)
+	if loc == nil {
+		return ""
+	}
+	rest := data[loc[1]:]
+	end := len(rest)
+	for i := 0; i < len(rest); i++ {
+		if rest[i] == '\\' {
+			i++
+		} else if rest[i] == '"' {
+			end = i
+			break
+		}
+	}
+	// An escape the end cuts through is at most five bytes (a backslash, u and three digits).
+	for drop := 0; drop <= 5 && drop <= end; drop++ {
+		var s string
+		quoted := append(append([]byte{'"'}, rest[:end-drop]...), '"')
+		if json.Unmarshal(quoted, &s) == nil {
+			return s
+		}
+	}
+	return ""
 }
 
 // policyTooLargeHint is the hint of a validate request Tailscale refused for its size.

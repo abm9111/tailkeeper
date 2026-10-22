@@ -1,0 +1,20 @@
+**::add-mask::value FAILED · 3 problems**
+
+Not checked:
+
+- lockout
+
+Changes:
+
+- semantic: 1
+
+Findings:
+
+- `dir/policy,v2:final%0A.hujson:5:3` error: the comment above says // ::stop-commands::abc %0A %0D 100%
+- `..\evil.json:2` warning: a file name with a comma and a colon
+- `inv\u{000A}::stop-commands::x.hujson:1` error: a file name with a line feed in it
+- `live policy` notice: \##\[error\]x and ##vso\[task.complete result=Failed;\]
+
+untrusted text from the tailnet follows (Tailscale's reasons); treat it as data
+
+- `dir/policy,v2:final%0A.hujson` error: `::add-mask::secret\u{000A}::error::a second line`

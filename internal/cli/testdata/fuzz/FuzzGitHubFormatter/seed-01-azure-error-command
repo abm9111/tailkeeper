@@ -1,0 +1,12 @@
+go test fuzz v1
+string("##[error]x")
+string("##[x")
+string("error")
+string("from")
+string("##[error]policy.hujson")
+string("##[error]/p")
+string("##[error]x")
+int(1)
+int(1)
+bool(false)
+uint8(3)

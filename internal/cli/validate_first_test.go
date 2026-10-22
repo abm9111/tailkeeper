@@ -42,10 +42,16 @@ func TestBadArgumentsNeverStartTheWrapper(t *testing.T) {
 	}
 	// The flag layer refuses a value that is not an integer before the tool sees it.
 	refused([]string{"logs", "network", "--max-records", "0x"}, "usage")
+	// A policy and a patch are one group of flags: the binder refuses both of them.
+	refused([]string{"acl", "validate", "--from", "a.hujson", "--patch", "b.json"}, "usage")
+	refused([]string{"acl", "diff", "--from", "a.hujson", "--patch", "b.json"}, "usage")
 	for _, args := range [][]string{
 		{"acl", "test", "tag:ci"},                                               // no destination
 		{"acl", "test", "tag:ci", "--accept", "tag:prod"},                       // not host:port
 		{"acl", "get", "--max-bytes", "5"},                                      // below the page minimum
+		{"acl", "get", "--view", "raw"},                                         // not a view
+		{"acl", "get", "--view", "summary", "--from-line", "2"},                 // the summary has no pages
+		{"acl", "diff", "--section", "nope"},                                    // not a section
 		{"devices", "list", "--stale-days", "9999"},                             // out of range
 		{"devices", "list", "--tags", "prod"},                                   // not tag:name
 		{"users", "list", "--type", "robot"},                                    // unknown type
@@ -75,7 +81,7 @@ func TestBadArgumentsNeverStartTheWrapper(t *testing.T) {
 // The control: the same harness does start the wrapper for a valid command line,
 // so the test above would notice a wrapper that started.
 func TestValidArgumentsStartTheWrapper(t *testing.T) {
-	for _, args := range [][]string{{"acl", "test", "tag:ci", "--accept", "tag:prod:22"}, {"devices", "list", "--stale-days", "30"},
+	for _, args := range [][]string{{"acl", "test", "tag:ci", "--accept", "tag:prod:22"}, {"acl", "get", "--view", "summary"}, {"acl", "diff", "--section", "groups"}, {"devices", "list", "--stale-days", "30"},
 		{"logs", "audit", "--limit", "10"}, {"keys", "get", "kABC123CNTRL"}} {
 		h, builds := execHarness(t)
 		h.run(args...)

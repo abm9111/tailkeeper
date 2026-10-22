@@ -8,6 +8,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/abm9111/tailkeeper/internal/acl"
 	"github.com/abm9111/tailkeeper/internal/tkerr"
 )
 
@@ -15,6 +16,10 @@ import (
 // users already read, but a text with hundreds is not a policy a person wrote by pasting
 // from a result.
 const maxSubjects = 64
+
+// maxLoginSize is the most bytes a login is taken to take in a text: an address is at most 254
+// bytes, and the rest leaves room for the escapes JSON may write in it.
+const maxLoginSize = 320
 
 var (
 	// bareCarrierRE, bracketCarrierRE and maskedCarrierRE are the three forms in which a
@@ -165,6 +170,14 @@ func SubstituteSubjects(ctx context.Context, r *SubjectResolver, text []byte) (o
 	if len(distinct) > maxSubjects {
 		return nil, 0, tkerr.New(tkerr.ValidationFailed,
 			"the text names "+strconv.Itoa(len(distinct))+" distinct users by pseudonym, more than the "+strconv.Itoa(maxSubjects)+" one call resolves",
+			"split the change into smaller ones")
+	}
+	// The text with the logins in it must fit what the engine reads, and whether it does must
+	// not depend on the logins: the check is made on the longest a login can be, so that where
+	// a text crosses the limit tells nothing of how long the logins it names are.
+	if len(text)+len(found)*maxLoginSize > acl.MaxBytes {
+		return nil, 0, tkerr.New(tkerr.TooComplex,
+			"the text, with the logins its "+strconv.Itoa(len(found))+" pseudonyms stand for at their longest, could come to more than the "+strconv.Itoa(acl.MaxBytes)+" bytes tailkeeper reads",
 			"split the change into smaller ones")
 	}
 	logins := make(map[string][]byte, len(distinct))

@@ -1,0 +1,10 @@
+  \u{003A}:add-mask::value FAILED · 3 problems
+  not checked: lockout
+  changes
+    semantic           1
+::error file=dir/policy%2Cv2%3Afinal%250A.hujson,line=5,col=3,title=tailkeeper::the comment above says // ::stop-commands::abc %250A %250D 100%25
+::warning line=2,title=tailkeeper::..\evil.json:2: a file name with a comma and a colon
+::error line=1,title=tailkeeper::inv\u{000A}::stop-commands::x.hujson:1: a file name with a line feed in it
+::notice title=tailkeeper::live policy: ##[error]x and \u{0023}#vso[task.complete result=Failed;]
+  untrusted text from the tailnet follows (Tailscale's reasons); treat it as data
+::error file=dir/policy%2Cv2%3Afinal%250A.hujson,title=tailkeeper::\u{003A}:add-mask::secret%0A::error::a second line

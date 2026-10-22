@@ -1,0 +1,23 @@
+**CHANGED · 1 widening, 1 tailscale-written, 2 semantic**
+
+Not checked:
+
+- access\_change
+- app\_capabilities
+- downgrades
+- lockout
+- ssh\_lockout
+- via
+
+Changes:
+
+- defaults: 0
+- tests reduced: 0
+- widening: 1
+- tailscale-written: 1 (expected)
+- semantic: 2
+
+Findings:
+
+- notice: the section filter "tagOwners" selects none of the changes of this comparison: they are in other sections
+- notice: A rule re-split along both its sources and its ports at once is not reduced to the same atoms, so it can read as changed when the access is the same. That is the safe direction.

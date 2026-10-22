@@ -105,6 +105,7 @@ func (d *Doc) analyse(m *meter) error {
 		if _, known := sectionIndex[k]; !known && !seenUnknown[k] {
 			seenUnknown[k] = true
 			d.unknown = append(d.unknown, capText(name))
+			d.unknownShown = append(d.unknownShown, d.cut(name))
 		}
 	}
 	return nil
@@ -206,7 +207,7 @@ func (w *walker) repeats(o *hujson.Object, names []string, fold bool) error {
 			keeps = KeepsMerged
 		}
 		w.record(Finding{
-			Code: code, Pointer: w.pointer(), Key: capText(names[later]), FirstKey: capText(names[first]),
+			Code: code, Pointer: w.pointer(), Key: w.d.cut(names[later]), FirstKey: w.d.cut(names[first]),
 			Keeps: keeps,
 		}, &o.Members[first].Name, &o.Members[later].Name)
 	}
@@ -246,19 +247,24 @@ func (w *walker) record(f Finding, first, later *hujson.Value) {
 }
 
 // pointer is the JSON Pointer of the current path.
-func (w *walker) pointer() string { return pointerOf(w.path) }
+func (w *walker) pointer() string { return w.d.pathPointer(w.path) }
 
-// pointerOf is the JSON Pointer of a path, cut at maxPointer bytes. It is built for a
-// finding only, never for a node, and stops early: a pointer for every node would be as
-// long as the sum of the keys above it, which is quadratic in the text.
-func pointerOf(path []pathElem) string {
+// pointerOf is the JSON Pointer of a path, cut at maxPointer bytes, for a text shown as it
+// is (see Doc.pathPointer).
+func pointerOf(path []pathElem) string { return (*Doc)(nil).pathPointer(path) }
+
+// pathPointer is the JSON Pointer of a path, cut at maxPointer bytes of what a caller sees
+// of it (see Show). It is built for a finding only, never for a node, and stops early: a
+// pointer for every node would be as long as the sum of the keys above it, which is
+// quadratic in the text.
+func (d *Doc) pathPointer(path []pathElem) string {
 	var b []byte
 	for _, e := range path {
 		b = append(b, '/')
 		if e.key != nil && len(b) <= maxPointer {
 			// Only the head of a name that could still fit is decoded: a key of 500 KB
 			// costs about as much as one of 1 KiB.
-			b = append(b, escapePointer(nameHead(e.key, maxPointer+1-len(b)))...)
+			b = append(b, escapePointer(d.shownName(e.key, maxPointer+1-len(b)))...)
 		} else if e.key == nil {
 			b = strconv.AppendInt(b, int64(e.idx), 10)
 		}

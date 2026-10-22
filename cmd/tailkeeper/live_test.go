@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"reflect"
 	"regexp"
 	"sort"
@@ -336,6 +337,22 @@ func newLiveRun(binary string, env []string, uncovered map[string]bool) *liveRun
 
 func (l *liveRun) problem(tool, kind string) { l.problems = append(l.problems, tool+": "+kind) }
 
+// callWithFile runs the tool's CLI command with a flag that names a file holding content.
+func (l *liveRun) callWithFile(name, content, flag string) map[string]any {
+	dir, err := os.MkdirTemp("", "tailkeeper-live-")
+	if err != nil {
+		l.problem(name, "cannot make a directory for its input file")
+		return nil
+	}
+	defer func() { _ = os.RemoveAll(dir) }()
+	path := filepath.Join(dir, "input.hujson")
+	if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
+		l.problem(name, "cannot write its input file")
+		return nil
+	}
+	return l.call(name, flag, path)
+}
+
 // call runs the tool's CLI command with extra arguments. It returns the result
 // document when the tool answered, and nil otherwise.
 func (l *liveRun) call(name string, extra ...string) map[string]any {
@@ -440,11 +457,14 @@ func (l *liveRun) all() {
 	posture := l.call("posture_integrations_list")
 	userInvites := l.call("user_invites_list")
 	apps := l.call("oauth_apps_list")
-	for _, name := range []string{"acl_get", "contacts_get", "dns_get", "settings_get", "audit_log", "network_flow_logs",
+	for _, name := range []string{"acl_get", "acl_validate", "contacts_get", "dns_get", "settings_get", "audit_log", "network_flow_logs",
 		"local_dns_status", "local_funnel_status", "local_lock_status", "local_metrics", "local_netcheck", "local_prefs",
 		"local_serve_status", "local_syspolicy", "local_version", "local_whoami"} {
 		l.call(name)
 	}
+	// acl_diff needs a side that is not the live policy: an empty object is the smallest
+	// honest one, written to a file the command names.
+	l.callWithFile("acl_diff", "{}\n", "--against")
 	// Documentation addresses: the source exists nowhere. Tailscale may answer that
 	// the test passes or that it fails (it cannot resolve the source); both are
 	// its answer, read by the tool, and either exits as the tool says.

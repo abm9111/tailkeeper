@@ -34,7 +34,7 @@ func TestMarkdownCoversEveryTool(t *testing.T) {
 		}
 	}
 	for _, want := range []string{
-		"43 tools.",
+		"45 tools.",
 		"- CLI: `tailkeeper devices list`",
 		"| `staleDays` | integer |  | only devices not connected",
 		"| `device` | string | yes |",

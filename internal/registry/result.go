@@ -37,3 +37,11 @@ type Gated interface{ Findings() Findings }
 // it would stay green for good. A Gated type that does not implement Computes computes
 // all five.
 type Computes interface{ FailOnKinds() []string }
+
+// ComputesOffline is implemented, with a value receiver, by a Computes result type whose tool
+// fills fewer kinds when the command line asks for --offline, where nothing is read from the
+// tailnet and nothing is compared with the live policy. OfflineFailOnKinds names the tokens it
+// fills then, which may be none. The command refuses any other token with --offline, for the
+// reason Computes gives: a gate that cannot fire is a pipeline that stays green. A result type
+// without it computes the same kinds offline as online.
+type ComputesOffline interface{ OfflineFailOnKinds() []string }

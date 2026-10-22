@@ -32,13 +32,13 @@ func TestEveryWriteOfEveryLayoutIsChecked(t *testing.T) {
 // The formats that exist are listed once each: text, then json, then the others in
 // order.
 func TestFormatNamesListEachFormatOnce(t *testing.T) {
-	if got := strings.Join(formatNames(), ","); got != "text,json" {
+	if got := strings.Join(formatNames(), ","); got != "text,json,github,markdown" {
 		t.Errorf("formatNames = %s", got)
 	}
 	formatters["zeta"], formatters["alpha"] = formatText, formatText
 	defer delete(formatters, "zeta")
 	defer delete(formatters, "alpha")
-	if got := strings.Join(formatNames(), ","); got != "text,json,alpha,zeta" {
+	if got := strings.Join(formatNames(), ","); got != "text,json,alpha,github,markdown,zeta" {
 		t.Errorf("formatNames with two more formats = %s", got)
 	}
 }

@@ -1,0 +1,27 @@
+**CHANGED · 1 widening, 1 tailscale-written, 2 semantic**
+
+Not checked:
+
+- access\_change
+- app\_capabilities
+- downgrades
+- lockout
+- ssh\_lockout
+- via
+
+Changes:
+
+- defaults: 0
+- tests reduced: 0
+- widening: 1
+- tailscale-written: 1 (expected)
+- semantic: 2
+
+Findings:
+
+- `new.hujson:4` warning: widening: added acls+grants: src \* (src gains \*) (dst gains tag:ci) — a rule with \* in src is new for the destination in dst
+- `new.hujson:5` notice: tailscale-written: added nodeAttrs: {"attr":"funnel"}
+- `new.hujson:4` notice: semantic: changed acls: tag:ci (src gains \*) (src loses tag:ci)
+- `new.hujson:2` notice: semantic: added groups: group:eng
+- notice: A rule re-split along both its sources and its ports at once is not reduced to the same atoms, so it can read as changed when the access is the same. That is the safe direction.
+- notice: Lines are counted by line feed and columns in bytes, as Tailscale counts them: an editor that counts a lone carriage return may disagree.

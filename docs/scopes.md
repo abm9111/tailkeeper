@@ -10,8 +10,8 @@ tailkeeper needs one OAuth client with read scopes only. Grant every scope below
 | `api_access_tokens:read` |  | `key_get`, `keys_list` |  |  |
 | `auth_keys:read` |  | `key_get`, `keys_list` |  |  |
 | `device_invites:read` | `device_invite_get`, `device_invites_list` |  |  |  |
-| `devices:core:read` | `acl_get`, `acl_test`, `device_get`, `device_invites_list`, `device_posture_attributes`, `device_routes`, `devices_list` | `settings_get` |  |  |
-| `devices:posture_attributes:read` | `acl_get`, `acl_test`, `device_posture_attributes` | `settings_get` |  |  |
+| `devices:core:read` | `acl_diff`, `acl_get`, `acl_test`, `acl_validate`, `device_get`, `device_invites_list`, `device_posture_attributes`, `device_routes`, `devices_list` | `settings_get` |  |  |
+| `devices:posture_attributes:read` | `acl_diff`, `acl_get`, `acl_test`, `acl_validate`, `device_posture_attributes` | `settings_get` |  |  |
 | `devices:routes:read` | `device_routes` |  |  |  |
 | `dns:read` | `dns_get` |  |  |  |
 | `feature_settings:read` | `posture_integration_get`, `posture_integrations_list` | `settings_get` |  | Tailscale plans: posture_integration_get: Standard, Premium, Enterprise; posture_integrations_list: Standard, Premium, Enterprise |
@@ -22,7 +22,7 @@ tailkeeper needs one OAuth client with read scopes only. Grant every scope below
 | `networking_settings:read` |  | `settings_get` |  |  |
 | `oauth_apps:read` | `oauth_app_get`, `oauth_apps_list` |  |  | alpha tools only (MCP lists them with `--enable-alpha`) |
 | `oauth_keys:read` |  | `key_get`, `keys_list` |  |  |
-| `policy_file:read` | `acl_get`, `acl_test` | `settings_get` |  |  |
+| `policy_file:read` | `acl_diff`, `acl_get`, `acl_test`, `acl_validate` | `settings_get` |  |  |
 | `services:read` | `service_get`, `services_list` |  |  |  |
-| `users:read` | `user_get`, `user_invite_get`, `user_invites_list`, `users_list` |  |  |  |
+| `users:read` | `user_get`, `user_invite_get`, `user_invites_list`, `users_list` |  | `acl_diff` (resolve a pseudonym in a text or patch), `acl_validate` (resolve a pseudonym in a proposal or patch) |  |
 | `webhooks:read` | `webhook_get`, `webhooks_list` |  |  |  |
