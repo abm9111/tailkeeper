@@ -53,8 +53,16 @@ install:
 # The go test lines below drop TAILKEEPER_LIVE: an ambient TAILKEEPER_LIVE=1 in the
 # shell must never send the gate to the tailnet your configuration names. Only the
 # live target sets it, and only for its own test run.
+#
+# The timeout of the go test lines below (here and in cover and cover-pkg) is the limit on a
+# hang, not on speed: a slow or busy machine must not read a timeout panic as a failing test.
+# The slowest package under -race is internal/tools, 80 s on an idle machine with 28 cores
+# (87 s with a second full run beside it), then internal/acl at 73 s, internal/sanitize and
+# internal/cli at 65 s and internal/mcpserver at 51 s. The same suite gets 300 s on Linux and
+# 900 s in CI on Windows (.github/workflows/verify.yml), and the local gate gets the Linux
+# figure. TestTheGuardDeadlinesAreUnderTheirTimeouts reads these lines.
 test:
-	env -u TAILKEEPER_LIVE $(GO) test -race -count=1 -timeout 180s ./...
+	env -u TAILKEEPER_LIVE $(GO) test -race -count=1 -timeout 300s ./...
 
 # Statement coverage of every package by every test, the end-to-end runs of the
 # built binary included (cmd/tailkeeper builds it with -cover when go test collects
@@ -64,7 +72,7 @@ COVER_MIN ?= 90
 
 cover: cover-pkg
 	@root="$$(mktemp -d)" && trap 'rm -rf "$$root"' EXIT && mkdir "$$root/data" && \
-	env -u TAILKEEPER_LIVE $(GO) test -count=1 -timeout 180s -cover -coverpkg=github.com/abm9111/tailkeeper/... ./... -args -test.gocoverdir="$$root/data" && \
+	env -u TAILKEEPER_LIVE $(GO) test -count=1 -timeout 300s -cover -coverpkg=github.com/abm9111/tailkeeper/... ./... -args -test.gocoverdir="$$root/data" && \
 	$(GO) tool covdata textfmt -i="$$root/data" -o="$$root/cover.out" && \
 	awk -v m="$(COVER_MIN)" 'BEGIN { if (m !~ /^[0-9]+([.][0-9]+)?$$/) { print "COVER_MIN must be a number, not \"" m "\""; bad = 1; exit 2 } } \
 		NR > 1 { stmts[$$1] = $$2; if ($$3 > 0) hit[$$1] = 1 } \
@@ -85,7 +93,7 @@ cover-pkg:
 	[ -n "$(strip $(COVER_PKGS))" ] || { echo "cover-pkg: COVER_PKGS names no package"; exit 2; }; \
 	root="$$(mktemp -d)"; trap 'rm -rf "$$root"' EXIT; \
 	for pkg in $(COVER_PKGS); do \
-		env -u TAILKEEPER_LIVE $(GO) test -count=1 -timeout 180s -coverprofile="$$root/cover.out" "$$pkg" || { echo "cover-pkg: the tests of $$pkg failed"; exit 1; }; \
+		env -u TAILKEEPER_LIVE $(GO) test -count=1 -timeout 300s -coverprofile="$$root/cover.out" "$$pkg" || { echo "cover-pkg: the tests of $$pkg failed"; exit 1; }; \
 		awk -v m="$(COVER_PKG_MIN)" -v p="$$pkg" 'NR > 1 { n += $$2; if ($$3 > 0) c += $$2 } \
 			END { if (n == 0) { print "cover-pkg: " p " has no statements in its profile"; exit 1 } \
 				printf "coverage of %s from its own tests: %.2f%% of %d statements (minimum %s%%)\n", p, 100 * c / n, n, m; exit !(100 * c >= m * n) }' "$$root/cover.out" || exit 1; \
@@ -102,14 +110,14 @@ bench:
 # input is written to testdata/fuzz/<target>/ and fails the run. Fails closed: each
 # package's listing is captured on its own, so a listing that fails (a compile error)
 # fails the run instead of reading as "no targets", and the run fails unless it ran at
-# least FUZZ_MIN targets (ten exist today). A package with no fuzz target is fine. Not
+# least FUZZ_MIN targets (eleven exist today). A package with no fuzz target is fine. Not
 # part of verify: it takes minutes and its inputs are random.
 #
 # FUZZ_PKG limits the run to some packages (go list patterns, such as ./internal/acl); the
 # nightly workflow runs one package for each of its jobs and sets FUZZ_MIN to the number
 # of targets that package holds.
 FUZZTIME ?= 20s
-FUZZ_MIN ?= 10
+FUZZ_MIN ?= 11
 FUZZ_PKG ?= ./...
 
 fuzz:
@@ -155,7 +163,7 @@ mutate:
 # scripts/live-check.sh fails the run if a live test skipped (it checked nothing) or
 # did not reach its closing line, and prints only the lines that hold no tailnet value.
 #
-# The go test timeout is 1500s. Each of the 43 calls may take up to 90s (live_test.go),
+# The go test timeout is 1500s. Each of the 45 calls may take up to 90s (live_test.go),
 # so a run in which most calls time out needs longer; a run that runs out of time ends
 # without a pass line, which fails, and the log is withheld.
 LIVE_UNAVAILABLE ?=

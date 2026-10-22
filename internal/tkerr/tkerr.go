@@ -42,6 +42,10 @@ const (
 	// APIRateLimited.
 	ValidateRateLimited Code = "validate_rate_limited"
 
+	// TooComplex is a policy, or a comparison of two, past one of the engine's budgets: its
+	// size, its number of values or the work it would take. It is never a partial answer.
+	TooComplex Code = "too_complex"
+
 	LocalBinaryMissing      Code = "local_binary_missing"
 	LocalDaemonUnreachable  Code = "local_daemon_unreachable"
 	LocalPermissionDenied   Code = "local_permission_denied"
@@ -117,7 +121,7 @@ func ExitCode(err error) int {
 		return 0
 	}
 	switch From(err).Code {
-	case Usage, ValidationFailed, FilterRefused, ToolHidden:
+	case Usage, ValidationFailed, FilterRefused, ToolHidden, TooComplex:
 		return 2
 	case ScopeMissing, CredentialUnavailable, TokenRejected, PrivacyKeyUnavailable:
 		return 5

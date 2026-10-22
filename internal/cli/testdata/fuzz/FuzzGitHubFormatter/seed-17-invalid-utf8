@@ -1,0 +1,12 @@
+go test fuzz v1
+string("\xff\xfe::error::")
+string("c")
+string("error")
+string("from")
+string("\xffp.hujson")
+string("/\xff")
+string("\xff\xfe::error::")
+int(1)
+int(1)
+bool(false)
+uint8(1)

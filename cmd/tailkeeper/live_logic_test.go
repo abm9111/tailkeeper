@@ -406,6 +406,53 @@ esac
 	}
 }
 
+// TestHarnessRunsTheTwoPolicyToolsWithTheSmallestHonestCalls: acl_validate is called with
+// no argument, so it validates the live policy, and acl_diff is called against a file that
+// holds an empty object, which the harness writes for the call and removes after it. Each
+// answers as its tool does when the policy is as it should be.
+func TestHarnessRunsTheTwoPolicyToolsWithTheSmallestHonestCalls(t *testing.T) {
+	dir := t.TempDir()
+	calls, kept := filepath.Join(dir, "calls"), filepath.Join(dir, "against")
+	stub := stubBinary(t, `echo "$*" >> "$STUB_LOG"
+case "$*" in
+"--json acl validate") printf '{"status":"pass","serverChecked":true}\n' ;;
+"--json acl diff --against "*) cat "$5" > "$STUB_AGAINST"; echo "$5" >> "$STUB_LOG"; printf '{"status":"equal"}\n' ;;
+*) printf '{}\n' ;;
+esac
+`)
+	l := newLiveRun(stub, append([]string{"STUB_LOG=" + calls, "STUB_AGAINST=" + kept}, stubEnv...), nil)
+	l.all()
+	log, err := os.ReadFile(calls)
+	if err != nil {
+		t.Fatal(err)
+	}
+	lines := strings.Split(strings.TrimSpace(string(log)), "\n")
+	var diffAt int
+	for i, line := range lines {
+		if strings.HasPrefix(line, "--json acl diff --against ") {
+			diffAt = i
+		}
+	}
+	if !slices.Contains(lines, "--json acl validate") || diffAt == 0 || len(lines) <= diffAt+1 {
+		t.Fatalf("the calls were:\n%s", log)
+	}
+	if document, err := os.ReadFile(kept); err != nil || string(document) != "{}\n" {
+		t.Errorf("acl_diff was given %q (%v), want an empty object", document, err)
+	}
+	if _, err := os.Stat(lines[diffAt+1]); !os.IsNotExist(err) {
+		t.Errorf("the file given to acl_diff is still there: %v", err)
+	}
+	byTool := map[string]liveOutcome{}
+	for _, r := range l.results {
+		byTool[r.tool] = r
+	}
+	for _, name := range []string{"acl_validate", "acl_diff"} {
+		if r := byTool[name]; r.outcome != outcomeOK {
+			t.Errorf("%s = %+v, want an answer", name, r)
+		}
+	}
+}
+
 // TestACLTestFailureIsAnAnswer: acl_test exits 9 when the policy answers that the
 // test fails. That is the tool working, not the tool failing.
 func TestACLTestFailureIsAnAnswer(t *testing.T) {

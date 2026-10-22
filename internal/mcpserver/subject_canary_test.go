@@ -93,6 +93,13 @@ func echoes(login string) []string {
 // login in the given way, and the pseudonym of the user with the slash in the login.
 func canaryServer(t *testing.T, shown bool, reply func(w http.ResponseWriter, login string)) (*mcp.ClientSession, *app.App, *apitest.Fake, string) {
 	t.Helper()
+	return canaryServerWith(t, shown, reply, nil)
+}
+
+// canaryServerWith is canaryServer with a change to the application before the server is built,
+// for a test that needs a setting the server reads once (the invariants file, say).
+func canaryServerWith(t *testing.T, shown bool, reply func(w http.ResponseWriter, login string), tweak func(*app.App)) (*mcp.ClientSession, *app.App, *apitest.Fake, string) {
+	t.Helper()
 	f := apitest.New(t)
 	users, err := json.Marshal(map[string]any{"users": []map[string]string{
 		{"id": "u1", "loginName": canaryLogin, "type": "member", "status": "active"},
@@ -110,6 +117,9 @@ func canaryServer(t *testing.T, shown bool, reply func(w http.ResponseWriter, lo
 	a.Env.Privacy = key
 	if shown {
 		a.Env.Config = &config.Loaded{Config: config.Config{PersonalData: config.PersonalDataShow}}
+	}
+	if tweak != nil {
+		tweak(a)
 	}
 	a.Registry.MustAdd(canaryTool())
 	// A warning is a failure here: a canary that ran on a server that complained proved less.

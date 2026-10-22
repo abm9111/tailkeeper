@@ -251,7 +251,7 @@ func (w *tokenWalker) hit(v *hujson.Value, match Match) {
 		return
 	}
 	line, col := w.d.Position(v.StartOffset)
-	w.found = append(w.found, Location{Match: match, Pointer: pointerOf(w.path), Line: line, Column: col})
+	w.found = append(w.found, Location{Match: match, Pointer: w.d.pathPointer(w.path), Line: line, Column: col})
 }
 
 // isToken reports whether v is a string that decodes to the token. A literal the length

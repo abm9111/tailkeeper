@@ -3,6 +3,7 @@ package acl
 import (
 	"context"
 	"crypto/sha256"
+	"crypto/subtle"
 	"encoding/hex"
 	"io"
 	"slices"
@@ -107,13 +108,26 @@ type DiffOptions struct {
 	// IgnoreTailscaleWritten leaves the Tailscale-written changes out of the list and out of
 	// Equal; they are still counted.
 	IgnoreTailscaleWritten bool
+	// OldShow and NewShow are how a caller sees the text of the old and of the new policy:
+	// whatever a result quotes of a side is cut after its Show has run, and the digest of a
+	// cursor is of the normal forms as they show. A nil Show shows the text as it is.
+	OldShow, NewShow Show
+	// Seal keys the digest that ties a cursor to its comparison: it is given that digest and
+	// returns a keyed one. A nil Seal leaves the digest unkeyed.
+	Seal func(digest []byte) string
 }
 
-// Page sizes: a page holds at most this many changes, and about this many bytes of text.
+// Page sizes: a page holds at most this many changes, and stops once the changes it holds cost
+// pageCost (see DisplayCost); the change that crosses it is the last. A list of what a change
+// gained or lost stops at listCost, and counts the rest. With these a page, in the characters a
+// host receives, stays under what the tool declares: 56,000 and the last change (at most about
+// 80,000, with its scalar strings and the two lists of each of two fields), and the findings of
+// the two sides, which their caller bounds in the same way.
 const (
 	DefaultPage = 50
 	MaxPage     = 200
-	pageBytes   = 64 << 10
+	pageCost    = 56000
+	listCost    = 6000
 )
 
 // NotChecked names what a diff does not establish. It is structural: it cannot say whether
@@ -140,8 +154,13 @@ type DiffResult struct {
 	Counts  Counts
 	Changes []Change // the page
 	// Matched is how many changes the section filter and the options select.
-	Matched    int
-	Truncated  bool
+	Matched   int
+	Truncated bool
+	// NextChange continues the listing. It identifies the comparison it was issued for: the two
+	// normal forms as the two sides show them (so it tells nothing about a policy that the result
+	// does not), the section filter and the Tailscale-written option, and, with a Seal, a key
+	// that only the holder of it can compute. It is not a secret and is not signed: it keeps a
+	// listing from continuing on the wrong comparison, and nothing more.
 	NextChange string
 	// NormalFormLimits, NotChecked and the as-of date qualify the answer.
 	NormalFormLimits     []string
@@ -183,7 +202,9 @@ type rawChange struct {
 }
 
 type rawExtra struct {
-	sec, key         string
+	sec, key string
+	keyAtom  *atom // kWide: the atom whose destination ends the key, shown with the new policy
+
 	oldText, newText string
 	note             string
 	fields           []FieldDelta
@@ -216,27 +237,34 @@ func (c *rawChange) secName() string {
 	return c.sec.name
 }
 
-// displayKey names what a change is about, cut at 1 KiB.
-func (c *rawChange) displayKey() string {
+// displayKey names what a change is about, cut at 1 KiB after the policy it is read from shows
+// it.
+func (d *comparer) displayKey(c *rawChange) string {
 	e := c.ne
 	if e == nil {
 		e = c.oe
 	}
+	v := d.viewOf(c)
 	switch c.kind {
 	case kAtoms:
 		if len(c.na) > 0 {
-			return atomKey(c.na[0])
+			return atomKey(d.nv, c.na[0])
 		}
-		return atomKey(c.oa[0])
-	case kDefault, kWide:
+		return atomKey(d.ov, c.oa[0])
+	case kDefault:
+		return c.x.key
+	case kWide:
+		if c.x.keyAtom != nil {
+			return capText(c.x.key + atomKey(d.nv, c.x.keyAtom))
+		}
 		return c.x.key
 	case kAssertion:
-		return assertionKey(e.key)
+		return v.assertionKey(e.key)
 	case kAttr:
-		return attrKey(e)
+		return attrKey(v, e)
 	case kEntry:
 		if c.sec.known {
-			return capText(e.key)
+			return v.cut(e.key)
 		}
 	}
 	return ""
@@ -245,6 +273,9 @@ func (c *rawChange) displayKey() string {
 type comparer struct {
 	m      *meter
 	oa, ob *Doc
+	// ov and nv are the two policies as the caller sees them: what a result quotes of a side is
+	// cut after its Show has run.
+	ov, nv view
 	na, nb *NormalForm
 	raw    []rawChange
 	format int // format-only differences found on the way
@@ -283,7 +314,7 @@ func Diff(ctx context.Context, oldDoc, newDoc *Doc, o DiffOptions) (*DiffResult,
 	if err != nil {
 		return nil, err
 	}
-	d := &comparer{m: m, oa: oldDoc, ob: newDoc, na: na, nb: nb}
+	d := &comparer{m: m, oa: oldDoc, ob: newDoc, na: na, nb: nb, ov: view{oldDoc, o.OldShow}, nv: view{newDoc, o.NewShow}}
 	if err := d.compare(); err != nil {
 		return nil, err
 	}
@@ -403,7 +434,7 @@ func (d *comparer) section(sa, sb *nfSec, rank int) error {
 
 func (d *comparer) wholeMismatch(sa, sb *nfSec, rank int) {
 	c := rawChange{class: cSemantic, kind: kSection, rank: rank, sort: "", sec: sb,
-		x: &rawExtra{osec: sa, nsec: sb, note: "one side holds a value of another type than the server reads for this section; it is kept whole and compared as one value"}}
+		x: &rawExtra{osec: sa, nsec: sb, note: wholeMismatchNote}}
 	switch {
 	case sa.state == StateAbsent:
 		c.op = oAdded
@@ -418,6 +449,12 @@ func (d *comparer) wholeMismatch(sa, sb *nfSec, rank int) {
 	}
 	d.emit(c)
 }
+
+// wholeMismatchNote qualifies a section that holds a value of another type on one side.
+const wholeMismatchNote = "one side holds a value of another type than the server reads for this section; it is kept whole and compared as one value"
+
+// tagOwnersNote qualifies the move of tagOwners between [] and the admin group.
+const tagOwnersNote = "tagOwners [] is documented as equivalent to [\"autogroup:admin\"]; it is reported, not equated"
 
 func stateText(s State, n int) string {
 	switch s {
@@ -458,7 +495,7 @@ func (d *comparer) defaults() {
 			sa, sb := d.na.secs[pos], d.nb.secs[pos]
 			d.emit(rawChange{class: cDefaults, op: oChanged, kind: kDefault, rank: pos, sort: s.name,
 				x: &rawExtra{sec: s.name, key: s.name, oldText: stateText(sa.state, sa.count), newText: stateText(sb.state, sb.count),
-					note: s.name + sectionNow(s.now) + ": " + defaultsNote}})
+					note: accessSectionNote(s.name, s.now)}})
 		}
 	}
 	pos := sectionPos("ssh")
@@ -470,12 +507,13 @@ func (d *comparer) defaults() {
 	}
 }
 
-// sectionNow says which way an access section moved: to [] or away from it.
-func sectionNow(empty bool) string {
+// accessSectionNote says which way an access section, acls or grants, moved: to [] or away
+// from it.
+func accessSectionNote(section string, empty bool) string {
 	if empty {
-		return " is now written as []"
+		return section + " is now written as []: " + defaultsNote
 	}
-	return " is no longer written as []"
+	return section + " is no longer written as []: " + defaultsNote
 }
 
 // sshNote says what a move of the ssh section between absent, empty and non-empty is. Only
@@ -869,7 +907,11 @@ func pureReorder(m *meter, a, b []uint64) (bool, error) {
 }
 
 // cursor is "c1.<index>.<digest>": the digest ties it to the pair and the options, so a
-// cursor from another comparison is refused instead of listing the wrong changes.
+// cursor from another comparison is refused instead of listing the wrong changes. The digest is
+// of the normal forms as each side shows them (DiffOptions), and keyed when it has a Seal: a
+// cursor identifies the comparison as a reader of the result sees it, and tells nothing that
+// the result does not (two policies whose logins differ and are shown alike share a cursor
+// unless a key names them apart).
 type cursor struct {
 	idx int
 	sum string
@@ -912,18 +954,19 @@ func (w *meterWriter) Write(p []byte) (int, error) {
 }
 
 // digest is the part of a cursor that ties it to this comparison: a hash of the canonical
-// bytes of both normal forms, the section filter and whether the Tailscale-written changes
-// are left out. The page size is not in it, so a cursor works for any size. Reading the
-// normal forms is paid for by their bytes, once per call.
+// bytes of both normal forms as the two sides show them, the section filter and whether the
+// Tailscale-written changes are left out, sealed when the options say how. The page size is not
+// in it, so a cursor works for any size. Reading the normal forms is paid for by their bytes,
+// once per call.
 func (d *comparer) digest(o DiffOptions, section string) (string, error) {
 	if !d.based {
 		h := sha256.New()
 		w := &meterWriter{h: h, m: d.m}
-		if _, err := d.na.WriteTo(w); err != nil {
+		if _, err := d.na.writeShown(w, d.ov.show); err != nil {
 			return "", err
 		}
 		_, _ = w.Write([]byte{0})
-		if _, err := d.nb.WriteTo(w); err != nil {
+		if _, err := d.nb.writeShown(w, d.nv.show); err != nil {
 			return "", err
 		}
 		if w.err != nil {
@@ -938,7 +981,12 @@ func (d *comparer) digest(o DiffOptions, section string) (string, error) {
 	if o.IgnoreTailscaleWritten {
 		_, _ = h.Write([]byte{1})
 	}
-	return hex.EncodeToString(h.Sum(nil))[:16], nil
+	sum := h.Sum(nil)
+	if o.Seal != nil {
+		keyed := sha256.Sum256([]byte(o.Seal(sum)))
+		sum = keyed[:]
+	}
+	return hex.EncodeToString(sum)[:16], nil
 }
 
 // match reports whether the options select a change.
@@ -987,7 +1035,7 @@ func (d *comparer) page(res *DiffResult, o DiffOptions, section string, cur *cur
 		if err != nil {
 			return err
 		}
-		if sum != cur.sum {
+		if subtle.ConstantTimeCompare([]byte(sum), []byte(cur.sum)) != 1 {
 			return badCursor()
 		}
 		start = cur.idx
@@ -1004,7 +1052,7 @@ func (d *comparer) page(res *DiffResult, o DiffOptions, section string, cur *cur
 			continue
 		}
 		if idx >= start {
-			if len(res.Changes) >= size || used >= pageBytes {
+			if len(res.Changes) >= size || used >= pageCost {
 				next = idx
 				break
 			}
@@ -1012,7 +1060,7 @@ func (d *comparer) page(res *DiffResult, o DiffOptions, section string, cur *cur
 			if err != nil {
 				return err
 			}
-			used += changeBytes(&ch)
+			used += changeCost(&ch)
 			res.Changes = append(res.Changes, ch)
 		}
 		idx++
@@ -1028,13 +1076,40 @@ func (d *comparer) page(res *DiffResult, o DiffOptions, section string, cur *cur
 	return nil
 }
 
-// changeBytes is about how much a change adds to a page.
-func changeBytes(c *Change) int {
-	n := 64 + len(c.Old.Text) + len(c.New.Text) + len(c.Key) + len(c.Note) + len(c.Section) + len(c.OldPointer) + len(c.NewPointer)
+// DisplayCost is the most characters a string takes in a result once a host has it as JSON text,
+// counted per byte: an angle bracket or an ampersand is written as a six-character escape, a
+// control character is shown as an eight-character escape of its own whose backslash JSON
+// doubles, a quote or a backslash takes two, and a byte of a multi-byte character is counted as
+// two (a character that JSON escapes takes six for its three bytes). It is an upper bound, and
+// the measure by which a page and a list are cut.
+func DisplayCost(s string) int {
+	n := 0
+	for i := 0; i < len(s); i++ {
+		switch c := s[i]; {
+		case c == '<' || c == '>' || c == '&':
+			n += 6
+		case c == '"' || c == '\\':
+			n += 2
+		case c < 0x20 || c == 0x7f:
+			n += 9
+		case c >= 0x80:
+			n += 2
+		default:
+			n++
+		}
+	}
+	return n
+}
+
+// changeCost is what a change adds to a page, by DisplayCost.
+func changeCost(c *Change) int {
+	n := 200 + DisplayCost(c.Old.Text) + DisplayCost(c.New.Text) + DisplayCost(c.Key) + DisplayCost(c.Note) +
+		DisplayCost(c.Section) + DisplayCost(c.OldPointer) + DisplayCost(c.NewPointer)
 	for _, f := range c.Fields {
+		n += 60 + DisplayCost(f.Field)
 		for _, l := range [][]string{f.Added, f.Removed} {
 			for _, s := range l {
-				n += len(s)
+				n += DisplayCost(s) + 3
 			}
 		}
 	}

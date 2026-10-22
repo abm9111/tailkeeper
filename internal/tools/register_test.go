@@ -10,7 +10,7 @@ import (
 // wantTools is the complete M1 surface. A tool added or removed without updating
 // this list (and docs/tools.md) fails the build.
 var wantTools = []string{
-	"acl_get", "acl_test", "audit_log", "contacts_get", "device_get", "device_invite_get", "device_invites_list",
+	"acl_diff", "acl_get", "acl_test", "acl_validate", "audit_log", "contacts_get", "device_get", "device_invite_get", "device_invites_list",
 	"device_posture_attributes", "device_routes", "devices_list", "dns_get", "key_get", "keys_list",
 	"log_streaming_get", "network_flow_logs", "oauth_app_get", "oauth_apps_list",
 	"posture_integration_get", "posture_integrations_list", "service_get", "services_list",
@@ -38,8 +38,8 @@ func TestRegisterAll(t *testing.T) {
 	if !slices.Equal(got, want) {
 		t.Fatalf("registered tools differ:\n got %v\nwant %v", got, want)
 	}
-	if tiers[registry.TierRead] != 28 || tiers[registry.TierLocal] != 15 || len(tiers) != 2 {
-		t.Fatalf("tiers = %v, want 28 read and 15 local", tiers)
+	if tiers[registry.TierRead] != 30 || tiers[registry.TierLocal] != 15 || len(tiers) != 2 {
+		t.Fatalf("tiers = %v, want 30 read and 15 local", tiers)
 	}
 }
 
@@ -53,8 +53,8 @@ func TestReadsProfileHidesAlphaUnlessEnabled(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(without) != 41 || len(with) != 43 {
-		t.Fatalf("reads profile: %d tools without alpha, %d with; want 41 and 43", len(without), len(with))
+	if len(without) != 43 || len(with) != 45 {
+		t.Fatalf("reads profile: %d tools without alpha, %d with; want 43 and 45", len(without), len(with))
 	}
 	for _, tool := range without {
 		if tool.Meta.Stage == registry.StageAlpha {

@@ -25,8 +25,14 @@ func TestInputChecksNeedNoEnvironment(t *testing.T) {
 		{"acl_get", `{"fromLine":-1}`},
 		{"acl_get", `{"maxBytes":10}`},
 		{"acl_get", `{"maxBytes":99999999}`},
+		{"acl_get", `{"view":"raw"}`},
+		{"acl_get", `{"view":"summary","fromLine":2}`},
+		{"acl_get", `{"view":"summary","maxBytes":2048}`},
 		{"acl_test", `{"src":"tag:ci"}`},
 		{"acl_test", `{"src":"tag:ci","accept":["tag:prod"]}`},
+		{"acl_validate", `{"policy":"{}","patch":"[]"}`},
+		{"acl_diff", `{"policy":"{}","patch":"[]"}`},
+		{"acl_diff", `{"section":"nope"}`},
 		{"devices_list", `{"staleDays":4000}`},
 		{"devices_list", `{"staleDays":-1}`},
 		{"devices_list", `{"tags":["prod"]}`},
@@ -77,8 +83,10 @@ func TestInputChecksNeedNoEnvironment(t *testing.T) {
 	}
 	// And the inputs that are valid pass Validate with no environment too.
 	for _, c := range []struct{ tool, args string }{
-		{"acl_get", `{}`}, {"acl_get", `{"fromLine":3,"maxBytes":2048}`},
+		{"acl_get", `{}`}, {"acl_get", `{"fromLine":3,"maxBytes":2048}`}, {"acl_get", `{"view":"summary"}`}, {"acl_get", `{"view":"text","fromLine":3}`},
 		{"acl_test", `{"src":"tag:ci","accept":["tag:prod:22"]}`},
+		{"acl_validate", `{}`}, {"acl_validate", `{"policy":"{}"}`}, {"acl_validate", `{"patch":"[]"}`},
+		{"acl_diff", `{}`}, {"acl_diff", `{"against":"{}"}`}, {"acl_diff", `{"policy":"{}","section":"Groups"}`}, {"acl_diff", `{"patch":"[]","section":"unknown","ignoreTailscaleWritten":true}`},
 		{"devices_list", `{"staleDays":30,"tags":["tag:a"]}`}, {"users_list", `{"type":"member","role":"admin"}`},
 		{"audit_log", `{"limit":5000}`}, {"network_flow_logs", `{"maxRecords":10000}`}, {"log_streaming_get", `{"logType":"network"}`},
 		{"key_get", `{"id":"kABC123CNTRL"}`}, {"service_get", `{"name":"svc:web"}`},
@@ -135,7 +143,9 @@ func TestARefusedCallSendsNoRequest(t *testing.T) {
 	f, reg, env := apiEnv(t)
 	for _, c := range []struct{ tool, args string }{
 		{"acl_test", `{"src":"tag:ci"}`},
+		{"acl_validate", `{"policy":"{}","patch":"[]"}`},
 		{"acl_get", `{"maxBytes":10}`},
+		{"acl_get", `{"view":"raw"}`},
 		{"devices_list", `{"tags":["prod"]}`},
 		{"device_get", `{"device":"  "}`},
 		{"device_routes", `{"device":"` + strings.Repeat("a", 254) + `"}`},

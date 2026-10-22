@@ -58,7 +58,7 @@ func guardText(what string, text []byte) (int, error) {
 	switch {
 	case e != nil:
 	case len(text) > MaxBytes:
-		e = tooComplex("the text is %d bytes; tailkeeper reads at most %d", len(text), MaxBytes)
+		e = tooComplex("the text is more than the %d bytes tailkeeper reads", MaxBytes)
 	default:
 		nodes, e = scanShape(text)
 	}
@@ -281,7 +281,7 @@ func AppendTests(ctx context.Context, text []byte, tests, sshTests [][]byte) ([]
 		}
 	}
 	if added+len(text) > MaxBytes {
-		return nil, tooComplex("the policy and the tests to add are %d bytes together; tailkeeper reads at most %d", added+len(text), MaxBytes)
+		return nil, tooComplex("the policy and the tests to add together come to more than the %d bytes tailkeeper reads", MaxBytes)
 	}
 	m := newMeter(ctx)
 	nodes, err := guardText("the policy text", text)

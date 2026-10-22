@@ -101,18 +101,42 @@ func computedKinds(t registry.Tool) ([]string, bool) {
 	return c.FailOnKinds(), true
 }
 
+// offlineKinds returns the --fail-on tokens a tool's result computes when the command runs
+// with --offline, and whether the result type says so (registry.ComputesOffline).
+func offlineKinds(t registry.Tool) ([]string, bool) {
+	c, ok := reflect.New(t.OutputType).Elem().Interface().(registry.ComputesOffline)
+	if !ok {
+		return nil, false
+	}
+	return c.OfflineFailOnKinds(), true
+}
+
 // checkKinds refuses a --fail-on token that the tool never computes: a usage error that
 // names the token and lists the ones the tool does compute. A tool that does not say
-// which kinds it computes takes every token.
-func checkKinds(t registry.Tool, set failOnSet) error {
+// which kinds it computes takes every token. With --offline the kinds are the ones the
+// tool computes offline, if its result says they differ, and the refusal names --offline:
+// an offline check compares nothing with the live policy, so a gate on what it would find
+// there could never fire.
+func checkKinds(t registry.Tool, set failOnSet, offline bool) error {
 	kinds, ok := computedKinds(t)
 	if !ok {
 		return nil
 	}
+	command, hint := t.Meta.Area+" "+t.Meta.Verb, "drop the token from --fail-on, or use one the command computes"
+	if off, has := offlineKinds(t); has && offline {
+		kinds, command = off, command+" --offline"
+		hint = "drop --fail-on, or run the command without --offline"
+		if len(off) > 0 {
+			hint = "drop the token from --fail-on, use one the command computes, or run the command without --offline"
+		}
+	}
+	list := "no kind"
+	if len(kinds) > 0 {
+		list = strings.Join(kinds, ", ")
+	}
 	for _, tok := range set.tokens() {
 		if !slices.Contains(kinds, tok) {
-			return tkerr.New(tkerr.Usage, fmt.Sprintf("`%s %s` does not compute `%s`; it computes %s", t.Meta.Area, t.Meta.Verb, tok, strings.Join(kinds, ", ")),
-				"drop the token from --fail-on, or use one the command computes")
+			return tkerr.New(tkerr.Usage, fmt.Sprintf("`%s` does not compute `%s`; it computes %s", command, tok, list), hint)
 		}
 	}
 	return nil

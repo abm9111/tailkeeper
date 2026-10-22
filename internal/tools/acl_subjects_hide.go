@@ -1,11 +1,14 @@
 package tools
 
 import (
+	"math"
 	"regexp"
 	"strings"
 	"unicode"
 	"unicode/utf8"
 
+	"github.com/abm9111/tailkeeper/internal/acl"
+	"github.com/abm9111/tailkeeper/internal/registry"
 	"github.com/abm9111/tailkeeper/internal/sanitize"
 	"github.com/abm9111/tailkeeper/internal/tkerr"
 )
@@ -26,8 +29,8 @@ func loginPattern(login string) *regexp.Regexp {
 // hideLogin masks each match of p in text. A match is masked together with the local-part
 // bytes that stand right before it, as one address: where amy@example.com was resolved,
 // bigamy@example.com is another user's address, and masking the match alone would show
-// "big".
-func hideLogin(text string, p *regexp.Regexp) string {
+// "big". mask is how an address is masked: without a pseudonym, or as users_list shows it.
+func hideLogin(text string, p *regexp.Regexp, mask func(string) string) string {
 	var b strings.Builder
 	last := 0
 	for _, m := range p.FindAllStringIndex(text, -1) {
@@ -36,21 +39,36 @@ func hideLogin(text string, p *regexp.Regexp) string {
 			start--
 		}
 		b.WriteString(text[last:start])
-		b.WriteString(sanitize.MaskIdentifier(text[start:m[1]]))
+		b.WriteString(mask(text[start:m[1]]))
 		last = m[1]
 	}
 	b.WriteString(text[last:])
 	return b.String()
 }
 
-// hideLimit is the most of a text Hide reads. Every display is cut at 1 KiB after Hide, so
-// what the limit drops is never shown, and the work of a call does not grow with the text.
-const hideLimit = 4096
+// firstRead is how much of a text is read at first, before it is known how far the masked
+// form of it goes. Masking shortens a text, so what the first read shows can fall short of
+// what a display needs, and the read is doubled until it does not (see read). A fixed length
+// of the real text is never the cut: how much of a message is left to show would then depend
+// on how long the logins in it are.
+const firstRead = 4096
 
-// maxLoginBytes is the longest address Hide looks for at the cut: 64 bytes of local part, an
-// at sign and 255 of domain, each of them as long as a six-byte JSON escape can make it.
-// The walk back stays under what the display shows: hideLimit less this is 2176 bytes,
-// and every display is cut at 1 KiB.
+// hideNeed is how many bytes of what Hide returns anyone can use: every display is cut at
+// registry.ResultStringMax after Hide, and one byte more tells it that it cut.
+const hideNeed = registry.ResultStringMax + 1
+
+// hideMaxRead is where Hide stops doubling its read. A masked address that stands for a whole
+// login is at most about 50 times shorter than the login, so the 1,025 bytes a display needs
+// come from under 60,000 bytes of any text that holds logins; only a text with a long run of
+// address bytes glued before each login (they are masked with it) shrinks more, and for such a
+// text the read, and the work, stop here: 64 patterns over a text that masks to under 1 KiB
+// took 1.2 s to read 512 KiB, and 0.1 s to read this much.
+const hideMaxRead = 64 << 10
+
+// maxLoginBytes is the longest address cutForHideAt looks for at the cut: 64 bytes of local
+// part, an at sign and 255 of domain, each of them as long as a six-byte JSON escape can make
+// it. What the walk back takes off the end of a read is read again, further, whenever the
+// display needs it (see read), so it never costs the display a byte.
 const maxLoginBytes = 6 * 320
 
 // addressByte reports whether c may belong to an address in any spelling the masker reads:
@@ -60,8 +78,8 @@ func addressByte(c byte) bool {
 	return sanitize.LocalByte(c) || c == '@' || c == '\\' || c == '"'
 }
 
-// cutForHide cuts text to hideLimit bytes at a rune boundary. Where it cut, it also takes
-// back whatever a login that began before the cut leaves in the text, in two steps:
+// cutForHideAt cuts text to limit bytes at a rune boundary. Where it cut, it also takes back
+// whatever a login that began before the cut leaves in the text, in two steps:
 //
 //   - a start of a handed-out login: the end of the text, from a byte of the last
 //     maxLoginBytes on, is the start of a login in any letter case with each at sign spelled
@@ -75,11 +93,11 @@ func addressByte(c byte) bool {
 // Nothing of a login that straddles the cut remains, whichever way its at sign and its
 // characters are spelled. The one exception is bounded by the work: a brace escape written
 // with more than maxLoginBytes leading zeros.
-func cutForHide(text string, logins []resolvedLogin) string {
-	if len(text) <= hideLimit {
+func cutForHideAt(text string, logins []resolvedLogin, limit int) string {
+	if len(text) <= limit {
 		return text
 	}
-	n := hideLimit
+	n := limit
 	for n > 0 && !utf8.RuneStart(text[n]) {
 		n--
 	}
@@ -191,21 +209,83 @@ func foldEqual(a, b rune) bool {
 // reply repeats what was sent, and a pseudonym beside it would confirm a guess. The logins
 // are replaced whole and longest first, so a login with a byte the address scan does not
 // read (a slash) is not left half showing. A word glued to the front of a login (bigamy@ for
-// amy@) is another user's address and is masked with it, from its first byte. The text is
-// cut to hideLimit bytes first (see cutForHide), and a marker it holds is rewritten (the
-// masker's Unforge): Hide appends no pseudonym, so a marker in the result would be one the
-// text forged, and the registry's masking pass does not rewrite it. While personalData is
-// show the text is returned as it came.
+// amy@) is another user's address and is masked with it, from its first byte. A marker the
+// text holds is rewritten (the masker's Unforge): Hide appends no pseudonym, so a marker in
+// the result would be one the text forged, and the registry's masking pass does not rewrite
+// it. The result is the head of what a caller sees, hideNeed bytes of it and the rest of the
+// character they end in, whatever the logins in the text were: the text is read as far as it
+// takes for the masked form to reach that, and the work is that of the masked head, not of
+// the text (see read), and stops at hideMaxRead. While personalData is show the text is
+// returned as it came.
 func (r *SubjectResolver) Hide(text string) string {
 	if r.env.ShowPersonalData() {
 		return text
 	}
-	resolved := r.state().users().resolved
-	text = r.env.Masker().Unforge(cutForHide(text, resolved))
-	for _, l := range resolved {
-		text = hideLogin(text, l.pattern)
+	out, _ := r.read(text, hideNeed, false, hideMaxRead)
+	return head(out, hideNeed)
+}
+
+// head returns the first n bytes of s and the rest of the character the n-th byte is in.
+func head(s string, n int) string {
+	if n >= len(s) {
+		return s
 	}
-	return sanitize.MaskEmails(text)
+	for n < len(s) && !utf8.RuneStart(s[n]) {
+		n++
+	}
+	return s[:n]
+}
+
+// Shown is how a result of acl_diff or acl_validate shows a piece of a policy, as the engine
+// takes it (acl.Show): the markers it holds are rewritten, every login this resolver has
+// handed out is masked whole, and every other address is masked. With named, the addresses
+// carry the pseudonym acl_get and users_list show for them; without it they carry none (a
+// pseudonym beside an operator's own text would confirm a guess about it, and one beside an
+// echo of a caller's text the same). The engine cuts what it quotes after this has run, so
+// where it cuts is where the shown text says. While personalData is show the text is shown as
+// it is, and the engine's cut is the only one.
+func (r *SubjectResolver) Shown(named bool) acl.Show {
+	if r.env.ShowPersonalData() {
+		return nil
+	}
+	return func(text string, need int) string {
+		out, _ := r.read(text, need, named, math.MaxInt)
+		return out
+	}
+}
+
+// read is what a caller sees of text, at least its first need bytes, or all of it when that
+// is shorter, and how many bytes of text it took. It reads as much of the text as it takes
+// for the masked form to reach need bytes, and no less: the read starts at firstRead bytes
+// and doubles while the masked form falls short, so the work is that of the masked form and
+// the characters a login hides, never of the text; and the cut is where the shown text says,
+// not where the real text does, since a cut at a fixed length of the real text would let how
+// much a login shortens its text decide how much of the rest is shown.
+func (r *SubjectResolver) read(text string, need int, named bool, maxRead int) (out string, read int) {
+	resolved := r.state().users().resolved
+	mk := r.env.Masker()
+	render := func(t string) string {
+		t = mk.Unforge(t)
+		mask := sanitize.MaskIdentifier
+		if named {
+			mask = mk.Identifier
+		}
+		for _, l := range resolved {
+			t = hideLogin(t, l.pattern, mask)
+		}
+		if named {
+			return mk.Emails(t)
+		}
+		return sanitize.MaskEmails(t)
+	}
+	for limit := max(firstRead, 4*min(need, len(text))); ; limit *= 2 {
+		if len(text) <= limit {
+			return render(text), len(text)
+		}
+		if out := render(cutForHideAt(text, resolved, limit)); len(out) >= need || limit >= maxRead {
+			return out, limit
+		}
+	}
 }
 
 // HideError returns a copy of err, as a *tkerr.Error, with its message and hint passed

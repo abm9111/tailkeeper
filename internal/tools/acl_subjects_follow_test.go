@@ -13,9 +13,9 @@ import (
 	"github.com/abm9111/tailkeeper/internal/tools"
 )
 
-// hideLimit is the most of a text Hide reads (the unexported hideLimit of the package): the
-// callers cut every display at 1 KiB, so 4 KiB leaves a margin for what masking shortens.
-const hideLimit = 4096
+// firstRead is how much of a text Hide reads at first (the unexported firstRead of the
+// package); CutAt takes any limit, and these tests cut at this one.
+const firstRead = 4096
 
 // Resolve once named every login of the tailnet for every pseudonym it was asked to resolve:
 // 64 resolutions over 5,000 users made 320,000 calls to the naming function (an HMAC each).
@@ -72,28 +72,18 @@ func TestHideCompilesNothingPerCall(t *testing.T) {
 	}
 }
 
-// Hide reads at most hideLimit bytes: a message of a megabyte is cut before it is scanned,
-// so the work does not grow with the text. A login that starts before the cut and ends after
-// it is not shown, whole or in part.
-func TestHideReadsAtMostHideLimit(t *testing.T) {
+// What a read of limit bytes leaves of a login that starts before the cut and ends after it:
+// nothing, whole or in part. A login that ends a byte before the cut is inside the text.
+func TestACutLeavesNothingOfALoginThatStraddlesIt(t *testing.T) {
 	r := resolvedAll(t, "amy@example.com", "bob@example.org")
-	huge := strings.Repeat("x ", 1<<19) + "amy@example.com"
-	got := r.Hide(huge)
-	if len(got) > hideLimit {
-		t.Errorf("Hide of a %d-byte text returned %d bytes, want at most %d", len(huge), len(got), hideLimit)
-	}
-	if strings.Contains(got, "amy") {
-		t.Errorf("the login at the end of a megabyte reached the result: %q", got[len(got)-40:])
-	}
 	// The login starts k bytes before the cut, so the cut falls inside it for k = 1 to 14.
 	const login = "amy@example.com"
 	checked := 0
 	for k := 1; k < len(login); k++ {
 		checked++
-		text := strings.Repeat(" ", hideLimit-k) + login + " tail"
-		out := r.Hide(text)
-		if len(out) > hideLimit {
-			t.Errorf("k=%d: %d bytes, want at most %d", k, len(out), hideLimit)
+		out := r.CutAt(strings.Repeat(" ", firstRead-k)+login+" tail", firstRead)
+		if len(out) > firstRead {
+			t.Errorf("k=%d: %d bytes, want at most %d", k, len(out), firstRead)
 		}
 		if strings.TrimSpace(out) != "" {
 			t.Errorf("k=%d: the cut left %q of a login, want nothing of it", k, strings.TrimSpace(out))
@@ -103,17 +93,17 @@ func TestHideReadsAtMostHideLimit(t *testing.T) {
 		t.Fatalf("checked %d cuts, want %d", checked, len(login)-1)
 	}
 	// A login that ends at the cut cannot be told from one that goes on, so it goes with the
-	// word it ends; one that ends a byte before the cut is inside the text and is masked.
-	text := strings.Repeat(" ", hideLimit-len(login)) + login + " tail"
-	if out := r.Hide(text); strings.TrimSpace(out) != "" {
+	// word it ends; one that ends a byte before the cut is inside the text and stays whole.
+	text := strings.Repeat(" ", firstRead-len(login)) + login + " tail"
+	if out := r.CutAt(text, firstRead); strings.TrimSpace(out) != "" {
 		t.Errorf("a login that ends at the cut left %q, want nothing of it", strings.TrimSpace(out))
 	}
-	text = strings.Repeat(" ", hideLimit-len(login)-1) + login + " tail"
-	if out := r.Hide(text); strings.Contains(out, "amy@") || !strings.Contains(out, "…@example.com") {
-		t.Errorf("a login inside the text: %q, want it masked", strings.TrimSpace(out))
+	text = strings.Repeat(" ", firstRead-len(login)-1) + login + " tail"
+	if out := r.CutAt(text, firstRead); strings.TrimSpace(out) != login {
+		t.Errorf("a login inside the text: %q, want it whole", strings.TrimSpace(out))
 	}
 	// A text under the limit is not cut.
-	if out := r.Hide("short amy@example.com text"); !strings.HasSuffix(out, " text") || strings.Contains(out, "amy@") {
+	if out := r.CutAt("short amy@example.com text", firstRead); out != "short amy@example.com text" {
 		t.Errorf("a short text came back as %q", out)
 	}
 }
@@ -138,9 +128,9 @@ func TestHideCutLeavesNoPartOfALoginInAnySpelling(t *testing.T) {
 		checked, left := 0, 0
 		for k := 1; k < len(spelled); k++ {
 			checked++
-			out := r.Hide(strings.Repeat(" ", hideLimit-k) + spelled + " tail")
-			if len(out) > hideLimit {
-				t.Errorf("%s, k=%d: %d bytes, want at most %d", name, k, len(out), hideLimit)
+			out := r.CutAt(strings.Repeat(" ", firstRead-k)+spelled+" tail", firstRead)
+			if len(out) > firstRead {
+				t.Errorf("%s, k=%d: %d bytes, want at most %d", name, k, len(out), firstRead)
 			}
 			if strings.TrimSpace(out) != "" {
 				left++
@@ -223,9 +213,9 @@ func TestHideCutLeavesNoStartOfAnyLoginWhateverItsLocalPartHolds(t *testing.T) {
 						continue // the cut is taken at rune boundaries only
 					}
 					cuts++
-					out := r.Hide(strings.Repeat(" ", hideLimit-k) + spelled + " tail")
-					if len(out) > hideLimit {
-						t.Errorf("%s, k=%d: %d bytes, want at most %d", name, k, len(out), hideLimit)
+					out := r.CutAt(strings.Repeat(" ", firstRead-k)+spelled+" tail", firstRead)
+					if len(out) > firstRead {
+						t.Errorf("%s, k=%d: %d bytes, want at most %d", name, k, len(out), firstRead)
 					}
 					if p, ok := hideEndsWithLoginPrefix(out, spelled); ok {
 						bad++
@@ -253,7 +243,7 @@ func TestHideCutTakesAWordGluedToAnUnreadableLoginWithIt(t *testing.T) {
 	checked := 0
 	for k := 1; k < len(login); k++ {
 		checked++
-		out := r.Hide(strings.Repeat(" ", hideLimit-k-3) + "big" + login + " tail")
+		out := r.CutAt(strings.Repeat(" ", firstRead-k-3)+"big"+login+" tail", firstRead)
 		if strings.TrimSpace(out) != "" {
 			t.Errorf("k=%d: the cut left %q of the address, want nothing of it", k, strings.TrimSpace(out))
 		}

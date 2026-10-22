@@ -1,0 +1,3 @@
+  FAILED · 2 assertions failed · 12 tests passed · invariants: 4
+::error file=policy.hujson,line=31,col=9,title=tailkeeper::tag:ci must reach tag:prod:22 and cannot
+::error file=invariants.hujson,line=4,title=tailkeeper::invariant 2: group:admins must not reach tag:db:5432

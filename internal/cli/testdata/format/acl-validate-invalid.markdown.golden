@@ -1,0 +1,15 @@
+**INVALID · 1 problem found before anything was sent to Tailscale**
+
+Not checked:
+
+- access\_change
+- app\_capabilities
+- downgrades
+- lockout
+- ssh\_lockout
+- via
+
+Findings:
+
+- `policy.hujson:4:2` error: `/groups`: Tailscale refuses a key written twice here (also at line 2)
+- notice: Lines are counted by line feed and columns in bytes, as Tailscale counts them: an editor that counts a lone carriage return may disagree.

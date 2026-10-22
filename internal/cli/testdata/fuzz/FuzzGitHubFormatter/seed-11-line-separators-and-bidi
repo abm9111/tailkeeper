@@ -1,0 +1,12 @@
+go test fuzz v1
+string("a\xe2\x80\xa8::error::b")
+string("c\xc2\x85::error::c")
+string("error")
+string("from")
+string("p.hujson")
+string("")
+string("a\xe2\x80\xa9##[error]b\xe2\x80\xae::error::c")
+int(1)
+int(1)
+bool(false)
+uint8(2)

@@ -441,7 +441,8 @@ func TestTheCapsAreTheDocumentedValues(t *testing.T) {
 		{"MaxAppended", MaxAppended, 4096},
 		{"DefaultPage", DefaultPage, 50},
 		{"MaxPage", MaxPage, 200},
-		{"pageBytes", pageBytes, 64 << 10},
+		{"pageCost", pageCost, 56000},
+		{"listCost", listCost, 6000},
 		{"maxDeltaItems", maxDeltaItems, 50},
 		{"maxSyncedRef", maxSyncedRef, 4096},
 	} {

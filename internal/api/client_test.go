@@ -3,6 +3,7 @@ package api_test
 import (
 	"context"
 	"encoding/base64"
+	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
@@ -496,5 +497,58 @@ func TestFederatedExchange(t *testing.T) {
 		if err != nil && strings.Contains(err.Error(), "exchange failed") {
 			t.Errorf("%s: the exchange response body reached the error text: %v", tc.name, err)
 		}
+	}
+}
+
+// An error keeps the whole message the server sent, as far as the error body is read: a cut
+// made on the real text would let the length of what the message quotes decide how much of
+// the rest is shown. What a result shows is cut after the message is masked.
+func TestAnErrorKeepsAMessageLongerThan4KiBWhole(t *testing.T) {
+	for _, size := range []int{4097, 20000, 60000} {
+		msg := strings.Repeat("word ", (size+4)/5)
+		f := apitest.New(t)
+		f.JSON("GET", "/api/v2/tailnet/T1234CNTRL/devices", 422, `{"message":"`+msg+`"}`)
+		c := f.Client(t)
+		var out devicesResp
+		err := c.Get(context.Background(), c.TailnetPath("/devices"), nil, &out)
+		e, ok := tkerr.As(err)
+		if !ok || e.Code != tkerr.APIError || e.Status != 422 {
+			t.Fatalf("size %d: err = %v, want api_error with status 422", size, err)
+		}
+		if e.Message != msg {
+			t.Errorf("size %d: the message is %d bytes, want the %d the server sent", size, len(e.Message), len(msg))
+		}
+	}
+}
+
+// A body that fills what is read ends before its object does: the message is kept as far as it
+// goes, a prefix of what the server sent, not dropped for the status text. A message that
+// vanished when it was long would show how long what it quotes is. An escape the end cuts
+// through is left out; a backslash in the message is kept.
+func TestAnErrorBodyCutOffKeepsTheMessageAsFarAsItGoes(t *testing.T) {
+	for _, unit := range []string{"word ", "ab\\u00e9\\\\", "\\u0041", "q\\\"x"} {
+		raw := strings.Repeat(unit, 100000/len(unit))
+		var want string
+		if err := json.Unmarshal([]byte(`"`+raw+`"`), &want); err != nil {
+			t.Fatal(err)
+		}
+		f := apitest.New(t)
+		f.JSON("GET", "/api/v2/tailnet/T1234CNTRL/devices", 422, `{"message":"`+raw+`","other":1}`)
+		c := f.Client(t)
+		var out devicesResp
+		e, ok := tkerr.As(c.Get(context.Background(), c.TailnetPath("/devices"), nil, &out))
+		if !ok || e.Code != tkerr.APIError {
+			t.Fatalf("unit %q: err = %v, want api_error", unit, e)
+		}
+		if len(e.Message) < len(want)/4 || !strings.HasPrefix(want, e.Message) {
+			t.Errorf("unit %q: the message is %d bytes and not a prefix of the %d the server sent", unit, len(e.Message), len(want))
+		}
+	}
+	f := apitest.New(t)
+	f.JSON("GET", "/api/v2/tailnet/T1234CNTRL/devices", 422, strings.Repeat(" ", 70000)+`{"message":"late"}`)
+	c := f.Client(t)
+	var out devicesResp
+	if e, ok := tkerr.As(c.Get(context.Background(), c.TailnetPath("/devices"), nil, &out)); !ok || e.Message != "Unprocessable Entity" {
+		t.Errorf("a body with no message in what is read: %v, want the status text", e)
 	}
 }

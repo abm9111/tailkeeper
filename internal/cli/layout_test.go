@@ -16,7 +16,7 @@ import (
 	"github.com/abm9111/tailkeeper/internal/tools"
 )
 
-var update = flag.Bool("update", false, "rewrite the golden files in testdata/layout")
+var update = flag.Bool("update", false, "rewrite the golden files in testdata/layout and testdata/format")
 
 // hostile is text no output may carry through: a line of its own that looks like a
 // workflow command, and a sequence that moves a terminal.
@@ -316,7 +316,7 @@ func reportRegistry() *registry.Registry {
 	reg.MustAdd(registry.Define(registry.Meta{Name: "report_check", Area: "report", Verb: "check", Summary: "A test tool with a human layout.",
 		Tier: registry.TierLocal, Stage: registry.StageGA, Credential: registry.CredNone},
 		func(_ context.Context, _ *registry.Env, in reportIn) (reportOut, error) {
-			for _, c := range layoutCases {
+			for _, c := range formatCases() {
 				if c.name == in.Case {
 					return reportOut{Status: "reported", rep: c.rep, code: map[registry.Level]int{registry.LevelFail: 2}[c.rep.Level]}, nil
 				}
@@ -336,11 +336,7 @@ func reportHarness(t *testing.T) *harness {
 
 func TestFormatSelectsTheRenderer(t *testing.T) {
 	dir := t.TempDir()
-	wd, _ := os.Getwd()
-	if err := os.Chdir(dir); err != nil {
-		t.Fatal(err)
-	}
-	defer func() { _ = os.Chdir(wd) }()
+	t.Chdir(dir)
 	if err := os.WriteFile("policy.hujson", []byte("{}"), 0o600); err != nil {
 		t.Fatal(err)
 	}
@@ -368,8 +364,8 @@ func TestFormatSelectsTheRenderer(t *testing.T) {
 	}
 	// A format that does not exist, or that contradicts --json, is a usage error.
 	for args, want := range map[string]string{
-		"--format github":      `--format: "github" is not one of text, json`,
-		"--format xml":         `--format: "xml" is not one of text, json`,
+		"--format sarif":       `--format: "sarif" is not one of text, json, github, markdown`,
+		"--format xml":         `--format: "xml" is not one of text, json, github, markdown`,
 		"--format text --json": "--json and --format text contradict each other",
 	} {
 		h.err.Reset()
@@ -441,7 +437,7 @@ func TestAFormatInTheTableIsOfferedAndUsed(t *testing.T) {
 		t.Errorf("a format of the table with --json: exit %d, stdout %q, stderr %q", code, h.out, h.err)
 	}
 	h.err.Reset()
-	if code := h.run("report", "check", "--case", "valid", "--format", "xml"); code != 2 || !strings.Contains(h.err.String(), "not one of text, json, probe") {
+	if code := h.run("report", "check", "--case", "valid", "--format", "xml"); code != 2 || !strings.Contains(h.err.String(), "not one of text, json, github, markdown, probe") {
 		t.Errorf("exit %d, stderr %q; want the table's names listed", code, h.err)
 	}
 }

@@ -37,8 +37,8 @@ kill: TestSemanticChangesNameWhatChanged
 
 mutant: old and new lines swapped
 file: diff_text.go
-old: ch.OldPointer, ch.OldLine = d.pointerLine(d.oa, *oldAt)
-new: ch.OldPointer, ch.OldLine = d.pointerLine(d.ob, *oldAt)
+old: ch.OldPointer, ch.OldLine = d.pointerLine(d.ov, *oldAt)
+new: ch.OldPointer, ch.OldLine = d.pointerLine(d.nv, *oldAt)
 kill: TestChangesCarryTheLineOfEachSide
 
 mutant: the multiset count is skipped
@@ -67,8 +67,8 @@ kill: TestParseRefusesMoreValuesThanTheCap
 
 mutant: the depth pre-scan runs after Parse
 file: parse.go
-old: if err := checkShape(src); err != nil {\n\t\treturn nil, err\n\t}\n\td := &Doc{src: bytes.Clone(src)}\n\troot, err := hujson.Parse(d.src)\n\tif err != nil {
-new: d := &Doc{src: bytes.Clone(src)}\n\troot, err := hujson.Parse(d.src)\n\tif e := checkShape(src); e != nil {\n\t\treturn nil, e\n\t}\n\tif err != nil {
+old: if err := checkShape(src); err != nil {\n\t\treturn nil, err\n\t}\n\td := &Doc{src: bytes.Clone(src), show: show}\n\troot, err := hujson.Parse(d.src)\n\tif err != nil {
+new: d := &Doc{src: bytes.Clone(src), show: show}\n\troot, err := hujson.Parse(d.src)\n\tif e := checkShape(src); e != nil {\n\t\treturn nil, e\n\t}\n\tif err != nil {
 kill: TestEveryEntryPointRefusesAMillionLevelsCleanly
 
 mutant: the guard of the text transforms checks no depth
@@ -616,3 +616,192 @@ file: shapes.go
 old: a.written = a.written && p.written
 new: a.written = a.written
 kill: TestFunnelIsTailscaleWrittenOnlyInTheShapeTheConsoleWrites
+
+# What a result quotes of a policy is cut after the policy is shown, and the page, a list and
+# the cursor are bounded by what the caller sees.
+
+mutant: a quoted piece of a text is cut before it is shown
+file: diff_text.go
+old: s = t.show(s, room)
+new: _ = t.show
+kill: TestWhatADiffQuotesIsCutAfterTheTextIsShown
+
+mutant: a raw piece of an atom is written as it is
+file: diff_text.go
+old: if r := t.room(); t.show != nil && r > 0 {
+new: if r := t.room(); false && r > 0 {
+kill: TestTheRawPiecesOfAnAtomAreShown
+
+mutant: a list of elements has no cost to run out
+file: diff_text.go
+old: if cost += DisplayCost(shown) + 3; cost > listCost {
+new: if cost += DisplayCost(shown) + 3; cost > listCost*1000 {
+kill: TestAListOfElementsStopsWhereItsCostRunsOut
+
+mutant: the cost of an angle bracket is a character
+file: diff.go
+old: case c == '<' || c == '>' || c == '&':\n\t\t\tn += 6
+new: case c == '<' || c == '>' || c == '&':\n\t\t\tn += 1
+kill: TestDisplayCost
+
+mutant: a control character costs what it shows as
+file: diff.go
+old: n += 9
+new: n += 1
+kill: TestDisplayCost
+
+mutant: a page has no cost to run out
+file: diff.go
+old: used >= pageCost
+new: used >= pageCost*1000
+kill: TestAPageIsAboutFiftySixThousandCharacters
+
+mutant: a change costs only its text
+file: diff.go
+old: DisplayCost(c.Section) + DisplayCost(c.OldPointer) + DisplayCost(c.NewPointer)
+new: 0
+kill: TestPageCostCountsTheNamesAndPointersOfAChange
+
+mutant: the fields of a change cost nothing
+file: diff.go
+old: n += DisplayCost(s) + 3
+new: n += 0 * len(s)
+kill: TestAListOfElementsStopsWhereItsCostRunsOut|TestPageCostCountsTheFieldsOfAChange
+
+mutant: the cursor is not sealed
+file: diff.go
+old: if o.Seal != nil {
+new: if false {
+kill: TestACursorIsOfTheShownFormsAndSealedWhenAsked
+
+mutant: the cursor is of the real forms
+file: normal.go
+old: f = show(f, wholeText)
+new: _ = show
+kill: TestACursorIsOfTheShownFormsAndSealedWhenAsked
+
+mutant: the digest of the old side is of the new side's view
+file: diff.go
+old: d.na.writeShown(w, d.ov.show)
+new: d.na.writeShown(w, d.nv.show)
+kill: TestACursorOfTheTwoSidesFollowsEachSidesShow
+
+mutant: a change is read through the old side's view when it has a new side
+file: diff_text.go
+old: if c.ne != nil || len(c.na) > 0 {
+new: if false {
+kill: TestEachSideIsShownThroughItsOwnShow
+
+mutant: the key of a posture that went is shown by the old side
+file: diff.go
+old: return capText(c.x.key + atomKey(d.nv, c.x.keyAtom))
+new: return capText(c.x.key + atomKey(d.ov, c.x.keyAtom))
+kill: TestEachSideIsShownThroughItsOwnShow
+
+mutant: the items a change gained are shown by the old side
+file: diff_text.go
+old: out[i].Added = append(out[i].Added, d.nv.cut(s))
+new: out[i].Added = append(out[i].Added, d.ov.cut(s))
+kill: TestEachSideIsShownThroughItsOwnShow
+
+mutant: a wide source names no destination
+file: widening.go
+old: if field == "src" {
+new: if false {
+kill: TestWideningsAreStructuralAndCheap
+
+mutant: a note of a wide source quotes the destination
+file: widening.go
+old: return "a rule with " + name + " in src is new for the destination in dst"
+new: return "a rule with " + name + " in src is new for tag:x"
+kill: TestAWideSelectorIsAWideningOnlyWhereItIsAdded
+
+mutant: the size of a text that is too large is in the message of Parse
+file: parse.go
+old: return nil, tooComplex("the policy is more than the %d bytes tailkeeper reads", MaxBytes)
+new: return nil, tooComplex("the policy is %d bytes, more than the %d tailkeeper reads", len(src), MaxBytes)
+kill: TestTheMessagesOfAnOversizedTextNameNoLength
+
+mutant: the size of a text that is too large is in the message of the guard
+file: transform.go
+old: e = tooComplex("the text is more than the %d bytes tailkeeper reads", MaxBytes)
+new: e = tooComplex("the text is %d bytes, more than the %d tailkeeper reads", len(text), MaxBytes)
+kill: TestTheMessagesOfAnOversizedTextNameNoLength
+
+mutant: the size of the tests to add is in the message
+file: transform.go
+old: return nil, tooComplex("the policy and the tests to add together come to more than the %d bytes tailkeeper reads", MaxBytes)
+new: return nil, tooComplex("the policy and the tests to add together come to %d bytes, more than the %d tailkeeper reads", added+len(text), MaxBytes)
+kill: TestTheMessagesOfAnOversizedTextNameNoLength
+
+mutant: the key of a repeated key is cut before it is shown
+file: walk.go
+old: Key: w.d.cut(names[later]), FirstKey: w.d.cut(names[first]),
+new: Key: capText(names[later]), FirstKey: capText(names[first]),
+kill: TestAPointerAndAKeyAreCutAfterTheTextIsShown
+
+mutant: the shown name of an unknown section is its real name
+file: walk.go
+old: d.unknownShown = append(d.unknownShown, d.cut(name))
+new: d.unknownShown = append(d.unknownShown, capText(name))
+kill: TestAPointerAndAKeyAreCutAfterTheTextIsShown
+
+mutant: a pointer to a repeated key is cut before it is shown
+file: walk.go
+old: b = append(b, escapePointer(d.shownName(e.key, maxPointer+1-len(b)))...)
+new: b = append(b, escapePointer(nameHead(e.key, maxPointer+1-len(b)))...)
+kill: TestAPointerAndAKeyAreCutAfterTheTextIsShown
+
+mutant: the pointer of a change is cut before it is shown
+file: refs.go
+old: b = append(b, escapePointer(v.shownName(d.top[r.top].key, maxPointer+1))...)
+new: b = append(b, escapePointer(nameHead(d.top[r.top].key, maxPointer+1))...)
+kill: TestAPointerAndAKeyAreCutAfterTheTextIsShown|TestEachSideIsShownThroughItsOwnShow
+
+mutant: a name is read as far as it takes to show it in full
+file: show.go
+old: return v.show(nameHead(n, need*shownRead), need)
+new: return v.show(nameHead(n, need), need)
+kill: TestAPointerAndAKeyAreCutAfterTheTextIsShown
+
+mutant: the new text of a widening is shown by the old side's view
+file: diff_text.go
+old: if c.x.atomTexts {\n\t\t\to, n := textBuf{show: d.ov.show}, textBuf{show: d.nv.show}
+new: if c.x.atomTexts {\n\t\t\to, n := textBuf{show: d.ov.show}, textBuf{show: d.ov.show}
+kill: TestEachSideIsShownThroughItsOwnShow
+
+mutant: the new text of a changed rule is shown by the old side's view
+file: diff_text.go
+old: case kAtoms:\n\t\to, n := textBuf{show: d.ov.show}, textBuf{show: d.nv.show}
+new: case kAtoms:\n\t\to, n := textBuf{show: d.ov.show}, textBuf{show: d.ov.show}
+kill: TestEachSideIsShownThroughItsOwnShow
+
+mutant: the new pointer of a change is shown by the old side's view
+file: diff_text.go
+old: d.pointerLine(d.nv, *newAt)
+new: d.pointerLine(d.ov, *newAt)
+kill: TestEachSideIsShownThroughItsOwnShow
+
+mutant: the new entry of a change is shown by the old side's view
+file: diff_text.go
+old: entryText(d.nv, c.ne, c.kind)
+new: entryText(d.ov, c.ne, c.kind)
+kill: TestEachSideIsShownThroughItsOwnShow
+
+mutant: the items a change lost are shown by the new side
+file: diff_text.go
+old: out[i].Removed = append(out[i].Removed, d.ov.cut(s))
+new: out[i].Removed = append(out[i].Removed, d.nv.cut(s))
+kill: TestEachSideIsShownThroughItsOwnShow
+
+mutant: the sources a rule gained are shown by the old side
+file: diff_text.go
+old: f, err := fieldDelta(m, "src", added, removed, d.nv, d.ov)
+new: f, err := fieldDelta(m, "src", added, removed, d.ov, d.nv)
+kill: TestEachSideIsShownThroughItsOwnShow
+
+mutant: the section of a change that is read from the new side is shown by the old side
+file: diff_text.go
+old: ch.Section = d.viewOf(c).cut(ch.Section)
+new: ch.Section = d.ov.cut(ch.Section)
+kill: TestEachSideIsShownThroughItsOwnShow

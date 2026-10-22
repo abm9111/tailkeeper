@@ -452,7 +452,12 @@ func (r *Runner) tool(ctx context.Context, g globals, args []string) int {
 		quiet = fs.Bool("quiet", false, "print nothing when the command succeeds (exit 0)")
 	}
 	if gated {
-		fs.Var(failOnValues, "fail-on", "exit 8 when the result has findings of these kinds: "+strings.Join(failOnTokens, ", ")+" (comma-separated, repeatable)")
+		// A command whose result says which kinds it computes lists those; the rest list all.
+		kinds := failOnTokens
+		if computed, ok := computedKinds(t); ok {
+			kinds = computed
+		}
+		fs.Var(failOnValues, "fail-on", "exit 8 when the result has findings of these kinds: "+strings.Join(kinds, ", ")+" (comma-separated, repeatable)")
 	}
 	b, err := bind(fs.FlagSet, t.InputType, func(name string) string {
 		if p, ok := t.InputSchema.Properties[name]; ok {
@@ -490,7 +495,7 @@ func (r *Runner) tool(ctx context.Context, g globals, args []string) int {
 	if err != nil {
 		return r.fail(err, *jsonOut)
 	}
-	if err := checkKinds(t, gate); err != nil {
+	if err := checkKinds(t, gate, b.given()["offline"]); err != nil {
 		return r.fail(err, *jsonOut)
 	}
 	// The tool's own checks come first: a value it refuses must not cost the
@@ -540,7 +545,12 @@ func (r *Runner) tool(ctx context.Context, g globals, args []string) int {
 				if err != nil {
 					return err
 				}
-				return f(w, rep, formatOptions{Names: names, Color: r.color(w)})
+				o := formatOptions{Names: names, Color: r.color(w)}
+				o.Dir, o.Root, o.Outside = r.repoDir()
+				if g, ok := w.(*lineGuard); ok {
+					o.Trusted = g.Trusted()
+				}
+				return f(w, rep, o)
 			}
 		}
 		if c := r.print(*jsonOut, out, text); c != 0 {

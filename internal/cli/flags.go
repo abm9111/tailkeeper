@@ -538,6 +538,12 @@ func (b *binding) load(in reflect.Value, stdin io.Reader) (map[string]string, er
 		if err != nil {
 			return nil, err
 		}
+		if len(data) == 0 {
+			// The field would stay as it is when the flag is not given, and a tool reads that
+			// as "the live policy" or "no invariants": a text that was never checked would read
+			// as a pass. Refuse it here, whichever tool the flag belongs to.
+			return nil, usageErr("--%s: %s is empty; an empty text is read as no text at all, so nothing was checked: give a file that holds the text", f.flag, names[f.flag])
+		}
 		in.Field(f.field).SetString(string(data))
 	}
 	return names, nil

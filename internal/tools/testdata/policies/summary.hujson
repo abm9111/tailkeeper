@@ -1,0 +1,35 @@
+// A policy for the summary view: sections that are absent, empty and non-empty, scalars,
+// defined names, a synced group (written with a space and capitals), tests and a section
+// this version does not know (one written null, which is the same as not written).
+{
+	"groups": {
+		"group:eng": ["amy@example.com", "bo@example.com"],
+		"group:ops": [],
+	},
+	"tagOwners": {
+		"tag:prod": ["group:eng"],
+		"tag:ci":   [],
+	},
+	"hosts":    {"edge": "203.0.113.9"},
+	"postures": {"posture:latest": ["node:os == 'macos'"]},
+	"ipsets":   {"ipset:office": ["192.0.2.0/24"]},
+
+	"acls": [
+		{"action": "accept", "src": ["group:eng"], "dst": ["tag:prod:22"]},
+		{"action": "accept", "src": ["group:Sales Team@example.org"], "dst": ["edge:443"]},
+	],
+	"grants": [],
+	"ssh":    [],
+
+	"tests": [
+		{"src": "group:eng", "accept": ["tag:prod:22"]},
+		{"src": "tag:ci", "deny": ["tag:prod:22"]},
+	],
+	"sshTests": [],
+
+	"disableIPv4":         true,
+	"randomizeClientPort": false,
+	"derpMap":             null,
+	"futureSection":       {"note": "a section a later Tailscale may add"},
+	"droppedSection":      null,
+}

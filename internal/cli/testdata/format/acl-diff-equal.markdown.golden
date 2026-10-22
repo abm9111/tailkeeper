@@ -1,0 +1,18 @@
+**EQUAL · the two policies mean the same (1 comment-only, 1 format-only)**
+
+Not checked:
+
+- access\_change
+- app\_capabilities
+- downgrades
+- lockout
+- ssh\_lockout
+- via
+
+Changes:
+
+- defaults: 0
+- tests reduced: 0
+- widening: 0
+- tailscale-written: 0 (expected)
+- semantic: 0

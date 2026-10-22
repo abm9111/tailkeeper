@@ -158,3 +158,48 @@ file: bucket.go
 old: b.units = min(b.units+int64(min(d, b.fill))*b.rate, b.size*tokenUnits)
 new: b.units = b.units + int64(min(d, b.fill))*b.rate
 kill: TestAfterALongIdleTheBucketHoldsItsSizeAndNoMore
+
+mutant: RemoveCanary accepts two results with the canary's src
+file: policy_read.go
+old: if at >= 0 {
+new: if false {
+kill: TestRemoveCanaryNeedsTheCanarySrcAndExactlyOneEntry
+
+# What a result shows of an error is cut after the message is masked, so the client keeps the
+# message the server sent, as far as the body is read.
+
+mutant: an error message is cut at 4 KiB of the real text
+file: client.go
+old: msg := sanitize.String(body.Message, maxErrorMessage)
+new: msg := sanitize.String(body.Message, 4096)
+kill: TestAnErrorKeepsAMessageLongerThan4KiBWhole
+
+mutant: an error body is read to 4 KiB
+file: client.go
+old: data, _ := io.ReadAll(io.LimitReader(resp.Body, maxErrorMessage))
+new: data, _ := io.ReadAll(io.LimitReader(resp.Body, 4096))
+kill: TestAnErrorKeepsAMessageLongerThan4KiBWhole
+
+mutant: the message of a body that is cut off is dropped
+file: client.go
+old: body.Message = cutMessage(data)
+new: body.Message = ""
+kill: TestAnErrorBodyCutOffKeepsTheMessageAsFarAsItGoes
+
+mutant: a body that fills the read is not looked at for its message
+file: client.go
+old: err != nil && len(data) >= maxErrorMessage {
+new: err != nil && false {
+kill: TestAnErrorBodyCutOffKeepsTheMessageAsFarAsItGoes
+
+mutant: an escaped quote ends the message of a body that is cut off
+file: client.go
+old: if rest[i] == '\\\\' {
+new: if false {
+kill: TestAnErrorBodyCutOffKeepsTheMessageAsFarAsItGoes
+
+mutant: an escape the end of a body cuts through drops the message
+file: client.go
+old: for drop := 0; drop <= 5 && drop <= end; drop++ {
+new: for drop := 0; drop < 1 && drop <= end; drop++ {
+kill: TestAnErrorBodyCutOffKeepsTheMessageAsFarAsItGoes

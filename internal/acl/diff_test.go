@@ -288,8 +288,17 @@ func TestWideningsAreStructuralAndCheap(t *testing.T) {
 	} {
 		r := diff(t, base, c.text)
 		ch := find(t, r, ClassWidening, c.field+" "+c.item)
-		if ch.Section != "acls+grants" || len(ch.Fields) != 1 || ch.Fields[0].Field != c.field || ch.Fields[0].Added[0] != c.item {
+		// A wide source names the destination it is new for in a second field, so the note
+		// has no policy text to quote.
+		wantFields := 1
+		if c.field == "src" {
+			wantFields = 2
+		}
+		if ch.Section != "acls+grants" || len(ch.Fields) != wantFields || ch.Fields[0].Field != c.field || ch.Fields[0].Added[0] != c.item {
 			t.Errorf("%s: %+v", name, ch)
+		}
+		if c.field == "src" && (ch.Fields[1].Field != "dst" || fmt.Sprint(ch.Fields[1].Added) != "[tag:x]") {
+			t.Errorf("%s: the destination a wide source is new for: %+v", name, ch.Fields)
 		}
 		if r.Counts.Widening != 1 {
 			t.Errorf("%s: widening = %d", name, r.Counts.Widening)
@@ -670,9 +679,9 @@ func TestPagesCursorsAndSectionFilter(t *testing.T) {
 	}
 }
 
-// A page ends by its size in bytes as well as by its count: a change that carries a lot
-// of text does not let 200 of them through.
-func TestAPageIsAboutSixtyFourKilobytes(t *testing.T) {
+// A page ends by its cost as well as by its count: a change that carries a lot of text does not
+// let 200 of them through.
+func TestAPageIsAboutFiftySixThousandCharacters(t *testing.T) {
 	var a, b strings.Builder
 	a.WriteString(`{"groups": {`)
 	b.WriteString(`{"groups": {`)
@@ -690,7 +699,7 @@ func TestAPageIsAboutSixtyFourKilobytes(t *testing.T) {
 	for _, c := range r.Changes {
 		size += len(c.Old.Text) + len(c.New.Text) + len(c.Key)
 	}
-	if size > pageBytes+4096 {
+	if size > pageCost+4096 {
 		t.Errorf("the page holds %d bytes of text", size)
 	}
 }
@@ -2013,8 +2022,11 @@ func TestAWideSelectorIsAWideningOnlyWhereItIsAdded(t *testing.T) {
 	// only narrowed.
 	r := diff(t, `{"acls": [`+rule(`"a"`, `"tag:x:1"`)+`]}`, `{"acls": [`+rule(`"*"`, `"tag:x:1"`)+`]}`)
 	ch := find(t, r, ClassWidening, "src *")
-	if !strings.Contains(ch.Note, "src") || !strings.Contains(ch.Note, "tag:x") || !strings.Contains(ch.Note, "new") {
+	if !strings.Contains(ch.Note, "src") || strings.Contains(ch.Note, "tag:x") || !strings.Contains(ch.Note, "new") {
 		t.Errorf("the note of a wildcard source: %q", ch.Note)
+	}
+	if len(ch.Fields) != 2 || ch.Fields[1].Field != "dst" || fmt.Sprint(ch.Fields[1].Added) != "[tag:x]" {
+		t.Errorf("the destination of a wildcard source: %+v", ch.Fields)
 	}
 }
 

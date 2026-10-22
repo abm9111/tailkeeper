@@ -1,0 +1,45 @@
+{
+  "status": "fail",
+  "serverChecked": true,
+  "errors": [
+    {
+      "kind": "assertion_failed",
+      "severity": "error",
+      "source": "from",
+      "line": 8,
+      "column": 3,
+      "pointer": "/tests/1",
+      "message": "[acl test error]: address \"tag:ci:22\" (protocol \"tcp\"): want: Drop, got: Accept",
+      "fromTailscale": true
+    }
+  ],
+  "testsBefore": 0,
+  "testsAfter": 2,
+  "sshTestsBefore": 0,
+  "sshTestsAfter": 0,
+  "changes": {
+    "defaults": 1,
+    "testsReduced": 0,
+    "widening": 0,
+    "tailscaleWritten": 0,
+    "semantic": 6,
+    "commentOnly": 1,
+    "formatOnly": 1
+  },
+  "invariantsApplied": 0,
+  "invariantsSignature": "none",
+  "notChecked": [
+    "access_change",
+    "app_capabilities",
+    "downgrades",
+    "lockout",
+    "ssh_lockout",
+    "via"
+  ],
+  "dependsOnLiveState": true,
+  "policySha256": "ca3d163bab055381827226140568f3bef7eaac187cebd76878e0b63e9e442356",
+  "liveChanged": false,
+  "identicalToLive": false,
+  "checkedAt": "2026-10-10T12:00:00Z",
+  "externallyManaged": "false"
+}

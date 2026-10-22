@@ -1,7 +1,44 @@
 # Mutants of internal/tools: each is a change to the code that a test must notice.
 # scripts/mutate.go says what the format is and what the three outcomes mean. The list
 # holds one mutant for each class of defect the tests of the subject resolver, the
-# pseudonym substitution and the failure-line grammar were written to catch.
+# pseudonym substitution, the failure-line grammar, the verdicts of acl_validate and the
+# comparison of acl_diff were written to catch.
+
+mutant: acl_get shows the ETag as the version while masking is on
+file: acl_view.go
+old: return env.Privacy.Digest([]byte(etag))
+new: return etag
+kill: TestACLGetPolicyVersionIsKeyedOrOmitted
+
+mutant: acl_get shows Tailscale's messages about the policy as they came
+file: acl_view.go
+old: return res.Hide(s)
+new: return s
+kill: TestACLGetShowsWarningsAndServerErrorsMaskedAndUnforged
+
+mutant: acl_get shows every message Tailscale gives
+file: acl_view.go
+old: n := min(len(in), maxTestMessages)
+new: n := len(in)
+kill: TestACLGetCutsTheMessagesItShowsAndSaysSo
+
+mutant: the summary shows a name that spells a pseudonym marker as it was written
+file: acl_view.go
+old: return mk.Emails(sanitize.String(tripwire.Redact(mk.PolicyText(s)), policyNameMax))
+new: _ = mk; return sanitize.String(s, policyNameMax)
+kill: TestACLGetSummaryUnforgesAMarkerANameSpells
+
+mutant: the summary counts names, not what they cost as JSON text
+file: acl_get.go
+old: if cost > *left {
+new: if false {
+kill: TestSummaryNamesAreBoundedAndTheResultFitsItsDeclaredLimit
+
+mutant: the digest of the meaning depends on how the text is laid out
+file: acl_view.go
+old: return env.Privacy.Digest(nf), nil
+new: return env.Privacy.Digest(append(nf, byte(d.Lines()))), nil
+kill: TestACLGetSummaryDigests
 
 mutant: Resolve names every login of the tailnet on every call
 file: acl_subjects.go
@@ -11,15 +48,51 @@ kill: TestResolveDoesNotRenameEveryLoginPerCall
 
 mutant: Hide compiles the pattern of each login on every call
 file: acl_subjects_hide.go
-old: text = hideLogin(text, l.pattern)
-new: text = hideLogin(text, loginPattern(l.login))
+old: t = hideLogin(t, l.pattern, mask)
+new: t = hideLogin(t, loginPattern(l.login), mask)
 kill: TestHideCompilesNothingPerCall
 
 mutant: Hide reads the whole text
 file: acl_subjects_hide.go
-old: text = r.env.Masker().Unforge(cutForHide(text, resolved))
-new: text = r.env.Masker().Unforge(text)
-kill: TestHideReadsAtMostHideLimit
+old: for limit := max(firstRead, 4*min(need, len(text))); ; limit *= 2 {
+new: for limit := len(text); ; limit *= 2 {
+kill: TestHideReadsAsFarAsTheMaskedFormNeedsWhateverTheLengthOfTheText
+
+mutant: Hide widens its read by far more than the display needs
+file: acl_subjects_hide.go
+old: for limit := max(firstRead, 4*min(need, len(text))); ; limit *= 2 {
+new: for limit := max(firstRead, 4*min(need, len(text))); ; limit *= 64 {
+kill: TestHideReadsAsFarAsTheMaskedFormNeedsWhateverTheLengthOfTheText
+
+mutant: Hide reads a fixed length of the real text, so how much it shows depends on how long the logins are
+file: acl_subjects_hide.go
+old: out, _ := r.read(text, hideNeed, false, hideMaxRead)
+new: out, _ := r.read(text[:min(len(text), firstRead)], hideNeed, false, hideMaxRead)
+kill: TestHideShowsTheSameWhateverTheLengthOfTheLoginsInTheText|TestAMessageThatEchoesTheMembersSentShowsTheSameWhateverTheLengthOfTheirLogins
+
+mutant: Hide stops at the first read, whatever the masked form comes to
+file: acl_subjects_hide.go
+old: if out := render(cutForHideAt(text, resolved, limit)); len(out) >= need || limit >= maxRead {
+new: if out := render(cutForHideAt(text, resolved, limit)); true {
+kill: TestHideShowsTheSameWhateverTheLengthOfTheLoginsInTheText|TestAMessageThatEchoesTheMembersSentShowsTheSameWhateverTheLengthOfTheirLogins
+
+mutant: Hide returns all that it read, so the length of the result tells how long the logins are
+file: acl_subjects_hide.go
+old: return head(out, hideNeed)
+new: return out
+kill: TestHideShowsTheSameWhateverTheLengthOfTheLoginsInTheText|TestHideEndsAtACharacterNotInsideOne
+
+mutant: the head Hide returns ends inside a character
+file: acl_subjects_hide.go
+old: for n < len(s) && !utf8.RuneStart(s[n]) {
+new: for false {
+kill: TestHideEndsAtACharacterNotInsideOne
+
+mutant: the head Hide returns is a byte short, so a display cannot tell that it was cut
+file: acl_subjects_hide.go
+old: const hideNeed = registry.ResultStringMax + 1
+new: const hideNeed = registry.ResultStringMax
+kill: TestHideEndsAtACharacterNotInsideOne|TestHideShowsTheSameWhateverTheLengthOfTheLoginsInTheText
 
 mutant: Hide leaves the part of a login that the cut falls inside
 file: acl_subjects_hide.go
@@ -68,12 +141,6 @@ file: acl_subjects_hide.go
 old: return regexp.MustCompile("(?i)" + strings.Join(parts, at))
 new: return regexp.MustCompile(strings.Join(parts, at))
 kill: TestHideMasksALoginInAnotherLetterCase
-
-mutant: Hide leaves a marker the text holds
-file: acl_subjects_hide.go
-old: text = r.env.Masker().Unforge(cutForHide(text, resolved))
-new: text = cutForHide(text, resolved)
-kill: TestHideUnforgesAMarkerTheTextHolds
 
 mutant: a masked carrier needs no masked address before the marker
 file: acl_subjects_subst.go
@@ -146,3 +213,585 @@ file: acl_problems.go
 old: return placement{basis: placedByTest, locations: locs, cut: cut}, nil
 new: return placement{basis: placedByTest, locations: locs, cut: cut * 0}, nil
 kill: TestAPlacementCarriesLocatesCutCount
+
+mutant: acl_validate lets an MCP caller's proposal name a login
+file: acl_validate.go
+old: } else if err := screenMCPText(v.env, src, "a proposal"); err != nil {
+new: } else if err := error(nil); err != nil {
+kill: TestAnMCPProposalWithALoginIsRefusedBeforeAnyRequest
+
+mutant: a line outside the want/got grammar is read as a failed assertion
+file: acl_validate_online.go
+old: if ParseFailureLine(line).Kind == AssertionFailed {
+new: if ParseFailureLine(line).Kind != "" {
+kill: TestFailVerdictsComeFromTheGrammar
+
+mutant: a pass stays a pass when the live policy changed during the check
+file: acl_validate_online.go
+old: if v.out.Status == statusPass {
+new: if false {
+kill: TestALiveChangedDuringTheCallIsUnknownNeverAPass
+
+mutant: a text that is the live policy keeps its new warnings
+file: acl_validate_online.go
+old: existing := identical || stored[w] || stored[text]
+new: existing := stored[w] || stored[text]
+kill: TestAByteIdenticalTextHasNoNewWarnings
+
+mutant: a live policy with stored errors is sent to be validated
+file: acl_validate_online.go
+old: if prop.Source == sourceLive && len(live.Errors) > 0 {
+new: if false {
+kill: TestStoredErrorsOfLiveMakeAValidateOfLiveRejected
+
+mutant: a 500 that came twice names no digest of what was sent
+file: acl_validate_online.go
+old: c.Message += " (policy sha256 " + sha + ")"
+new: c.Message += sha[:0]
+kill: TestA500TwiceNamesThePolicyHashAndAutogroupSelf
+
+mutant: a name the server quotes is shown at one place only
+file: acl_problems.go
+old: shown := min(len(pl.locations), maxCandidates)
+new: shown := 1
+kill: TestEveryObservedRejectionIsRejectedWithItsLocation
+
+mutant: the messages of an entry past the cap are not counted
+file: acl_validate_online.go
+old: v.out.Omitted += len(r.Errors) - j
+new: v.out.Omitted += 0
+kill: TestAReplyIsCappedAndTheRestIsCounted
+
+mutant: a credential shape in an MCP text is sent
+file: acl_validate_patch.go
+old: where, found := tripwireWhere(text)\n\tif !found {
+new: where, found := tripwireWhere(text)\n\tif true || !found {
+kill: TestATripwireMatchInAnMCPProposalIsRefusedBeforeAnyRequestNamingThePointer
+
+mutant: a patch that replaces the root adds no tests to the count
+file: acl_validate_patch.go
+old: case len(segs) == 0 && value != nil:
+new: case false:
+kill: TestMoreThan64CallerTestsAreRefused
+
+mutant: the tests the live policy already holds count against the cap
+file: acl_validate_patch.go
+old: if !have[e] {
+new: if !have[e] || true {
+kill: TestMoreThan64CallerTestsAreRefused
+
+mutant: a pseudonym marker in an operator file is sent
+file: acl_validate_patch.go
+old: if loc == nil {
+new: if true {
+kill: TestAnOperatorFileWithAPseudonymMarkerIsInvalid
+
+mutant: a problem in a patched text carries a line
+file: acl_validate.go
+old: if source == sourcePatch {\n\t\t\tp.Line, p.Column = 0, 0
+new: if false {\n\t\t\tp.Line, p.Column = 0, 0
+kill: TestProblemsInAPatchedTextCarryAPointerAndNoLine
+
+mutant: the digest of a patched text is not given
+file: acl_validate_online.go
+old: v.out.PatchedDigest = d
+new: v.out.PatchedDigest = d[:0]
+kill: TestAPatchNamesAUserOnlyByPseudonym
+
+mutant: the digest of a patched text is not the one acl_get's summary shows
+file: acl_validate_online.go
+old: v.out.PatchedDigest = d
+new: v.out.PatchedDigest = v.env.Privacy.Digest([]byte(d))
+kill: TestPatchedDigestEqualsTheSummarySemanticDigestOnceApplied
+
+mutant: the text is not read again after a pseudonym is replaced
+file: acl_validate_patch.go
+old: if replaced > 0 {\n\t\t// From here on a position
+new: if false {\n\t\t// From here on a position
+kill: TestWhatIsSentIsWhatTheSubstitutionReturned
+
+mutant: a result carries every problem a reply holds
+file: acl_validate_online.go
+old: out.capProblems()
+new: out.Omitted += 0
+kill: TestTheWorstReplyIsCutToTheProblemCapAndStaysSmall|TestAReplyIsCappedAndTheRestIsCounted
+
+mutant: a failure past the entries read reads as a pass
+file: acl_validate_online.go
+old: return statusUnknown, nil
+new: return statusPass, nil
+kill: TestAFailureOnlyPastTheEntriesReadIsUnknownNeverAPass
+
+mutant: a warning that matches no stored one by its element reads as existing
+file: acl_validate_online.go
+old: existing := identical || stored[w] || stored[text]
+new: existing := identical || len(baseline) > 0
+kill: TestAWarningThatMatchesNoStoredWarningWordForWordIsNew
+
+mutant: a 500 that came twice names the digest of the file itself
+file: acl_validate_online.go
+old: _, _, _, sha := maskedPolicy(v.env, string(sent))
+new: rawSum := sha256.Sum256(sent); sha := hex.EncodeToString(rawSum[:])
+kill: TestThe500DigestIsTheMaskedFormsWhenThePolicyHoldsAnAddress
+
+mutant: the cap on the tests of a patch reads the operations only
+file: acl_validate_patch.go
+old: if n := countCallerTests(live.Text, patched); n > maxCallerTests && !v.in.Operator && !v.uncapped {
+new: if n := countCallerTests(live.Text, patched); n < 0 {
+kill: TestMoreThan64CallerTestsAreRefused
+
+mutant: the credential tripwire reads the bytes of an MCP text as written only
+file: acl_validate_patch.go
+old: raw := tripwire.Check(text) != nil\n\tif guard.NestsDeeperThan
+new: raw := tripwire.Check(text) != nil\n\tif !raw {\n\t\treturn "", false\n\t}\n\tif guard.NestsDeeperThan
+kill: TestATripwireMatchInAnMCPProposalIsRefusedBeforeAnyRequestNamingThePointer
+
+mutant: patchedBytes is the size of the file, which holds the logins masking hides
+file: acl_validate_online.go
+old: _, _, v.out.PatchedBytes, _ = maskedPolicy(v.env, string(prop.Sent))
+new: v.out.PatchedBytes = len(prop.Sent)
+kill: TestPatchedBytesIsTheSizeAclGetShowsAndTellsNothingOfALoginsLength
+
+mutant: a column is read off the text that was sent, not the caller's own
+file: acl_validate_patch.go
+old: return v.pos.back(line, col)
+new: return line, col
+kill: TestAColumnAfterAPseudonymIsAColumnOfTheCallersOwnText|TestWhatIsSentIsWhatTheSubstitutionReturned
+
+mutant: a message keeps the column the server counted in the text it was sent
+file: acl_problems.go
+old: base.Message = restatePosition(base.Message, base.Line, base.Column)
+new: base.Message += ""
+kill: TestAColumnAfterAPseudonymIsAColumnOfTheCallersOwnText
+
+mutant: a canary whose line is outside the want/got grammar is accepted
+file: acl_canary.go
+old: if n != 1 || ParseFailureLine(line).Kind != AssertionFailed {
+new: if n != 1 || (ParseFailureLine(line).Kind != AssertionFailed && false) {
+kill: TestAMissingCanaryIsUnknownAndExits1
+
+mutant: the second validation runs when the first was rejected
+file: acl_invariants.go
+old: if slices.Contains([]string{statusRejected, statusInvalid, statusUnknown}, v.out.Status) {
+new: if false {
+kill: TestTheSecondPostIsSkippedAndRefundedWhenTheFirstIsRejected
+
+mutant: a failure of the invariants is not the worse status
+file: acl_invariants.go
+old: if rank[b] > rank[a] {
+new: if rank[b] < rank[a] {
+kill: TestTheStatusOfACallIsTheWorseOfItsTwoValidations
+
+mutant: the invariants' tests are not counted before the text is sent
+file: acl_invariants.go
+old: if s.Tests != len(inv.Tests)+1 || s.SSHTests != len(inv.SSHTests) || len(doc.Findings()) > 0 {
+new: if false {
+kill: TestTheTestCountGuardRefusesBeforeSending
+
+mutant: the canary makes a second tagOwners
+file: acl_canary.go
+old: if sec, known := acl.SectionByName(name); !known || sec.Name != "tagOwners" {
+new: if sec, known := acl.SectionByName(name); !known || sec.Name != "tagOwners" || true {
+kill: TestTheCanaryJoinsATagOwnersWrittenInAnotherCaseOrMakesOne
+
+mutant: a change gate ignores widenings and removed tests
+file: acl_diff.go
+old: n := c.Defaults + c.TestsReduced + max(c.Semantic, c.Widening)
+new: n := c.Defaults + c.Semantic
+kill: TestTheClassesAreCountedAndListedInOrder
+
+mutant: a Tailscale-written change is never counted by the gate
+file: acl_diff.go
+old: if written {\n\t\tn += c.TailscaleWritten
+new: if false {\n\t\tn += c.TailscaleWritten
+kill: TestTheClassesAreCountedAndListedInOrder
+
+mutant: a diff of the live policy against itself is not refused
+file: acl_diff.go
+old: case liveOld && liveNew:
+new: case false:
+kill: TestBothSidesLiveIsRefused
+
+mutant: --offline accepts a live side
+file: acl_diff.go
+old: case in.Offline && (liveOld || liveNew):
+new: case false:
+kill: TestOfflineRefusesALiveSide
+
+mutant: a comparison is held to the cap on the tests a call adds
+file: acl_diff.go
+old: nv.uncapped, ov.uncapped = true, true
+new: nv.uncapped, ov.uncapped = false, false
+kill: TestADiffIsNotCappedAtSixtyFourTestsInAnyCombination
+
+mutant: a change in a patched policy carries a line
+file: acl_diff.go
+old: if in.Patch != "" {\n\t\t\tch.NewLine = 0
+new: if false {\n\t\t\tch.NewLine = 0
+kill: TestAPatchIsComparedWithTheLivePolicy
+
+mutant: a Tailscale-written change alone is not equal when it is ignored
+file: acl_diff.go
+old: if res.Equal {
+new: if res.SemanticallyEqual {
+kill: TestARewriteThatMeansTheSameIsEqual
+
+mutant: a finding of the old text is labelled as the new one
+file: acl_diff.go
+old: if out[i].Source == from {
+new: if false {
+kill: TestAnInvalidSideIsATypedInvalidResult
+
+mutant: the two sides of a diff read the users twice
+file: acl_diff.go
+old: ov.res = nv.res
+new: ov.res = ov.res
+kill: TestDiffTextsOverMCPFollowTheSubjectRule
+
+mutant: the invariants run after an answer tailkeeper does not read
+file: acl_invariants.go
+old: []string{statusRejected, statusInvalid, statusUnknown}
+new: []string{statusRejected, statusInvalid}
+kill: TestTheSecondPostIsSkippedWhenTheFirstAnswerIsNotOneTailkeeperReads
+
+mutant: the canary's tag is the same on every call
+file: acl_canary.go
+old: return hex.EncodeToString(b[:])
+new: return hex.EncodeToString(make([]byte, 4))
+kill: TestEveryCallChoosesAFreshCanaryTag
+
+mutant: an invariants file with no tests costs a second request
+file: acl_validate_online.go
+old: if inv != nil && len(inv.Tests)+len(inv.SSHTests) == 0 {
+new: if inv != nil && len(inv.Tests)+len(inv.SSHTests) < 0 {
+kill: TestAnInvariantsFileWithNoTestsSendsOneRequest
+
+mutant: --invariants and --no-invariants together are obeyed in one way
+file: acl_validate.go
+old: if in.Invariants != "" && in.NoInvariants {
+new: if in.Invariants != "" && in.NoInvariants && false {
+kill: TestTheTwoInvariantsFlagsTogetherAreRefused
+
+mutant: a diff takes its status from the page it lists
+file: acl_diff.go
+old: if res.Equal {\n\t\to.Status = statusEqual
+new: if res.Equal || len(res.Changes) == 0 {\n\t\to.Status = statusEqual
+kill: TestAnEmptyPageIsNotAnEqualDiff
+
+mutant: a section filter that selects nothing is not said
+file: acl_diff.go
+old: o.Section != "" && o.Matched == 0 && n > 0
+new: false && n > 0
+kill: TestAnEmptyPageIsNotAnEqualDiff
+
+mutant: a side of a diff lists every finding the engine gives
+file: acl_diff.go
+old: maxSideFindings  = 64
+new: maxSideFindings  = 6400
+kill: TestASideListsAtMostSixtyFourFindingsAndCountsTheRest
+
+mutant: a text checked here only carries every notice it has
+file: acl_validate.go
+old: \t\tv.offlineResult()\n\t\tv.out.capProblems()
+new: \t\tv.offlineResult()
+kill: TestTheNoticesOfATextAreCutToTheProblemCapOnEveryPath
+
+mutant: an invalid result carries every notice it has
+file: acl_validate.go
+old: \t\tv.out.DependsOnLiveState = false\n\t\tv.out.capProblems()
+new: \t\tv.out.DependsOnLiveState = false
+kill: TestTheNoticesOfATextAreCutToTheProblemCapOnEveryPath
+
+mutant: a warning past the entries listed is not classified
+file: acl_validate_online.go
+old: if !existing {\n\t\t\t\t\tv.out.NewWarningsOmitted++\n\t\t\t\t}
+new: _ = existing
+kill: TestANewWarningPastTheEntriesListedStillFailsTheGate
+
+mutant: a new warning the problem cap cuts is not counted
+file: acl_validate_online.go
+old: o.NewWarningsOmitted += listed - len(o.NewWarnings) // --fail-on warnings counts them still
+new: _ = listed
+kill: TestANewWarningCutByTheProblemCapIsStillCounted
+
+mutant: the gate on warnings counts only the warnings listed
+file: acl_validate.go
+old: return len(o.NewWarnings) + o.NewWarningsOmitted
+new: return len(o.NewWarnings)
+kill: TestANewWarningPastTheEntriesListedStillFailsTheGate
+
+mutant: a call with nothing to validate does not say it validated the live policy
+file: acl_validate_online.go
+old: v.out.ValidatedLive = v.in.Policy == "" && v.in.Patch == ""
+new: v.out.ValidatedLive = false
+kill: TestACallWithNothingToValidateSaysItValidatedTheLivePolicy
+
+mutant: the report shows an existing warning as a warning of the proposal
+file: acl_validate.go
+old: Message: "existing: " + p.Message, Untrusted: p.FromTailscale})
+new: Message: p.Message, Untrusted: p.FromTailscale})
+kill: TestTheLivePolicysOwnWarningsAreNoticesInTheReport
+
+mutant: the report does not say what the caps left out
+file: acl_validate.go
+old: msg := notListed(o.Omitted, "problem")
+new: msg := ""
+kill: TestTheReportSaysHowManyProblemsAreNotListed
+
+mutant: one problem left out is said in the plural
+file: acl_validate.go
+old: if n == 1 {\n\t\treturn "1 " + word + " is not listed"
+new: if false {\n\t\treturn "1 " + word + " is not listed"
+kill: TestTheReportSaysHowManyProblemsAreNotListed
+
+mutant: acl_get shows every message that fits the count, whatever it costs as JSON text
+file: acl_view.go
+old: if cost > left {
+new: if false {
+kill: TestMessagesAreBoundedByTheirCostAsJSONText
+
+mutant: stored errors short-cut the validation of a patch as well as of the live policy
+file: acl_validate_online.go
+old: if prop.Source == sourceLive && len(live.Errors) > 0 {
+new: if v.in.Policy == "" && len(live.Errors) > 0 {
+kill: TestAPatchAgainstALivePolicyWithStoredErrorsIsSentAndItsVerdictReturned
+
+mutant: an MCP patch may hold a test operation, which answers by comparing a value
+file: acl_validate.go
+old: if p, found := v.testOperation(patch); found {
+new: if p, found := v.testOperation(patch); false && found {
+kill: TestAnMCPPatchMayNotHoldATestOperation
+
+mutant: the test operation is found only in lower case
+file: acl_validate.go
+old: !strings.EqualFold(op, "test")
+new: op != "test"
+kill: TestAnMCPPatchMayNotHoldATestOperation
+
+mutant: an operator's patch is held to the cap on the tests the patched text adds
+file: acl_validate_patch.go
+old: n > maxCallerTests && !v.in.Operator && !v.uncapped {
+new: n > maxCallerTests {
+kill: TestMoreThan64CallerTestsAreRefused
+
+mutant: the verdict counts the problems filed, not the assertions that failed
+file: acl_validate.go
+old: if n > 0 {\n\t\treturn n\n\t}
+new: if false && n > 0 {\n\t\treturn n\n\t}
+kill: TestTheVerdictCountsTailscalesMessagesNotTheirPlaces
+
+mutant: the verdict counts the places a rejection is filed at, not Tailscale's messages
+file: acl_validate.go
+old: if o.rejections > 0 {
+new: if false && o.rejections > 0 {
+kill: TestTheVerdictCountsTailscalesMessagesNotTheirPlaces
+
+mutant: the reply to the invariants is read whole, whatever its size
+file: acl_validate_online.go
+old: maxReplyEntries  = 64
+new: maxReplyEntries  = 1 << 30
+kill: TestTheInvariantsReplyIsReadUpToItsCaps
+
+mutant: the lines of one entry of a reply are read whole, whatever their number
+file: acl_validate_online.go
+old: maxEntryMessages = 64
+new: maxEntryMessages = 1 << 30
+kill: TestTheInvariantsReplyIsReadUpToItsCaps
+
+mutant: an answer to the invariants that tailkeeper does not read leaves the status alone
+file: acl_invariants.go
+old: v.out.Status = worse(v.out.Status, statusUnknown)\n\t\tv.add(v.problem(kindServerMessage, severityError, "", "Tailscale's answer to the invariants
+new: v.add(v.problem(kindServerMessage, severityError, "", "Tailscale's answer to the invariants
+kill: TestAnAnswerToTheInvariantsThatIsNotRecognisedIsUnknown
+
+mutant: acl_diff caps the tests of a patch against the live policy
+file: acl_validate_patch.go
+old: n > maxCallerTests && !uncapped {
+new: n > maxCallerTests {
+kill: TestADiffIsNotCappedAtSixtyFourTestsInAnyCombination
+
+mutant: a finding of the old text that a pseudonym makes is labelled as the new side's
+file: acl_diff.go
+old: append(oldFound, relabel(oldMore, sourceFrom, sourceAgainst)...)
+new: append(oldFound, oldMore...)
+kill: TestAFindingOfTheOldTextThatAPseudonymMakesIsLabelledAgainst
+
+mutant: --fail-on change adds the classes that overlap
+file: acl_diff.go
+old: n := c.Defaults + c.TestsReduced + max(c.Semantic, c.Widening)
+new: n := c.Defaults + c.TestsReduced + c.Semantic + c.Widening
+kill: TestFailOnChangeCountsChangedEntriesNotOverlappingClasses
+
+mutant: the verdict of a status other than pass leaves out the new warnings that were cut
+file: acl_validate.go
+old: if o.Status != statusPass && o.NewWarningsOmitted > 0 {
+new: if false {
+kill: TestTheVerdictNamesNewWarningsThatAreNotListedWhateverTheStatus
+
+mutant: a proposal that is not valid does not say the invariants were not checked
+file: acl_validate_online.go
+old: v.out.Status = statusInvalid\n\t\tv.notRun(inv)
+new: v.out.Status = statusInvalid\n\t\t_ = inv
+kill: TestWhereNoTextIsSentTheInvariantsAreNamedAsNotChecked
+
+mutant: stored errors on the live policy do not say the invariants were not checked
+file: acl_validate_online.go
+old: they are in serverErrors"))\n\t\tv.notRun(inv)
+new: they are in serverErrors"))
+kill: TestWhereNoTextIsSentTheInvariantsAreNamedAsNotChecked
+
+mutant: an invariants file that is not one does not say the invariants were not checked
+file: acl_validate_online.go
+old: if len(invProblems) > 0 {\n\t\tv.out.Status = statusInvalid\n\t\tv.out.NotChecked = append(v.out.NotChecked, "invariants")
+new: if len(invProblems) > 0 {\n\t\tv.out.Status = statusInvalid
+kill: TestAnInvariantsFileThatIsNotOneIsInvalidAndNothingIsSent
+
+# What acl_diff shows of a policy is what the caller may see of it, and no number, cut or
+# position is computed on a text that holds a login the caller never saw.
+
+mutant: the view of a policy shown with personal data still masks
+file: acl_subjects_hide.go
+old: func (r *SubjectResolver) Shown(named bool) acl.Show {\n\tif r.env.ShowPersonalData() {\n\t\treturn nil\n\t}
+new: func (r *SubjectResolver) Shown(named bool) acl.Show {
+kill: TestWithPersonalDataShownADiffQuotesTheLoginAsItIs|TestACursorOfShownLoginsTellsThemApart
+
+mutant: a text is shown from a fixed prefix of it
+file: acl_subjects_hide.go
+old: if out := render(cutForHideAt(text, resolved, limit)); len(out) >= need || limit >= maxRead {
+new: if out := render(cutForHideAt(text, resolved, limit)); true {
+kill: TestWhatIsShownIsReadAsFarAsItTakesToFillTheCut
+
+mutant: a resolved login is hidden without the pseudonym users_list shows
+file: acl_subjects_hide.go
+old: mask = mk.Identifier
+new: mask = sanitize.MaskIdentifier
+kill: TestALoginWithASlashIsHiddenInEveryTextADiffTakes
+
+mutant: a marker a policy spells is not rewritten in a view
+file: acl_subjects_hide.go
+old: t = mk.Unforge(t)
+new: _ = mk
+kill: TestAForgedMarkerInAPolicyIsRewrittenInEveryStringOfADiff|TestHideUnforgesAMarkerTheTextHolds
+
+mutant: a named view masks addresses without a pseudonym
+file: acl_subjects_hide.go
+old: if named {\n\t\t\treturn mk.Emails(t)\n\t\t}
+new: if false {\n\t\t\treturn mk.Emails(t)\n\t\t}
+kill: TestAForgedMarkerInAPolicyIsRewrittenInEveryStringOfADiff
+
+mutant: the old side of a comparison is always shown with pseudonyms
+file: acl_diff.go
+old: OldShow: nv.res.Shown(!(in.Operator && in.Against != "")),
+new: OldShow: nv.res.Shown(true),
+kill: TestAnOperatorsFileOnEachSideIsHiddenInEveryField
+
+mutant: the new side of a comparison is always shown with pseudonyms
+file: acl_diff.go
+old: NewShow: nv.res.Shown(!(in.Operator && in.Policy != "")),
+new: NewShow: nv.res.Shown(true),
+kill: TestAnOperatorsTextOnTheNewSideIsHiddenInEveryField
+
+mutant: the cursor is not keyed with the privacy key
+file: acl_diff.go
+old: opts.Seal = env.Privacy.Digest
+new: opts.Seal = nil
+kill: TestAKeyedCursorEqualsNeitherUnkeyedDigest
+
+mutant: an error of a comparison leaves without the reverse map
+file: acl_diff.go
+old: err = nv.res.HideError(err)
+new: err = err
+kill: TestAnErrorOfADiffAfterAUserWasNamedLeavesNoLogin
+
+mutant: a side lists findings past what they cost
+file: acl_diff.go
+old: keep == maxSideFindings || cost > sideFindingsCost
+new: keep == maxSideFindings || cost > sideFindingsCost*1000
+kill: TestADiffResultStaysUnderTheCharactersItDeclares
+
+mutant: a finding costs only its fixed share
+file: acl_diff.go
+old: cost += 200 + acl.DisplayCost(p.Message) + acl.DisplayCost(p.Pointer)
+new: cost += 200 + 0*len(p.Message)
+kill: TestADiffResultStaysUnderTheCharactersItDeclares
+
+mutant: a position in the live policy keeps its column
+file: acl_validate_patch.go
+old: case sourceLive:\n\t\treturn line, 0
+new: case sourceLive:\n\t\treturn line, col
+kill: TestAColumnInTheLivePolicyIsLeftOutAndItsLineIsKept
+
+mutant: a position in a patch is not mapped back to the caller's patch
+file: acl_validate.go
+old: p.Line, p.Column = v.patchPos.back(e.Line, e.Column)
+new: p.Line, p.Column = e.Line, e.Column
+kill: TestAPatchProblemIsPlacedInTheCallersOwnPatch
+
+mutant: a position in a proposal is not mapped back to the caller's text
+file: acl_validate.go
+old: p.Line, p.Column = v.callerPos(source, e.Line, e.Column)
+new: p.Line, p.Column = e.Line, e.Column
+kill: TestAColumnInAnUnreadableLivePolicyIsLeftOut
+
+mutant: the server's position for a patch stays in the message
+file: acl_problems.go
+old: base.Message = withoutPosition(base.Message)
+new: base.Message = base.Message
+kill: TestAServerPositionForAPatchIsLeftOut
+
+mutant: the text with the logins in it is not held to the size the engine reads
+file: acl_subjects_subst.go
+old: if len(text)+len(found)*maxLoginSize > acl.MaxBytes {
+new: if false {
+kill: TestTheSizeLimitTellsNothingOfTheLengthOfALogin
+
+mutant: a login takes no room in the size check
+file: acl_subjects_subst.go
+old: const maxLoginSize = 320
+new: const maxLoginSize = 1
+kill: TestTheSizeLimitTellsNothingOfTheLengthOfALogin
+
+mutant: the names of unknown sections are cut before they are shown
+file: acl_validate.go
+old: for _, name := range d.UnknownSectionsShown() {
+new: for _, name := range d.UnknownSections() {
+kill: TestASectionNamedByALongLoginShowsNothingOfIt
+
+mutant: the verdict of a live policy with stored errors says Tailscale refused the text
+file: acl_validate.go
+old: if !o.ServerChecked {\n\t\t\t// The live policy was stored with errors, and the call stopped there: nothing was sent.
+new: if false {\n\t\t\t// The live policy was stored with errors, and the call stopped there: nothing was sent.
+kill: TestTheVerdictCountsTailscalesMessagesNotTheirPlaces
+
+mutant: the refusal of a test operation offers copy
+file: acl_validate.go
+old: use add, replace, remove or move
+new: use add, replace, remove, move or copy
+kill: TestTheRefusalOfATestOperationOffersOnlyOperationsThatApply
+
+mutant: the member name of a test operation is read in one case only
+file: acl_validate.go
+old: if !strings.EqualFold(name.String(), "op") {
+new: if name.String() != "op" {
+kill: TestAnMCPPatchMayNotHoldATestOperation
+
+mutant: the re-check of the live policy runs past the deadline of the call
+file: acl_validate_online.go
+old: stamp, err := c.LiveStamp(call.Context())
+new: stamp, err := c.LiveStamp(ctx)
+kill: TestTheRecheckOfTheLivePolicyEndsAtTheDeadlineOfTheCall
+
+# A cut is made after masking, never on the real text: the read of Hide stops where the work
+# must, and the client keeps the message of an error whole.
+
+mutant: Hide reads a text that masks to almost nothing to its end
+file: acl_subjects_hide.go
+old: len(out) >= need || limit >= maxRead {
+new: len(out) >= need {
+kill: TestHideStopsReadingATextThatMasksToAlmostNothing
+
+mutant: Hide stops reading at once, whatever the masked form comes to
+file: acl_subjects_hide.go
+old: len(out) >= need || limit >= maxRead {
+new: len(out) >= need || limit >= firstRead {
+kill: TestHideShowsTheSameWhateverTheLengthOfTheLoginsInTheText|TestAMessageThatEchoesTheMembersSentShowsTheSameWhateverTheLengthOfTheirLogins

@@ -1,0 +1,12 @@
+go test fuzz v1
+string("v")
+string("c")
+string("error")
+string("from")
+string("p\n::error::x.hujson")
+string("")
+string("m")
+int(4)
+int(5)
+bool(false)
+uint8(2)

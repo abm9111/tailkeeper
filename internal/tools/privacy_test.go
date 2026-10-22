@@ -36,7 +36,7 @@ func TestMaskedValuesCarryOneStablePseudonymAcrossTools(t *testing.T) {
 	f.JSON("GET", tailnetPath+"/devices", 200, `{"devices":[{"id":"1","nodeId":"nAAA1CNTRL","name":"a.example.ts.net","hostname":"a","user":`+amy+`}]}`)
 	f.JSON("GET", tailnetPath+"/logging/configuration", 200, `{"logs":[{"eventTime":"2026-10-10T10:00:00Z","origin":"ADMIN_CONSOLE",
 		"action":"UPDATE","actor":{"id":"u1","loginName":"AMY@example.com","displayName":"Amy Lee"},"target":{"id":"t1","name":"amy@example.com"}}]}`)
-	f.Raw("GET", tailnetPath+"/acl", 200, "{\n  \"groups\": {\"group:a\": [\"amy@example.com\"]},\n}\n", map[string]string{"Content-Type": "application/hujson"})
+	servePolicy(f, "{\n  \"groups\": {\"group:a\": [\"amy@example.com\"]},\n}\n", "")
 	f.JSON("GET", tailnetPath+"/settings", 200, `{"aclsExternallyManagedOn":false}`)
 	want := privacy.Suffix(k.Pseudonym("amy@example.com"))
 	for tool, n := range map[string]int{"devices_list": 1, "audit_log": 2, "acl_get": 1} {
@@ -707,7 +707,7 @@ func TestACLGetKeyedReadsMaskedForAPolicyThatOnlyHoldsAForgedMarker(t *testing.T
 	f, reg, env := apiEnv(t)
 	kenv, _ := keyed(t, env)
 	policy := "{\n  \"note\": \"[p:bbbbbbbbbb]\"\n}\n"
-	f.Raw("GET", tailnetPath+"/acl", 200, policy, map[string]string{"Content-Type": "application/hujson"})
+	servePolicy(f, policy, "")
 	f.JSON("GET", tailnetPath+"/settings", 200, `{}`)
 	var out struct {
 		Policy string `json:"policy"`
@@ -736,7 +736,7 @@ func TestACLGetKeyedNamesEveryAddressAndForgesNoMarker(t *testing.T) {
 	policy := "// reviewed by a…@example.com [p:aaaaaaaaaa] and bob@example.com\n" +
 		"{\n  \"groups\": {\"group:eng\": [\"amy@example.com\", \"bo@example.com\"]},\n" +
 		"  \"note\": \"[p:bbbbbbbbbb]\"\n}\n"
-	f.Raw("GET", tailnetPath+"/acl", 200, policy, map[string]string{"Content-Type": "application/hujson"})
+	servePolicy(f, policy, "")
 	f.JSON("GET", tailnetPath+"/settings", 200, `{}`)
 	var out struct {
 		Policy string `json:"policy"`

@@ -1,0 +1,484 @@
+{
+  "status": "unresolved",
+  "serverChecked": true,
+  "errors": [
+    {
+      "kind": "test_unevaluable",
+      "severity": "error",
+      "source": "",
+      "message": "user or host is invalid: tag:t00 not found",
+      "fromTailscale": true
+    },
+    {
+      "kind": "test_unevaluable",
+      "severity": "error",
+      "source": "",
+      "message": "user or host is invalid: tag:t01 not found",
+      "fromTailscale": true
+    },
+    {
+      "kind": "test_unevaluable",
+      "severity": "error",
+      "source": "",
+      "message": "user or host is invalid: tag:t02 not found",
+      "fromTailscale": true
+    },
+    {
+      "kind": "test_unevaluable",
+      "severity": "error",
+      "source": "",
+      "message": "user or host is invalid: tag:t03 not found",
+      "fromTailscale": true
+    },
+    {
+      "kind": "test_unevaluable",
+      "severity": "error",
+      "source": "",
+      "message": "user or host is invalid: tag:t04 not found",
+      "fromTailscale": true
+    },
+    {
+      "kind": "test_unevaluable",
+      "severity": "error",
+      "source": "",
+      "message": "user or host is invalid: tag:t05 not found",
+      "fromTailscale": true
+    },
+    {
+      "kind": "test_unevaluable",
+      "severity": "error",
+      "source": "",
+      "message": "user or host is invalid: tag:t06 not found",
+      "fromTailscale": true
+    },
+    {
+      "kind": "test_unevaluable",
+      "severity": "error",
+      "source": "",
+      "message": "user or host is invalid: tag:t07 not found",
+      "fromTailscale": true
+    },
+    {
+      "kind": "test_unevaluable",
+      "severity": "error",
+      "source": "",
+      "message": "user or host is invalid: tag:t08 not found",
+      "fromTailscale": true
+    },
+    {
+      "kind": "test_unevaluable",
+      "severity": "error",
+      "source": "",
+      "message": "user or host is invalid: tag:t09 not found",
+      "fromTailscale": true
+    },
+    {
+      "kind": "test_unevaluable",
+      "severity": "error",
+      "source": "",
+      "message": "user or host is invalid: tag:t10 not found",
+      "fromTailscale": true
+    },
+    {
+      "kind": "test_unevaluable",
+      "severity": "error",
+      "source": "",
+      "message": "user or host is invalid: tag:t11 not found",
+      "fromTailscale": true
+    },
+    {
+      "kind": "test_unevaluable",
+      "severity": "error",
+      "source": "",
+      "message": "user or host is invalid: tag:t12 not found",
+      "fromTailscale": true
+    },
+    {
+      "kind": "test_unevaluable",
+      "severity": "error",
+      "source": "",
+      "message": "user or host is invalid: tag:t13 not found",
+      "fromTailscale": true
+    },
+    {
+      "kind": "test_unevaluable",
+      "severity": "error",
+      "source": "",
+      "message": "user or host is invalid: tag:t14 not found",
+      "fromTailscale": true
+    },
+    {
+      "kind": "test_unevaluable",
+      "severity": "error",
+      "source": "",
+      "message": "user or host is invalid: tag:t15 not found",
+      "fromTailscale": true
+    },
+    {
+      "kind": "test_unevaluable",
+      "severity": "error",
+      "source": "",
+      "message": "user or host is invalid: tag:t16 not found",
+      "fromTailscale": true
+    },
+    {
+      "kind": "test_unevaluable",
+      "severity": "error",
+      "source": "",
+      "message": "user or host is invalid: tag:t17 not found",
+      "fromTailscale": true
+    },
+    {
+      "kind": "test_unevaluable",
+      "severity": "error",
+      "source": "",
+      "message": "user or host is invalid: tag:t18 not found",
+      "fromTailscale": true
+    },
+    {
+      "kind": "test_unevaluable",
+      "severity": "error",
+      "source": "",
+      "message": "user or host is invalid: tag:t19 not found",
+      "fromTailscale": true
+    },
+    {
+      "kind": "test_unevaluable",
+      "severity": "error",
+      "source": "",
+      "message": "user or host is invalid: tag:t20 not found",
+      "fromTailscale": true
+    },
+    {
+      "kind": "test_unevaluable",
+      "severity": "error",
+      "source": "",
+      "message": "user or host is invalid: tag:t21 not found",
+      "fromTailscale": true
+    },
+    {
+      "kind": "test_unevaluable",
+      "severity": "error",
+      "source": "",
+      "message": "user or host is invalid: tag:t22 not found",
+      "fromTailscale": true
+    },
+    {
+      "kind": "test_unevaluable",
+      "severity": "error",
+      "source": "",
+      "message": "user or host is invalid: tag:t23 not found",
+      "fromTailscale": true
+    },
+    {
+      "kind": "test_unevaluable",
+      "severity": "error",
+      "source": "",
+      "message": "user or host is invalid: tag:t24 not found",
+      "fromTailscale": true
+    },
+    {
+      "kind": "test_unevaluable",
+      "severity": "error",
+      "source": "",
+      "message": "user or host is invalid: tag:t25 not found",
+      "fromTailscale": true
+    },
+    {
+      "kind": "test_unevaluable",
+      "severity": "error",
+      "source": "",
+      "message": "user or host is invalid: tag:t26 not found",
+      "fromTailscale": true
+    },
+    {
+      "kind": "test_unevaluable",
+      "severity": "error",
+      "source": "",
+      "message": "user or host is invalid: tag:t27 not found",
+      "fromTailscale": true
+    },
+    {
+      "kind": "test_unevaluable",
+      "severity": "error",
+      "source": "",
+      "message": "user or host is invalid: tag:t28 not found",
+      "fromTailscale": true
+    },
+    {
+      "kind": "test_unevaluable",
+      "severity": "error",
+      "source": "",
+      "message": "user or host is invalid: tag:t29 not found",
+      "fromTailscale": true
+    },
+    {
+      "kind": "test_unevaluable",
+      "severity": "error",
+      "source": "",
+      "message": "user or host is invalid: tag:t30 not found",
+      "fromTailscale": true
+    },
+    {
+      "kind": "test_unevaluable",
+      "severity": "error",
+      "source": "",
+      "message": "user or host is invalid: tag:t31 not found",
+      "fromTailscale": true
+    },
+    {
+      "kind": "test_unevaluable",
+      "severity": "error",
+      "source": "",
+      "message": "user or host is invalid: tag:t32 not found",
+      "fromTailscale": true
+    },
+    {
+      "kind": "test_unevaluable",
+      "severity": "error",
+      "source": "",
+      "message": "user or host is invalid: tag:t33 not found",
+      "fromTailscale": true
+    },
+    {
+      "kind": "test_unevaluable",
+      "severity": "error",
+      "source": "",
+      "message": "user or host is invalid: tag:t34 not found",
+      "fromTailscale": true
+    },
+    {
+      "kind": "test_unevaluable",
+      "severity": "error",
+      "source": "",
+      "message": "user or host is invalid: tag:t35 not found",
+      "fromTailscale": true
+    },
+    {
+      "kind": "test_unevaluable",
+      "severity": "error",
+      "source": "",
+      "message": "user or host is invalid: tag:t36 not found",
+      "fromTailscale": true
+    },
+    {
+      "kind": "test_unevaluable",
+      "severity": "error",
+      "source": "",
+      "message": "user or host is invalid: tag:t37 not found",
+      "fromTailscale": true
+    },
+    {
+      "kind": "test_unevaluable",
+      "severity": "error",
+      "source": "",
+      "message": "user or host is invalid: tag:t38 not found",
+      "fromTailscale": true
+    },
+    {
+      "kind": "test_unevaluable",
+      "severity": "error",
+      "source": "",
+      "message": "user or host is invalid: tag:t39 not found",
+      "fromTailscale": true
+    },
+    {
+      "kind": "test_unevaluable",
+      "severity": "error",
+      "source": "",
+      "message": "user or host is invalid: tag:t40 not found",
+      "fromTailscale": true
+    },
+    {
+      "kind": "test_unevaluable",
+      "severity": "error",
+      "source": "",
+      "message": "user or host is invalid: tag:t41 not found",
+      "fromTailscale": true
+    },
+    {
+      "kind": "test_unevaluable",
+      "severity": "error",
+      "source": "",
+      "message": "user or host is invalid: tag:t42 not found",
+      "fromTailscale": true
+    },
+    {
+      "kind": "test_unevaluable",
+      "severity": "error",
+      "source": "",
+      "message": "user or host is invalid: tag:t43 not found",
+      "fromTailscale": true
+    },
+    {
+      "kind": "test_unevaluable",
+      "severity": "error",
+      "source": "",
+      "message": "user or host is invalid: tag:t44 not found",
+      "fromTailscale": true
+    },
+    {
+      "kind": "test_unevaluable",
+      "severity": "error",
+      "source": "",
+      "message": "user or host is invalid: tag:t45 not found",
+      "fromTailscale": true
+    },
+    {
+      "kind": "test_unevaluable",
+      "severity": "error",
+      "source": "",
+      "message": "user or host is invalid: tag:t46 not found",
+      "fromTailscale": true
+    },
+    {
+      "kind": "test_unevaluable",
+      "severity": "error",
+      "source": "",
+      "message": "user or host is invalid: tag:t47 not found",
+      "fromTailscale": true
+    },
+    {
+      "kind": "test_unevaluable",
+      "severity": "error",
+      "source": "",
+      "message": "user or host is invalid: tag:t48 not found",
+      "fromTailscale": true
+    },
+    {
+      "kind": "test_unevaluable",
+      "severity": "error",
+      "source": "",
+      "message": "user or host is invalid: tag:t49 not found",
+      "fromTailscale": true
+    },
+    {
+      "kind": "test_unevaluable",
+      "severity": "error",
+      "source": "",
+      "message": "user or host is invalid: tag:t50 not found",
+      "fromTailscale": true
+    },
+    {
+      "kind": "test_unevaluable",
+      "severity": "error",
+      "source": "",
+      "message": "user or host is invalid: tag:t51 not found",
+      "fromTailscale": true
+    },
+    {
+      "kind": "test_unevaluable",
+      "severity": "error",
+      "source": "",
+      "message": "user or host is invalid: tag:t52 not found",
+      "fromTailscale": true
+    },
+    {
+      "kind": "test_unevaluable",
+      "severity": "error",
+      "source": "",
+      "message": "user or host is invalid: tag:t53 not found",
+      "fromTailscale": true
+    },
+    {
+      "kind": "test_unevaluable",
+      "severity": "error",
+      "source": "",
+      "message": "user or host is invalid: tag:t54 not found",
+      "fromTailscale": true
+    },
+    {
+      "kind": "test_unevaluable",
+      "severity": "error",
+      "source": "",
+      "message": "user or host is invalid: tag:t55 not found",
+      "fromTailscale": true
+    },
+    {
+      "kind": "test_unevaluable",
+      "severity": "error",
+      "source": "",
+      "message": "user or host is invalid: tag:t56 not found",
+      "fromTailscale": true
+    },
+    {
+      "kind": "test_unevaluable",
+      "severity": "error",
+      "source": "",
+      "message": "user or host is invalid: tag:t57 not found",
+      "fromTailscale": true
+    },
+    {
+      "kind": "test_unevaluable",
+      "severity": "error",
+      "source": "",
+      "message": "user or host is invalid: tag:t58 not found",
+      "fromTailscale": true
+    },
+    {
+      "kind": "test_unevaluable",
+      "severity": "error",
+      "source": "",
+      "message": "user or host is invalid: tag:t59 not found",
+      "fromTailscale": true
+    },
+    {
+      "kind": "test_unevaluable",
+      "severity": "error",
+      "source": "",
+      "message": "user or host is invalid: tag:t60 not found",
+      "fromTailscale": true
+    },
+    {
+      "kind": "test_unevaluable",
+      "severity": "error",
+      "source": "",
+      "message": "user or host is invalid: tag:t61 not found",
+      "fromTailscale": true
+    },
+    {
+      "kind": "test_unevaluable",
+      "severity": "error",
+      "source": "",
+      "message": "user or host is invalid: tag:t62 not found",
+      "fromTailscale": true
+    },
+    {
+      "kind": "test_unevaluable",
+      "severity": "error",
+      "source": "",
+      "message": "user or host is invalid: tag:t63 not found",
+      "fromTailscale": true
+    }
+  ],
+  "omitted": 1,
+  "testsBefore": 0,
+  "testsAfter": 2,
+  "sshTestsBefore": 0,
+  "sshTestsAfter": 0,
+  "changes": {
+    "defaults": 1,
+    "testsReduced": 0,
+    "widening": 0,
+    "tailscaleWritten": 0,
+    "semantic": 6,
+    "commentOnly": 1,
+    "formatOnly": 1
+  },
+  "invariantsApplied": 0,
+  "invariantsSignature": "none",
+  "notChecked": [
+    "access_change",
+    "app_capabilities",
+    "downgrades",
+    "lockout",
+    "ssh_lockout",
+    "via"
+  ],
+  "dependsOnLiveState": true,
+  "policySha256": "ca3d163bab055381827226140568f3bef7eaac187cebd76878e0b63e9e442356",
+  "liveChanged": false,
+  "identicalToLive": false,
+  "checkedAt": "2026-10-10T12:00:00Z",
+  "externallyManaged": "false"
+}

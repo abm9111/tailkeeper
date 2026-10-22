@@ -3,7 +3,9 @@ package mcpserver
 import (
 	"encoding/json"
 	"fmt"
+	"os"
 	"sort"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -18,7 +20,7 @@ import (
 // that raises the total raises this number in the same commit, and says why in
 // the CHANGELOG. It is tight on purpose: the test also fails when the total falls
 // more than 1,024 bytes below it, so the number follows the code down as well.
-const toolListBudget = 65536
+const toolListBudget = 90404
 
 const budgetSlack = 1024
 
@@ -76,8 +78,88 @@ func budgetProblem(total, budget int, sizes map[string]int) string {
 
 func TestToolListStaysWithinItsByteBudget(t *testing.T) {
 	total, sizes := definitionSizes(t)
+	t.Logf("the tool definitions are %d bytes; the budget is %d", total, toolListBudget)
 	if p := budgetProblem(total, toolListBudget, sizes); p != "" {
 		t.Error(p)
+	}
+}
+
+// thousands writes n as the CHANGELOG writes a number of this size: 88,772.
+func thousands(n int) string {
+	s := strconv.Itoa(n)
+	for i := len(s) - 3; i > 0; i -= 3 {
+		s = s[:i] + "," + s[i:]
+	}
+	return s
+}
+
+// topSection is the first section of the CHANGELOG, the one a change in progress writes to:
+// the lines after the first heading of the second level and before the next. A text with no
+// such heading is taken whole.
+func topSection(changelog string) []string {
+	var section []string
+	started := false
+	for _, line := range strings.Split(changelog, "\n") {
+		if strings.HasPrefix(line, "## ") {
+			if started {
+				break
+			}
+			started = true
+			continue
+		}
+		section = append(section, line)
+	}
+	if !started {
+		return strings.Split(changelog, "\n")
+	}
+	return section
+}
+
+// budgetReasonProblem says whether some line of the top section of the CHANGELOG names
+// toolListBudget and its value: a change that raises the budget says why there, and the number
+// follows the code in the same bullet, so a budget the CHANGELOG does not give has no reason on
+// record. A line of an older release does not count: a later raise to a number an old line
+// holds would otherwise need no new reason.
+func budgetReasonProblem(changelog string, budget int) string {
+	for _, line := range topSection(changelog) {
+		if strings.Contains(line, "`toolListBudget`") && strings.Contains(line, thousands(budget)) {
+			return ""
+		}
+	}
+	return fmt.Sprintf("no line of CHANGELOG.md names `toolListBudget` and its value, %s: a change that raises the budget says why there, in the same commit", thousands(budget))
+}
+
+func TestTheChangelogGivesTheReasonForTheBudget(t *testing.T) {
+	b, err := os.ReadFile("../../CHANGELOG.md")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if p := budgetReasonProblem(string(b), toolListBudget); p != "" {
+		t.Error(p)
+	}
+	// The check can fail: the budget moved without the bullet, the name missing, and the
+	// number written without its comma.
+	for name, c := range map[string]struct {
+		text   string
+		budget int
+	}{
+		"a budget the bullet does not give": {"- The byte budget (`toolListBudget`) rises from 65,536 to 88,772 bytes.\n", 88773},
+		"a line of an older release":        {"## 0.6.0 — unreleased\n\n- Something else.\n\n## 0.5.0 — 2026-10-16\n\n- `toolListBudget` is 88,772.\n", 88772},
+		"a bullet that names no budget":     {"- The tool list is now 88,772 bytes.\n", 88772},
+		"a number without its comma":        {"- `toolListBudget` is 88772.\n", 88772},
+	} {
+		if p := budgetReasonProblem(c.text, c.budget); !strings.Contains(p, "names `toolListBudget` and its value, "+thousands(c.budget)) {
+			t.Errorf("%s: %q", name, p)
+		}
+	}
+	if p := budgetReasonProblem("- The byte budget (`toolListBudget`) rises from 65,536 to 88,772 bytes.\n", 88772); p != "" {
+		t.Errorf("a bullet that gives the value: %q", p)
+	}
+	if p := budgetReasonProblem("# Changelog\n\n## 0.6.0 — unreleased\n\n- `toolListBudget` is 88,772.\n\n## 0.5.0 — 2026-10-16\n", 88772); p != "" {
+		t.Errorf("a bullet of the top section that gives the value: %q", p)
+	}
+	if got := thousands(88772) + " " + thousands(65536) + " " + thousands(999) + " " + thousands(1000) + " " + thousands(1234567); got != "88,772 65,536 999 1,000 1,234,567" {
+		t.Errorf("thousands: %q", got)
 	}
 }
 

@@ -1,0 +1,9 @@
+UNKNOWN · the answer could not be established; this is not a pass
+not checked: access_change, app_capabilities, downgrades, lockout, ssh_lockout, via
+changes
+  defaults           1
+  tests reduced      0
+  widening           0
+  tailscale-written  0  (expected)
+  semantic           6
+error: the live policy changed while it was being checked, so the answer is about a policy that is no longer the live one

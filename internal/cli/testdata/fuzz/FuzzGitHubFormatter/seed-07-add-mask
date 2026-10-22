@@ -1,0 +1,12 @@
+go test fuzz v1
+string("::add-mask::value")
+string("c")
+string("error")
+string("from")
+string("p.hujson")
+string("")
+string("::add-mask::value")
+int(1)
+int(1)
+bool(true)
+uint8(1)

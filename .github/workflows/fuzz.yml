@@ -59,6 +59,8 @@ jobs:
             min: 3
           - pkg: ./internal/api
             min: 1
+          - pkg: ./internal/cli
+            min: 1
           - pkg: ./internal/guard
             min: 1
           - pkg: ./internal/sanitize

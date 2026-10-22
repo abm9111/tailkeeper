@@ -391,7 +391,13 @@ const normalFormVersion = "tailkeeper-normal-form 1"
 // splitting, so a keyed digest of them says whether the policy now means what was
 // validated. The state of a section is written; whether it was spelled null, and what case
 // its name had, is not.
-func (n *NormalForm) WriteTo(w io.Writer) (int64, error) {
+func (n *NormalForm) WriteTo(w io.Writer) (int64, error) { return n.writeShown(w, nil) }
+
+// writeShown is WriteTo for a normal form of a policy that a caller sees through show: each
+// text field is written as the caller sees it (a login masked, a marker it must not forge
+// rewritten), so that the bytes tell nothing the shown policy does not. A nil show writes the
+// fields as they are.
+func (n *NormalForm) writeShown(w io.Writer, show Show) (int64, error) {
 	cw := &countWriter{w: w}
 	line := func(fields ...string) {
 		if cw.err != nil {
@@ -400,6 +406,9 @@ func (n *NormalForm) WriteTo(w io.Writer) (int64, error) {
 		for i, f := range fields {
 			if i > 0 {
 				_, _ = cw.Write([]byte{'\t'})
+			}
+			if show != nil {
+				f = show(f, wholeText)
 			}
 			_, _ = cw.Write(appendJSONString(nil, f))
 		}

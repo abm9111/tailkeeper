@@ -1,0 +1,38 @@
+{
+  "status": "changed",
+  "semanticallyEqual": false,
+  "old": {
+    "source": "file",
+    "policySha256": "fd3f8f0c86d3d542fc7878413b10b9df7ce96bf1715515d4399091e3948c5ca2"
+  },
+  "new": {
+    "source": "file",
+    "policySha256": "016708b620691a4af6dd668f554edd4257eada285bce60583fda0f01a46f31f7"
+  },
+  "counts": {
+    "defaults": 0,
+    "testsReduced": 0,
+    "widening": 1,
+    "tailscaleWritten": 1,
+    "semantic": 2,
+    "commentOnly": 0,
+    "formatOnly": 1
+  },
+  "section": "tagOwners",
+  "matched": 0,
+  "truncated": false,
+  "normalFormLimits": [
+    "A rule re-split along both its sources and its ports at once is not reduced to the same atoms, so it can read as changed when the access is the same. That is the safe direction."
+  ],
+  "notChecked": [
+    "access_change",
+    "app_capabilities",
+    "downgrades",
+    "lockout",
+    "ssh_lockout",
+    "via"
+  ],
+  "tailscaleWrittenAsOf": "2026-10-17",
+  "tailscaleWrittenIgnored": false,
+  "checkedAt": "2026-10-10T12:00:00Z"
+}

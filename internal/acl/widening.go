@@ -59,10 +59,10 @@ func (d *comparer) wideSelectors(n int) error {
 			}
 			for _, w := range wideNames {
 				if a.src.wide&w.bit != 0 && srcOf[a.dst]&w.bit == 0 {
-					d.wideAtom("src", w.name, a, "a rule with "+w.name+" in src is new for "+capText(a.dst))
+					d.wideAtom("src", w.name, a, wideSrcNote(w.name))
 				}
 				if wideBit(a.dst) == w.bit && dstOf[a.src.id]&w.bit == 0 {
-					d.wideAtom("dst", w.name, a, "a rule with "+w.name+" in dst is new for these sources")
+					d.wideAtom("dst", w.name, a, wideDstNote(w.name))
 				}
 			}
 		}
@@ -87,11 +87,26 @@ func (d *comparer) oldWide() (srcOf, dstOf map[string]uint8, err error) {
 	return srcOf, dstOf, nil
 }
 
+// wideSrcNote and wideDstNote are the sentences that qualify a wide selector that is new. They
+// name the selector, which is one of wideNames, and never the destination or the sources it is
+// new for: those are in the change's fields.
+func wideSrcNote(name string) string {
+	return "a rule with " + name + " in src is new for the destination in dst"
+}
+func wideDstNote(name string) string {
+	return "a rule with " + name + " in dst is new for these sources"
+}
+
+// wideAtom raises the widening of one new atom. For a wide source the destination it is new for
+// is the second field, so a reader has it without the note quoting the policy.
 func (d *comparer) wideAtom(field, name string, a *atom, note string) {
 	key := field + " " + name
+	fields := []FieldDelta{{Field: field, Added: []string{name}}}
+	if field == "src" {
+		fields = append(fields, FieldDelta{Field: "dst", Added: []string{a.dst}})
+	}
 	d.emit(rawChange{class: cWidening, op: oAdded, kind: kWide, sort: key, na: []*atom{a},
-		x: &rawExtra{sec: "acls+grants", key: key, atomTexts: true, note: note,
-			fields: []FieldDelta{{Field: field, Added: []string{name}}}}})
+		x: &rawExtra{sec: "acls+grants", key: key, atomTexts: true, note: note, fields: fields}})
 }
 
 // isWildSelector reports a selector that stands for many others: everyone, an autogroup, a
@@ -229,9 +244,9 @@ func (d *comparer) postureRemoved(n int) error {
 			}
 			if overlap || portsOverlap(a.ports, o.ports) {
 				d.emit(rawChange{class: cWidening, op: oChanged, kind: kWide, sort: a.rest, oa: []*atom{o}, na: []*atom{a},
-					x: &rawExtra{sec: "acls+grants", key: "srcPosture removed: " + atomKey(a), atomTexts: true,
-						note:   "an atom with fewer or no posture requirements is new where an old atom with the same destination required a posture",
-						fields: []FieldDelta{{Field: "srcPosture", Removed: []string{capText(o.posture)}}}}})
+					x: &rawExtra{sec: "acls+grants", key: "srcPosture removed: ", keyAtom: a, atomTexts: true,
+						note:   postureRemovedNote,
+						fields: []FieldDelta{{Field: "srcPosture", Removed: []string{o.posture}}}}})
 				break
 			}
 		}
@@ -247,8 +262,8 @@ func (d *comparer) defaultPostureRemoved() {
 	if o.state == StateNonEmpty && !o.whole && (n.state != StateNonEmpty || n.whole) {
 		d.emit(rawChange{class: cWidening, op: oRemoved, kind: kWide, rank: pos, sort: "defaultSrcPosture", oe: &o.entries[0],
 			x: &rawExtra{sec: "defaultSrcPosture", key: "defaultSrcPosture", oldText: o.entries[0].val, newText: "[]",
-				note:   "the default source posture is gone: rules without a srcPosture of their own no longer require it",
-				fields: []FieldDelta{{Field: "defaultSrcPosture", Removed: []string{capText(o.entries[0].val)}}}}})
+				note:   defaultPostureNote,
+				fields: []FieldDelta{{Field: "defaultSrcPosture", Removed: []string{o.entries[0].val}}}}})
 	}
 }
 
@@ -372,7 +387,7 @@ func (d *comparer) sshWidening(n int) error {
 		if accepting != nil && !covered {
 			d.emit(rawChange{class: cWidening, op: oChanged, kind: kWide, rank: pos, sort: "ssh check to accept", ne: accepting,
 				x: &rawExtra{sec: "ssh", key: "ssh check to accept", oldText: "check", newText: "accept",
-					note:   "a check rule went away, an accepting rule that can match the same connections is in the new policy, and no check rule certainly covers them",
+					note:   sshCheckToAcceptNote,
 					fields: []FieldDelta{{Field: "action", Added: []string{"accept"}, Removed: []string{"check"}}}}})
 		}
 	}
@@ -394,18 +409,56 @@ func (d *comparer) sshWidening(n int) error {
 	}
 	for _, e := range came {
 		if e.root && (e.sshSrc == nil || e.sshDst == nil || !granted[e.sshSrc.id+e.sshDst.id]) {
-			root(e, "a rule that lets someone in as root is new, and no old rule did so for these sources and destinations")
+			root(e, rootNewNote)
 		}
 	}
 	for _, e := range repeated {
-		root(e, "a rule that lets someone in as root appears more often than before")
+		root(e, rootRepeatedNote)
 	}
 	return nil
+}
+
+// The sentences that qualify a widening besides the wide selectors'.
+const (
+	postureRemovedNote   = "an atom with fewer or no posture requirements is new where an old atom with the same destination required a posture"
+	defaultPostureNote   = "the default source posture is gone: rules without a srcPosture of their own no longer require it"
+	sshCheckToAcceptNote = "a check rule went away, an accepting rule that can match the same connections is in the new policy, and no check rule certainly covers them"
+	rootNewNote          = "a rule that lets someone in as root is new, and no old rule did so for these sources and destinations"
+	rootRepeatedNote     = "a rule that lets someone in as root appears more often than before"
+)
+
+// sshWideNote qualifies a wide selector that is new in an SSH rule. other names what the
+// selector is new for.
+func sshWideNote(field, name, other string) string {
+	return "an SSH rule with " + name + " in " + field + " is new for these " + other
+}
+
+// ChangeNotes is every sentence a Change's Note can be: a closed list of tailkeeper's own
+// words. A note qualifies a change and is never built from a policy, so a caller that treats
+// the field as fixed text can hold each result to this list.
+func ChangeNotes() []string {
+	notes := []string{wholeMismatchNote, defaultsNote, tagOwnersNote, postureRemovedNote, defaultPostureNote,
+		sshCheckToAcceptNote, rootNewNote, rootRepeatedNote}
+	for _, name := range []string{"acls", "grants"} {
+		notes = append(notes, accessSectionNote(name, true), accessSectionNote(name, false))
+	}
+	states := []State{StateAbsent, StateEmpty, StateNonEmpty}
+	for _, from := range states {
+		for _, to := range states {
+			notes = append(notes, sshNote(from, to))
+		}
+	}
+	for _, w := range wideNames {
+		notes = append(notes, wideSrcNote(w.name), wideDstNote(w.name),
+			sshWideNote("src", w.name, "destinations and users"), sshWideNote("dst", w.name, "sources"))
+	}
+	slices.Sort(notes)
+	return slices.Compact(notes)
 }
 
 func (d *comparer) sshWide(field, name, other string, e *nfEntry, pos int) {
 	key := "ssh " + field + " " + name
 	d.emit(rawChange{class: cWidening, op: oAdded, kind: kWide, rank: pos, sort: key, ne: e,
-		x: &rawExtra{sec: "ssh", key: key, note: "an SSH rule with " + name + " in " + field + " is new for these " + other,
+		x: &rawExtra{sec: "ssh", key: key, note: sshWideNote(field, name, other),
 			fields: []FieldDelta{{Field: field, Added: []string{name}}}}})
 }

@@ -44,6 +44,10 @@ type Doc struct {
 	findings []Finding
 	omitted  int
 	unknown  []string
+	// unknownShown are the unknown names as the caller may see them (see Show), in step with
+	// unknown.
+	unknownShown []string
+	show         Show // how a caller sees text of this policy; nil shows it as it is
 }
 
 // Parse reads a policy text. It refuses, in this order and before any call into the HuJSON
@@ -51,7 +55,13 @@ type Doc struct {
 // over 1,000 levels and more than MaxNodes values. After the parse it refuses a top level
 // that is not an object: a JSON array posted to the validate endpoint is run as tests
 // against the live policy, and would read as a pass for a proposal nobody validated.
-func Parse(ctx context.Context, src []byte) (*Doc, error) {
+func Parse(ctx context.Context, src []byte) (*Doc, error) { return ParseShown(ctx, src, nil) }
+
+// ParseShown is Parse for a policy whose text a caller may see only through show: every piece
+// of the policy that a result quotes (a key, a pointer, a text of a change) is cut after show
+// has made it what the caller sees, so that where it is cut tells nothing about the text
+// show hides. A nil show leaves the text as it is.
+func ParseShown(ctx context.Context, src []byte, show Show) (*Doc, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
@@ -59,12 +69,14 @@ func Parse(ctx context.Context, src []byte) (*Doc, error) {
 		return nil, err
 	}
 	if len(src) > MaxBytes {
-		return nil, tooComplex("the policy is %d bytes; tailkeeper reads at most %d", len(src), MaxBytes)
+		// The message does not say how long the text is: a text that stands for logins is longer than
+		// the one its caller wrote, and its length would tell how long they are.
+		return nil, tooComplex("the policy is more than the %d bytes tailkeeper reads", MaxBytes)
 	}
 	if err := checkShape(src); err != nil {
 		return nil, err
 	}
-	d := &Doc{src: bytes.Clone(src)}
+	d := &Doc{src: bytes.Clone(src), show: show}
 	root, err := hujson.Parse(d.src)
 	if err != nil {
 		return nil, syntaxError(err)

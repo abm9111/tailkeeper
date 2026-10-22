@@ -164,11 +164,7 @@ func TestAgainstLiveLeavesTheFieldEmpty(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(dir, "live"), []byte("{}"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	wd, _ := os.Getwd()
-	if err := os.Chdir(dir); err != nil {
-		t.Fatal(err)
-	}
-	defer func() { _ = os.Chdir(wd) }()
+	t.Chdir(dir)
 	h.out.Reset()
 	if code := h.run("--json", "fixture", "check", "--against", "./live"); code != 0 || decodeFixture(t, h.out.String()).Against != "{}" {
 		t.Errorf("./live: exit %d, %s", code, h.out)

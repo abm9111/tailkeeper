@@ -1,0 +1,22 @@
+**UNKNOWN · the answer could not be established; this is not a pass**
+
+Not checked:
+
+- access\_change
+- app\_capabilities
+- downgrades
+- lockout
+- ssh\_lockout
+- via
+
+Changes:
+
+- defaults: 1
+- tests reduced: 0
+- widening: 0
+- tailscale-written: 0 (expected)
+- semantic: 6
+
+Findings:
+
+- error: the live policy changed while it was being checked, so the answer is about a policy that is no longer the live one

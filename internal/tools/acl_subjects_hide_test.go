@@ -6,7 +6,9 @@ import (
 	"net/http"
 	"strings"
 	"testing"
+	"unicode/utf8"
 
+	"github.com/abm9111/tailkeeper/internal/registry"
 	"github.com/abm9111/tailkeeper/internal/sanitize"
 	"github.com/abm9111/tailkeeper/internal/tkerr"
 	"github.com/abm9111/tailkeeper/internal/tools"
@@ -241,5 +243,131 @@ func TestHideErrorOfATypedNilIsAnInternalError(t *testing.T) {
 	e, ok := tkerr.As(r.HideError(typed))
 	if !ok || e.Code != tkerr.Internal {
 		t.Errorf("a typed nil: %v (ok %v), want internal_error", e, ok)
+	}
+}
+
+// echoLogin is a login of n bytes whose masked form is the same for every n: its first
+// character, an ellipsis and the domain.
+func echoLogin(n int) string {
+	const domain = "@example.com"
+	return "u" + strings.Repeat("x", n-1-len(domain)) + domain
+}
+
+// echoLengths are the lengths of the logins the tests below compare. The masked form of all of
+// them is one string, so equal output means the length of a login did not show.
+var echoLengths = []int{20, 60, 120, 250}
+
+// assertOneMaskedForm fails the test unless every login of the lengths is masked to one string.
+func assertOneMaskedForm(t *testing.T) string {
+	t.Helper()
+	want := sanitize.MaskIdentifier(echoLogin(echoLengths[0]))
+	for _, n := range echoLengths {
+		if got := sanitize.MaskIdentifier(echoLogin(n)); got != want || len(echoLogin(n)) != n {
+			t.Fatalf("a login of %d bytes is masked to %q (length %d), want %q: the case compares nothing", n, got, len(echoLogin(n)), want)
+		}
+	}
+	return want
+}
+
+// Two texts whose logins differ only in length give the same result: how much of a message
+// Hide shows does not depend on how long the logins in it are. The text is a list of 400
+// logins, as a server echoes the members it was sent, long enough that the masked form fills
+// what a display shows for every length.
+func TestHideShowsTheSameWhateverTheLengthOfTheLoginsInTheText(t *testing.T) {
+	masked := assertOneMaskedForm(t)
+	var first string
+	for _, n := range echoLengths {
+		login := echoLogin(n)
+		r := resolvedAll(t, login)
+		got := r.Hide("invalid members: [" + strings.Repeat(`"`+login+`", `, 400) + "]")
+		if strings.Contains(got, "xxx") {
+			t.Fatalf("a login of %d bytes shows in %.200q", n, got)
+		}
+		if shown := strings.Count(got, masked); shown < 40 {
+			t.Errorf("a login of %d bytes shows %d masked addresses, want at least 40: the case must reach the cut", n, shown)
+		}
+		if len(got) <= registry.ResultStringMax {
+			t.Errorf("a login of %d bytes gives %d bytes, so a display could not tell that it cut", n, len(got))
+		}
+		if first == "" {
+			first = got
+		} else if got != first {
+			t.Errorf("logins of %d and %d bytes give different results:\n%.300q\n%.300q", echoLengths[0], n, first, got)
+		}
+	}
+}
+
+// The result of Hide ends at a character, never inside one: a multi-byte letter that the cut
+// of the masked head falls in comes whole.
+func TestHideEndsAtACharacterNotInsideOne(t *testing.T) {
+	r := resolvedAll(t, "amy@example.com")
+	for _, pad := range []string{"", "x"} {
+		got := r.Hide(pad + strings.Repeat("é", 2000))
+		if !utf8.ValidString(got) {
+			t.Errorf("pad %q: the result ends inside a character: %q", pad, got[len(got)-4:])
+		}
+		if len(got) <= registry.ResultStringMax {
+			t.Errorf("pad %q: %d bytes, so a display could not tell that the text was cut", pad, len(got))
+		}
+		if len(got) > registry.ResultStringMax+utf8.UTFMax {
+			t.Errorf("pad %q: %d bytes, want the head a display needs and no more", pad, len(got))
+		}
+	}
+}
+
+// Hide reads as far as the masked form needs and no further, whatever the length of the text:
+// a megabyte and four megabytes of addresses are read to the same place, a small multiple of
+// what the display shows. A masked address stands for the whole login, so a long login takes
+// more of the text to fill the display, and the read is bounded by that.
+func TestHideReadsAsFarAsTheMaskedFormNeedsWhateverTheLengthOfTheText(t *testing.T) {
+	assertOneMaskedForm(t)
+	need := registry.ResultStringMax + 1
+	for _, n := range []int{echoLengths[0], echoLengths[len(echoLengths)-1]} {
+		login := echoLogin(n)
+		r := resolvedAll(t, login)
+		unit := login + " "
+		maskedUnit := sanitize.MaskIdentifier(login) + " "
+		// The masked head is need bytes, which is need/len(maskedUnit) units of len(unit)
+		// bytes each; the read doubles from firstRead, so it is under twice that or firstRead.
+		bound := 2*(need/len(maskedUnit)+1)*len(unit) + firstRead
+		var reads []int
+		for _, size := range []int{1 << 16, 1 << 20, 4 << 20} {
+			text := strings.Repeat(unit, size/len(unit))
+			got, read := r.HideRead(text)
+			if len(got) < need || len(got) > need+utf8.UTFMax {
+				t.Errorf("login of %d bytes, text of %d: result of %d bytes, want %d to %d", n, len(text), len(got), need, need+utf8.UTFMax)
+			}
+			if read > bound {
+				t.Errorf("login of %d bytes, text of %d: read %d bytes, want at most %d", n, len(text), read, bound)
+			}
+			if size >= 1<<20 && read*32 > len(text) {
+				t.Errorf("login of %d bytes, text of %d: read %d bytes, which is not far less than the text", n, len(text), read)
+			}
+			reads = append(reads, read)
+		}
+		if reads[1] != reads[2] {
+			t.Errorf("login of %d bytes: a text of 1 MiB is read to %d and one of 4 MiB to %d, want the same", n, reads[1], reads[2])
+		}
+	}
+}
+
+// A text whose masked form stays short however far it is read (a long run of address bytes
+// glued before each login, all masked with it) is read to a limit and no further: the work of
+// Hide has an end that does not depend on the text. 64 resolved logins over such a megabyte
+// took 1.2 s to read 512 KiB before the limit.
+func TestHideStopsReadingATextThatMasksToAlmostNothing(t *testing.T) {
+	logins := []string{"a@b.co"}
+	for i := range 63 {
+		logins = append(logins, fmt.Sprintf("user%02d@example.com", i))
+	}
+	r := resolvedAll(t, logins...)
+	unit := strings.Repeat("a", 2900) + "a@b.co "
+	text := strings.Repeat(unit, (1<<20)/len(unit)+1)[:1<<20]
+	got, read := r.HideRead(text)
+	if read > 65600 {
+		t.Errorf("read %d bytes of a megabyte that masks to %d, want at most 65,600", read, len(got))
+	}
+	if len(got) == 0 || strings.Contains(got, "aaaaaaaaaa") || !strings.Contains(got, "a…@b.co") {
+		t.Errorf("the result of the limited read is %.100q, want masked addresses and nothing of the run", got)
 	}
 }
