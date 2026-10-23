@@ -59,8 +59,9 @@ func loadInvariants(ctx context.Context, env *registry.Env, in ACLValidateInput)
 
 // invariantsCall is the text of the second validation.
 type invariantsCall struct {
-	Text   []byte // the sent text with its own tests removed, the invariants and one canary appended
-	Canary string // "tag:tailkeeper-canary-" and eight random hexadecimal digits
+	Text      []byte // the sent text with its own tests removed, the invariants and one canary appended
+	Canary    string // "tag:tailkeeper-canary-" and eight random hexadecimal digits
+	SSHCanary string // the sshTests canary's tag, empty unless WithSSHCanary was set
 }
 
 // buildInvariantsText makes the text of the second validation from the text that was sent:
@@ -69,7 +70,8 @@ type invariantsCall struct {
 // tests of what it built and refuses, without sending anything, unless they are exactly the
 // invariants' tests plus the canary and exactly the invariants' SSH tests.
 func buildInvariantsText(ctx context.Context, sent []byte, inv *invariantSet, hex8 func() string) (invariantsCall, error) {
-	canary := canaryTagPrefix + hex8()
+	hex := hex8()
+	canary := canaryTagPrefix + hex
 	stripped, err := stripTests(ctx, sent)
 	if err != nil {
 		return invariantsCall{}, rebuildError(err)
@@ -82,8 +84,22 @@ func buildInvariantsText(ctx context.Context, sent []byte, inv *invariantSet, he
 	if err != nil {
 		return invariantsCall{}, rebuildError(err)
 	}
+	sshTag := ""
+	sshTests := slices.Clone(inv.SSHTests)
+	if inv.WithSSHCanary {
+		sshTag = sshCanaryTagPrefix + hex
+		patch, err = canaryPatch(tagged, sshTag)
+		if err != nil {
+			return invariantsCall{}, err
+		}
+		tagged, err = acl.ApplyPatch(ctx, tagged, patch)
+		if err != nil {
+			return invariantsCall{}, rebuildError(err)
+		}
+		sshTests = append(sshTests, sshCanaryEntry(sshTag))
+	}
 	tests := append(slices.Clone(inv.Tests), canaryTest(canary))
-	text, err := appendTests(ctx, tagged, tests, inv.SSHTests)
+	text, err := appendTests(ctx, tagged, tests, sshTests)
 	if err != nil {
 		return invariantsCall{}, rebuildError(err)
 	}
@@ -95,12 +111,12 @@ func buildInvariantsText(ctx context.Context, sent []byte, inv *invariantSet, he
 	if err != nil {
 		return invariantsCall{}, rebuildError(err)
 	}
-	if s.Tests != len(inv.Tests)+1 || s.SSHTests != len(inv.SSHTests) || len(doc.Findings()) > 0 {
+	if s.Tests != len(tests) || s.SSHTests != len(sshTests) || len(doc.Findings()) > 0 {
 		return invariantsCall{}, tkerr.New(tkerr.Internal,
-			fmt.Sprintf("the text built to check the invariants holds %d tests and %d SSH tests, and should hold %d and %d; nothing was sent", s.Tests, s.SSHTests, len(inv.Tests)+1, len(inv.SSHTests)),
+			fmt.Sprintf("the text built to check the invariants holds %d tests and %d SSH tests, and should hold %d and %d; nothing was sent", s.Tests, s.SSHTests, len(tests), len(sshTests)),
 			"this is a tailkeeper bug; report it")
 	}
-	return invariantsCall{Text: text, Canary: canary}, nil
+	return invariantsCall{Text: text, Canary: canary, SSHCanary: sshTag}, nil
 }
 
 // rebuildError is the error for a text that was just accepted and could not be changed: too
@@ -155,7 +171,7 @@ func (v *validation) runInvariants(ctx context.Context, call *api.ValidateCall, 
 		p.FromTailscale = true
 		v.add(p)
 	case api.PolicyFail:
-		rest, ok := takeCanary(pv, built.Canary)
+		rest, ok := takeCanary(pv, built.Canary, accessStateOf(ctx, built.Text))
 		if !ok {
 			v.out.Status = worse(v.out.Status, statusUnknown)
 			v.add(v.problem(kindNote, severityError, sourceInvariants, "the canary test did not come back once, as one failed assertion: there is no sign that the invariants ran, so this is not a pass"))

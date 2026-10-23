@@ -67,3 +67,24 @@ func TestAnUnexpectedArgumentOverTheFlagCapIsNamedByItsLengthNotEchoed(t *testin
 		t.Errorf("a short argument: exit %d, stderr %q", code, h.err)
 	}
 }
+
+// A JSON flag is a flag: a value over 8 KiB is a usage error that names the flag and the
+// size, before anything loads, and the text is not repeated.
+func TestAJSONFlagOverTheFlagCapIsRefusedWithoutEcho(t *testing.T) {
+	big := `{"k":"` + strings.Repeat("x", maxFlagText) + `"}`
+	for name, args := range map[string][]string{
+		"a separate value": {"attr", "check", "--device-attrs", big},
+		"the equals form":  {"attr", "check", "--device-attrs=" + big},
+	} {
+		h, builds, ran := fixtureHarness(t)
+		code := h.run(args...)
+		got := h.err.String()
+		if code != 2 || !strings.Contains(got, "--device-attrs takes a short value, not a document") ||
+			!strings.Contains(got, "the limit is 8192") || strings.Contains(got, "xxxxxxxx") {
+			t.Errorf("%s: exit %d, stderr %.300q; want 2, the flag, the size and no echo", name, code, got)
+		}
+		if h.reexecProvider != nil || *builds != 0 || *ran != 0 {
+			t.Errorf("%s: wrapper started %v, Build %d, ran %d; want none", name, h.reexecProvider != nil, *builds, *ran)
+		}
+	}
+}

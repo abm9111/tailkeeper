@@ -136,10 +136,30 @@ type ValidateCall struct {
 // retryAfterSeconds is the whole seconds, rounded up, until posts tokens exist. A call
 // that ends having sent fewer gets the rest back.
 func (c *Client) BeginValidate(ctx context.Context, posts int) (*ValidateCall, error) {
+	return c.beginValidate(ctx, posts, posts)
+}
+
+// BeginValidateCharged is BeginValidate for a call that sends posts policies and is charged
+// tokens in all, tokens being at least posts. The tokens beyond the posts pay for what the
+// call asks of Tailscale besides sending: they are taken with the rest, at once or not at
+// all, and End does not give them back. A call that asks for more tokens than the bucket
+// holds can never be granted: it is refused at once, with an error that says so and not one
+// that tells its caller to wait.
+func (c *Client) BeginValidateCharged(ctx context.Context, posts, tokens int) (*ValidateCall, error) {
+	if tokens < posts {
+		return nil, tkerr.New(tkerr.Internal, fmt.Sprintf("a validate call is charged %d tokens for %d policies", tokens, posts), "this is a tailkeeper bug; report it")
+	}
+	return c.beginValidate(ctx, posts, tokens)
+}
+
+func (c *Client) beginValidate(ctx context.Context, posts, tokens int) (*ValidateCall, error) {
 	if posts < 1 || posts > 2 {
 		return nil, tkerr.New(tkerr.Internal, fmt.Sprintf("a validate call sends one or two policies, not %d", posts), "this is a tailkeeper bug; report it")
 	}
 	g := c.gate
+	if int64(tokens) > g.bucket.size {
+		return nil, validateTooWide(g.rate, tokens, int(g.bucket.size))
+	}
 	if err := ctx.Err(); err != nil {
 		return nil, tkerr.Wrap(tkerr.APIError, err, "request cancelled", "")
 	}
@@ -148,12 +168,20 @@ func (c *Client) BeginValidate(ctx context.Context, posts int) (*ValidateCall, e
 	case <-ctx.Done():
 		return nil, tkerr.Wrap(tkerr.APIError, ctx.Err(), "request cancelled", "")
 	}
-	if taken, wait := g.bucket.take(posts); !taken {
+	if taken, wait := g.bucket.take(tokens); !taken {
 		<-g.slots
 		return nil, validateRateLimited(g.rate, wait)
 	}
 	dctx, cancel := context.WithTimeout(ctx, g.deadline)
 	return &ValidateCall{c: c, parent: ctx, ctx: dctx, cancel: cancel, posts: posts}, nil
+}
+
+// validateTooWide is the error for a call that is charged more tokens than the bucket holds.
+// No wait helps, so there is no retryAfterSeconds.
+func validateTooWide(rate, tokens, size int) error {
+	return tkerr.New(tkerr.ValidateRateLimited,
+		fmt.Sprintf("this call is charged %d validation requests, and tailkeeper's own limit (acl.validatePerMinute: %d a minute) lets a call take at most %d at once, so waiting will not help", tokens, rate, size),
+		"give fewer SSH users in the call, or raise acl.validatePerMinute (1 to 120) in the configuration")
 }
 
 // validateRateLimited is the error for an empty bucket. The message names the wait as

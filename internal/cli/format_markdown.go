@@ -11,7 +11,7 @@ import (
 )
 
 // formatMarkdown writes a report as Markdown, for a job's step summary or a comment
-// on a pull request: the verdict in bold, then what was not checked and the counts
+// on a pull request: the verdict in bold, then the facts, what was not checked and the counts
 // by class as lists, then the findings as a list with the location in a code span.
 //
 // Nothing a policy, a message or the command line holds may act on the page that
@@ -44,6 +44,16 @@ func formatMarkdown(w io.Writer, rep registry.Report, o formatOptions) error {
 	if rep.Verdict != "" {
 		if err := put("**" + mdEscape(rep.Verdict) + "**"); err != nil {
 			return err
+		}
+	}
+	if len(rep.Facts) > 0 {
+		if err := block("Facts:"); err != nil {
+			return err
+		}
+		for _, f := range rep.Facts {
+			if err := put("- " + mdEscape(f.Label) + ": " + mdEscape(f.Text)); err != nil {
+				return err
+			}
 		}
 	}
 	if len(rep.NotChecked) > 0 {

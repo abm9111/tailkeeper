@@ -73,6 +73,7 @@ type resolverState struct {
 	listed bool
 	err    error             // the failure of the users call, kept so that it is made once
 	users  func() *userLists // the one way to the logins
+	typed  *typedValues      // what the caller typed, which Hide never treats as a secret's echo
 }
 
 // userLists holds the tailnet's logins by pseudonym, and the ones the resolver handed out.
@@ -88,11 +89,12 @@ type resolvedLogin struct {
 	login   string
 	parts   []string // the login split at its at signs, to read a start of it at a cut
 	pattern *regexp.Regexp
+	words   []localWord // the local part's words, compiled once, masked when they stand alone
 }
 
 func newResolverState() *resolverState {
 	u := &userLists{handedOut: map[string]bool{}}
-	return &resolverState{users: func() *userLists { return u }}
+	return &resolverState{users: func() *userLists { return u }, typed: &typedValues{}}
 }
 
 // remember records a login the resolver handed out, once, with its compiled pattern. The list
@@ -103,7 +105,7 @@ func (u *userLists) remember(login string) {
 		return
 	}
 	u.handedOut[login] = true
-	u.resolved = append(u.resolved, resolvedLogin{login: login, parts: strings.Split(login, "@"), pattern: loginPattern(login)})
+	u.resolved = append(u.resolved, resolvedLogin{login: login, parts: strings.Split(login, "@"), pattern: loginPattern(login), words: localWords(login)})
 	slices.SortStableFunc(u.resolved, func(a, b resolvedLogin) int { return len(b.login) - len(a.login) })
 }
 

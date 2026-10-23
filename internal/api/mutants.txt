@@ -203,3 +203,39 @@ file: client.go
 old: for drop := 0; drop <= 5 && drop <= end; drop++ {
 new: for drop := 0; drop < 1 && drop <= end; drop++ {
 kill: TestAnErrorBodyCutOffKeepsTheMessageAsFarAsItGoes
+
+mutant: the tests-mode reader takes an empty data list as a pass
+file: client.go
+old: shape == shapeData && len(results) == 0
+new: shape == shapeData && len(results) < 0
+kill: TestAnEmptyDataListIsNotAPass
+
+mutant: the tests-mode reader takes an empty message as a pass
+file: client.go
+old: shape == shapeMessage && message == ""
+new: shape == shapeMessage && false
+kill: TestAnEmptyMessageIsNotAPass
+
+mutant: a charged call is charged only the policies it sends
+file: bucket.go
+old: if taken, wait := g.bucket.take(tokens); !taken {
+new: if taken, wait := g.bucket.take(posts); !taken {
+kill: TestAChargedCallTakesItsTokensAtOnceAndRefundsOnlyWhatItDidNotSend
+
+mutant: a charged call gets its charge back
+file: bucket.go
+old: cancel: cancel, posts: posts}, nil
+new: cancel: cancel, posts: tokens}, nil
+kill: TestAChargedCallTakesItsTokensAtOnceAndRefundsOnlyWhatItDidNotSend
+
+mutant: a call charged more than the bucket holds is told to wait
+file: bucket.go
+old: if int64(tokens) > g.bucket.size {
+new: if false {
+kill: TestAChargedCallBiggerThanTheBucketIsRefusedAtOnceAndNamesTheCause
+
+mutant: a call is charged fewer tokens than it sends
+file: bucket.go
+old: \tif tokens < posts {
+new: \tif false {
+kill: TestAChargedCallBiggerThanTheBucketIsRefusedAtOnceAndNamesTheCause

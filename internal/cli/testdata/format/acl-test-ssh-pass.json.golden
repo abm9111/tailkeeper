@@ -1,0 +1,14 @@
+{
+  "status": "pass",
+  "sshVerdicts": [
+    {
+      "dst": "tag:web",
+      "user": "root",
+      "expect": "accept",
+      "verdict": "allowed"
+    }
+  ],
+  "posture": "none",
+  "evaluatedAt": "2026-10-10T12:00:00Z",
+  "note": "Evaluated against the live policy. SSH tests are a copy of the live policy with its own tests removed, plus an SSH canary, sent to Tailscale, which changes nothing. srcPostureAttrs are refused together with ssh."
+}

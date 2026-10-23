@@ -1,0 +1,16 @@
+{
+  "status": "unknown",
+  "sshVerdicts": [
+    {
+      "dst": "tag:web",
+      "user": "root",
+      "expect": "accept",
+      "verdict": "unknown",
+      "why": "the SSH tests were not shown to have run"
+    }
+  ],
+  "sshNotAsked": 1,
+  "posture": "none",
+  "evaluatedAt": "2026-10-10T12:00:00Z",
+  "note": "Evaluated against the live policy. SSH tests are a copy of the live policy with its own tests removed, plus an SSH canary, sent to Tailscale, which changes nothing. srcPostureAttrs are refused together with ssh."
+}

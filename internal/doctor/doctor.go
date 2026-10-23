@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"regexp"
 	"slices"
 	"strconv"
 	"strings"
@@ -434,10 +435,33 @@ var probeList = []struct{ tool, args string }{
 	{"acl_get", `{"maxBytes":` + strconv.Itoa(guard.MaxPolicyBytes) + `}`}, // the largest page: a minified policy is one long line
 }
 
-// aclCanary is a test no policy can pass: the same destination both accepted and
-// denied. acl_test reads a pass from the absence of errors, so this proves that a
-// failure is read as one, and that the read credential may run tests.
-const aclCanary = `{"src":"tag:tailkeeper-canary","accept":["tag:tailkeeper-canary:1"],"deny":["tag:tailkeeper-canary:1"]}`
+// canaryTagRE is a tag the canary may use as its source and its destination: letters, digits
+// and hyphens, as tags are written, with nothing that could be a name of a person.
+var canaryTagRE = regexp.MustCompile(`^tag:[A-Za-z0-9][A-Za-z0-9-]*$`)
+
+// aclCanary is a test no policy can pass: the same destination both accepted and denied, for
+// a source and a destination that the live policy defines (a tag that tagOwners names), so
+// that Tailscale evaluates the test and an answer that carries no failure for it is a
+// misreading and not a policy. A tag the policy does not define would be unresolved on
+// every tailnet and prove nothing.
+func aclCanary(tag string) string {
+	return fmt.Sprintf(`{"src":%q,"accept":[%q],"deny":[%q]}`, tag, tag+":1", tag+":1")
+}
+
+// canaryTag is the first tag the live policy defines, or "" when it defines none or cannot be
+// read. The summary is the same read of the policy that acl_get makes.
+func canaryTag(ctx context.Context, a *app.App) string {
+	var g tools.ACLGetOutput
+	if err := call(ctx, a, "acl_get", `{"view":"summary"}`, &g); err != nil || g.Summary == nil {
+		return ""
+	}
+	for _, name := range g.Summary.TagOwners {
+		if canaryTagRE.MatchString(name) {
+			return name
+		}
+	}
+	return ""
+}
 
 // probes call each tool of probeList. A tool that answered without reaching its
 // endpoint (not enabled, not configured) proves nothing about the scope it needs.
@@ -456,8 +480,13 @@ func probes(ctx context.Context, r *Report, a *app.App) {
 			r.add(name, OK, "readable", "")
 		}
 	}
+	tag := canaryTag(ctx, a)
+	if tag == "" {
+		r.add("probe acl_test", NA, "the live policy defines no tag, or could not be read, so a test that cannot pass was not sent", "")
+		return
+	}
 	var t tools.ACLTestOutput
-	err := call(ctx, a, "acl_test", aclCanary, &t)
+	err := call(ctx, a, "acl_test", aclCanary(tag), &t)
 	if st, detail, fix, ok := canaryVerdict(t, err); ok {
 		r.add("probe acl_test", st, detail, fix)
 	} else {
@@ -465,20 +494,41 @@ func probes(ctx context.Context, r *Report, a *app.App) {
 	}
 }
 
-// canaryVerdict reads acl_test's answer to aclCanary. Only a failure carrying
-// errors proves that a failure is read as one; ok is false for an error doctor
-// reports like any other failed read.
+// canaryVerdict reads acl_test's answer to aclCanary. A fail whose verdict is allowed or
+// denied proves that a failure is read as one. A pass, and an unknown that holds no failure,
+// no unpaired line and no warning, are the answer of a validator that has misread a test no
+// policy can pass: the check fails. unresolved means the source did not resolve, and an
+// unknown that holds lines or warnings means they could not be paired: both are warnings,
+// never OK. ok is false for an error doctor reports like any other failed read.
 func canaryVerdict(t tools.ACLTestOutput, err error) (st Status, detail, fix string, ok bool) {
 	const known = "run `tailkeeper acl test` on a source and destination you know"
+	const unresolved = "the canary's source did not resolve, so how a failure is read was not exercised"
+	const unread = "the canary's answer could not be read, so how a failure is read was not exercised"
+	const misread = "a test that no policy can pass came back with no failure: tailkeeper misreads the validate response, so no acl_test result can be trusted"
 	if err == nil {
-		switch {
-		case t.Status != "pass":
-			return OK, "a test that cannot pass is read as failed", "", true
-		case len(t.Warnings) > 0:
-			return Warn, "the canary test was not evaluated; the endpoint answered with warnings only", known, true
+		switch t.Status {
+		case "fail":
+			for _, v := range t.Verdicts {
+				if v.Verdict == "allowed" || v.Verdict == "denied" {
+					return OK, "a test that cannot pass is read as failed", "", true
+				}
+			}
+			return Warn, unresolved, known, true
+		case "unresolved":
+			return Warn, unresolved, known, true
+		case "unknown":
+			if len(t.Failures) == 0 && len(t.Unmatched) == 0 && len(t.Warnings) == 0 && len(t.OtherTests) == 0 {
+				return Fail, misread, "report this with `tailkeeper version`", true
+			}
+			return Warn, unread, known, true
+		case "pass":
+			if len(t.Warnings) > 0 {
+				return Warn, "the canary test was not evaluated; the endpoint answered with warnings only", known, true
+			}
+			return Fail, misread, "report this with `tailkeeper version`", true
+		default:
+			return Warn, unread, known, true
 		}
-		return Fail, "a test that no policy can pass came back as passed: tailkeeper misreads the validate response, so no acl_test result can be trusted",
-			"report this with `tailkeeper version`", true
 	}
 	switch e := tkerr.From(err); {
 	case e.Code == tkerr.ValidationFailed && e.Status == 0:

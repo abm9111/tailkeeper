@@ -2,6 +2,7 @@ package tools
 
 import (
 	"bytes"
+	"context"
 	"crypto/rand"
 	"encoding/hex"
 	"encoding/json"
@@ -27,9 +28,26 @@ import (
 // address.
 
 const (
-	canaryTagPrefix   = "tag:tailkeeper-canary-"
-	canaryDestination = "192.0.2.1:1"
+	canaryTagPrefix    = "tag:tailkeeper-canary-"
+	canaryDestination  = "192.0.2.1:1"
+	sshCanaryTagPrefix = "tag:tailkeeper-sshcanary-"
+	sshCanaryUser      = "canary"
+	sshCanaryDst       = "192.0.2.1"
 )
+
+// sshCanaryEntry is an sshTests element that must fail in the SSH form. It uses
+// its own tag, so it is not the tests-mode canary, and it accepts and denies the
+// same user, so exactly one of the two fails whatever the policy allows.
+func sshCanaryEntry(src string) []byte {
+	b, err := json.Marshal(map[string]any{
+		"src": src, "dst": []string{sshCanaryDst},
+		"accept": []string{sshCanaryUser}, "deny": []string{sshCanaryUser},
+	})
+	if err != nil {
+		panic(err) // strings always encode
+	}
+	return b
+}
 
 // randomHex8 is eight random hexadecimal digits: the part of the canary's tag that nobody can
 // guess, so that a policy cannot contain it by accident or on purpose. It is a variable so
@@ -91,21 +109,55 @@ func canaryPatch(text []byte, tag string) ([]byte, error) {
 
 // takeCanary removes the canary from an answer that failed. It says false, and the answer
 // stays as it was, unless exactly one entry has the canary's tag as its user, that entry has
-// exactly one error and no warning, and the error is in the want/got grammar: a canary that
-// comes back in any other shape is not proof that the invariants ran.
-func takeCanary(pv api.PolicyValidation, src string) (api.PolicyValidation, bool) {
-	var line string
-	n := 0
-	for _, r := range pv.Results {
-		if r.User == src {
-			n++
-			if len(r.Errors) == 1 {
-				line = r.Errors[0]
-			}
+// exactly one error and no warning, and the error is the canary: the destination
+// 192.0.2.1:1, in the want/got grammar, in the direction the policy's access state gives.
+// A canary that comes back in any other shape is not proof that the tests ran.
+func takeCanary(pv api.PolicyValidation, src string, access acl.State) (api.PolicyValidation, bool) {
+	return api.RemoveCanary(pv, src, canaryGrammar(access))
+}
+
+// canaryGrammar is the one check of the canary's line. RemoveCanary applies it to the single
+// error; it does not keep a second copy of the same test.
+func canaryGrammar(access acl.State) func(string) bool {
+	return func(line string) bool {
+		f := ParseFailureLine(line)
+		if f.Kind != AssertionFailed || f.SSH || f.Dst != canaryDestination {
+			return false
 		}
+		want, got, known := canaryDirection(access)
+		if !known {
+			return true
+		}
+		return f.Want == want && f.Got == got
 	}
-	if n != 1 || ParseFailureLine(line).Kind != AssertionFailed {
-		return pv, false
+}
+
+// canaryDirection is the failure the canary must come back as. An absent access section is
+// allow-all, so the denial fails (want Drop, got Accept). An empty one is deny-all, so the
+// acceptance fails (want Accept, got Drop). A non-empty policy can fail either way, and either
+// line is the canary.
+func canaryDirection(access acl.State) (want, got string, known bool) {
+	switch access {
+	case acl.StateAbsent:
+		return "Drop", "Accept", true
+	case acl.StateEmpty:
+		return "Accept", "Drop", true
+	default:
+		return "", "", false
 	}
-	return api.RemoveCanary(pv, src)
+}
+
+// accessStateOf is the access state of a policy text, or non-empty when the text cannot be
+// read that far: a canary is then accepted in either direction, and a missing one is still
+// not a pass.
+func accessStateOf(ctx context.Context, text []byte) acl.State {
+	doc, err := acl.Parse(ctx, text)
+	if err != nil {
+		return acl.StateNonEmpty
+	}
+	nf, err := acl.Normalise(ctx, doc)
+	if err != nil {
+		return acl.StateNonEmpty
+	}
+	return nf.AccessState()
 }

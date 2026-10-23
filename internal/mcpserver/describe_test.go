@@ -70,3 +70,35 @@ func TestOnlyACLTestAndACLValidateAreOpenWorld(t *testing.T) {
 		t.Errorf("open-world tools = %v, want [acl_test acl_validate]", open)
 	}
 }
+
+// acl_test's description says the text goes to Tailscale, and it no longer says that
+// a masked value cannot be tested at all: a user is named by the pseudonym users_list
+// shows, which is the same sentence the server instructions use.
+func TestACLTestIsOpenWorldAndItsDescriptionAgreesWithTheInstructions(t *testing.T) {
+	const sentence = "A user is named by the pseudonym from users_list; a masked value with no pseudonym cannot be tested."
+	if !strings.Contains(Instructions, sentence) {
+		t.Errorf("Instructions lack %q", sentence)
+	}
+	reg := registry.New()
+	tools.Register(reg)
+	tool, ok := reg.Get("acl_test")
+	if !ok {
+		t.Fatal("acl_test is not registered")
+	}
+	if !tool.Meta.OpenWorld || tool.Meta.Title == "" {
+		t.Errorf("open-world %v, title %q", tool.Meta.OpenWorld, tool.Meta.Title)
+	}
+	if !strings.Contains(tool.Meta.Notes, sentence) {
+		t.Errorf("notes lack %q: %s", sentence, tool.Meta.Notes)
+	}
+	d, err := Describe(tool)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(d.Description, "sent to Tailscale") {
+		t.Errorf("description does not say the text goes to Tailscale: %s", d.Description)
+	}
+	if strings.Contains(d.Description, "A masked value (one with …) cannot be tested") {
+		t.Errorf("description still says a masked value cannot be tested: %s", d.Description)
+	}
+}

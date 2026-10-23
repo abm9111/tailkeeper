@@ -35,7 +35,7 @@ const Instructions = "tailkeeper reads a Tailscale tailnet and this node's Tails
 	"When the owner configured a privacy key, a masked name or address in a result ends in a pseudonym such as [p:k7x2m9qd4a], the same in every call: " +
 	"filters take the pseudonym, or the masked value carrying it, never a guessed name or address. Errors are masked without pseudonyms. " +
 	"To work with the policy, read it at a glance first: acl_get with view summary, or the tailnet://acl resource, and fetch pages of text only for the part you need. " +
-	"When a person is involved, call users_list to get the pseudonym that names them. Then check access with acl_test, validate a proposed change as a patch with acl_validate, and compare two policies with acl_diff. " +
+	"When a person is involved, call users_list to get the pseudonym that names them. A user is named by the pseudonym from users_list; a masked value with no pseudonym cannot be tested. Then check access with acl_test, validate a proposed change as a patch with acl_validate, and compare two policies with acl_diff. " +
 	"An agent proposes a change by validating a patch; the owner applies it, in the admin console or in the policy file they keep."
 
 // UntrustedSentence ends the summary of every result that carries untrusted fields.

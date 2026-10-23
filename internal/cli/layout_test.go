@@ -88,6 +88,15 @@ var layoutCases = []struct {
 	}, map[string]string{"from": "<stdin>", "patch": "evil.json" + hostile, "invariants": "::error::x", "live": "##[error]forged"}},
 	{"verdict only", registry.Report{Verdict: "VALID · 0 new warnings", Level: registry.LevelOK}, nil},
 	{"empty", registry.Report{}, nil},
+	// The report acl test returns: a verdict, one caveat, and Tailscale's line behind the notice.
+	{"test verdict", registry.Report{
+		Verdict:    "FAILED · 1 destination not as asked",
+		Level:      registry.LevelFail,
+		NotChecked: []string{"with proto omitted, a destination that must be denied can yield one line for tcp and one for udp"},
+		Findings: []registry.Finding{
+			{Severity: "error", Message: "failed  tag:ci: address \"tag:web:22\": want: Accept, got: Drop", Untrusted: true},
+		},
+	}, nil},
 }
 
 func TestTheHumanLayoutMatchesItsGoldens(t *testing.T) {
@@ -270,9 +279,19 @@ func TestOneNoticeForTailscalesReasons(t *testing.T) {
 	if registry.UntrustedReasonsNotice != want {
 		t.Errorf("the notice reads %q, want %q", registry.UntrustedReasonsNotice, want)
 	}
-	details := tools.ACLTestOutput{Failures: []tools.ACLTestResult{{Src: "a", Errors: []string{"e"}}}}.Details()
-	if len(details) == 0 || details[0] != registry.UntrustedReasonsNotice {
-		t.Errorf("acl test details start %q, want the shared notice", details)
+	out := tools.ACLTestOutput{Failures: []tools.ACLTestResult{{Src: "a", Errors: []string{"e"}}}}
+	findings := out.Report().Findings
+	if len(findings) != 1 || !findings[0].Untrusted || findings[0].Message != "failed  a: e" {
+		t.Errorf("acl test report findings = %+v, want one untrusted finding %q", findings, "failed  a: e")
+	}
+	var shown bytes.Buffer
+	if err := formatText(&shown, out.Report(), formatOptions{}); err != nil {
+		t.Fatal(err)
+	}
+	notice := strings.Index(shown.String(), registry.UntrustedReasonsNotice+"\n")
+	reason := strings.Index(shown.String(), "error: failed  a: e\n")
+	if notice < 0 || reason < notice {
+		t.Errorf("the reason is not behind the notice:\n%s", shown.String())
 	}
 }
 

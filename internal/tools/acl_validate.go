@@ -580,6 +580,7 @@ func plural(n int, word string) string {
 type invariantSet struct {
 	Tests, SSHTests [][]byte
 	Doc             *acl.Doc
+	WithSSHCanary   bool // acl_test's SSH path appends an sshTests canary of its own
 }
 
 // parseInvariants reads an invariants file: a HuJSON object with optional tests and

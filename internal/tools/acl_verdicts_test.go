@@ -74,6 +74,8 @@ var unevaluableShapes = []verdictCase{
 	{"an SSH verdict outside accept and deny", `[ssh test error]: src "tag:p" at "100.64.0.1", dst "tag:db" at "100.64.0.2", ssh user "root": want: "check" got: "deny"`, "", ""},
 	{"an SSH line with a field missing", `[ssh test error]: src "tag:p" at "100.64.0.1", dst "tag:db" at "100.64.0.2": want: "accept" got: "deny"`, "", ""},
 	{"an SSH line with text after it", `[ssh test error]: src "tag:p" at "100.64.0.1", dst "tag:db" at "100.64.0.2", ssh user "root": want: "accept" got: "deny" `, "", ""},
+	{"a destination in backquotes", "[acl test error]: address `192.0.2.10:22` (protocol \"tcp\"): want: Accept, got: Drop", "", ""},
+	{"a destination as a rune literal", `[acl test error]: address 'x': want: Accept, got: Drop`, "", ""},
 }
 
 // renderVerdicts is the golden text: for each case, the line and what ParseFailureLine
@@ -116,6 +118,41 @@ func TestFailureLineGrammarMatchesEveryObservedShape(t *testing.T) {
 		if f.SSH != strings.Contains(c.line, "ssh user") {
 			t.Errorf("%s: SSH = %v", c.name, f.SSH)
 		}
+	}
+}
+
+// The fields of a line are strings the server quotes with double quotes. strconv also reads a
+// raw string in backquotes and a rune literal in single quotes, and a line that quotes a field
+// either way is not the server's grammar: read as an assertion, a destination of 'x' would be
+// paired with a destination of x. Each field the grammar quotes is tried both ways, with the
+// double-quoted form of the same line as the control.
+func TestAFieldInBackquotesOrSingleQuotesIsNotInTheGrammar(t *testing.T) {
+	const tests = "[acl test error]: address %s%s: want: Accept, got: Drop"
+	const ssh = "[ssh test error]: src %s at \"100.64.0.1\", dst %s at \"100.64.0.2\", ssh user %s: want: \"accept\" got: \"deny\""
+	for name, c := range map[string]struct{ line, control string }{
+		"a destination in backquotes":   {fmt.Sprintf(tests, "`192.0.2.10:22`", ""), fmt.Sprintf(tests, `"192.0.2.10:22"`, "")},
+		"a destination as a rune":       {fmt.Sprintf(tests, `'x'`, ""), fmt.Sprintf(tests, `"x"`, "")},
+		"a protocol in backquotes":      {fmt.Sprintf(tests, `"192.0.2.10:22"`, " (protocol `tcp`)"), fmt.Sprintf(tests, `"192.0.2.10:22"`, ` (protocol "tcp")`)},
+		"a protocol as a rune":          {fmt.Sprintf(tests, `"192.0.2.10:22"`, ` (protocol 'x')`), fmt.Sprintf(tests, `"192.0.2.10:22"`, ` (protocol "x")`)},
+		"an SSH source in backquotes":   {fmt.Sprintf(ssh, "`tag:p`", `"tag:db"`, `"root"`), fmt.Sprintf(ssh, `"tag:p"`, `"tag:db"`, `"root"`)},
+		"an SSH destination as a rune":  {fmt.Sprintf(ssh, `"tag:p"`, `'d'`, `"root"`), fmt.Sprintf(ssh, `"tag:p"`, `"d"`, `"root"`)},
+		"an SSH user in backquotes":     {fmt.Sprintf(ssh, `"tag:p"`, `"tag:db"`, "`root`"), fmt.Sprintf(ssh, `"tag:p"`, `"tag:db"`, `"root"`)},
+		"an SSH user as a rune literal": {fmt.Sprintf(ssh, `"tag:p"`, `"tag:db"`, `'r'`), fmt.Sprintf(ssh, `"tag:p"`, `"tag:db"`, `"r"`)},
+	} {
+		if f := ParseFailureLine(c.line); f != (FailureLine{Kind: TestUnevaluable}) {
+			t.Errorf("%s: %q read as %+v, want an unevaluable line with nothing else", name, c.line, f)
+		}
+		if f := ParseFailureLine(c.control); f.Kind != AssertionFailed {
+			t.Errorf("%s: the control %q read as %+v, want an assertion", name, c.control, f)
+		}
+	}
+	// The token the locating code looks for starts at a double quote, so a quote of either
+	// other kind before it is no token.
+	if got, ok := quotedToken("bad `x` and 'y' then \"tag:z\""); !ok || got != "tag:z" {
+		t.Errorf("quotedToken = %q, %v; want the double-quoted tag:z", got, ok)
+	}
+	if got, ok := quotedToken("bad `tag:x` only"); ok {
+		t.Errorf("quotedToken took %q out of a message that holds no double quote", got)
 	}
 }
 

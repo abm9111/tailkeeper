@@ -337,6 +337,10 @@ func TestEveryACLGoldenBelongsToACase(t *testing.T) {
 		have = append(have, files...)
 	}
 	for _, f := range have {
+		// acl test's goldens are acl-test-*.golden, owned by aclTestLayoutCases.
+		if strings.HasPrefix(filepath.Base(f), "acl-test-") {
+			continue
+		}
 		if !want[f] {
 			t.Errorf("%s belongs to no case of aclLayoutCases", shown(f))
 		}

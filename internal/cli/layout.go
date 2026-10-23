@@ -93,8 +93,8 @@ func sourceName(src string, names map[string]string) string {
 	return src
 }
 
-// formatText prints the human layout: a one-line verdict; what was not
-// checked; the counts by class; then the details, each behind a location written
+// formatText prints the human layout: a one-line verdict; the facts the result states;
+// what was not checked; the counts by class; then the details, each behind a location written
 // file:line:column: so a terminal or an editor makes it clickable. Tailscale's own
 // text follows a notice that it is untrusted. Every string is escaped here too:
 // nothing a policy or a message holds can start a line of its own or move a terminal.
@@ -129,12 +129,17 @@ func formatText(w io.Writer, rep registry.Report, o formatOptions) error {
 }
 
 // writePreamble writes what the text and GitHub layouts print before the findings: the
-// verdict, what was not checked and the counts by class. line writes one line (the
+// verdict, the facts, what was not checked and the counts by class. line writes one line (the
 // layout decides its indentation and its guard), esc escapes a string, and style is
 // applied to the escaped verdict.
 func writePreamble(line func(format string, args ...any) error, rep registry.Report, esc func(string) string, style func(string) string) error {
 	if rep.Verdict != "" {
 		if err := line("%s", style(esc(rep.Verdict))); err != nil {
+			return err
+		}
+	}
+	for _, f := range rep.Facts {
+		if err := line("%s: %s", esc(f.Label), esc(f.Text)); err != nil {
 			return err
 		}
 	}

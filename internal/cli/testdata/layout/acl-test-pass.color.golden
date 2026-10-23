@@ -1,0 +1,3 @@
+[32mPASS · 3 destinations as asked[0m
+note: Evaluated against the live policy. SSH rules are tested only when the call gives ssh. Posture-gated rules match only when srcPostureAttrs names their attributes.
+caveat: with proto omitted, a destination that must be denied can yield one line for tcp and one for udp

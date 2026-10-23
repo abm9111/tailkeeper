@@ -46,8 +46,13 @@ func TestBadArgumentsNeverStartTheWrapper(t *testing.T) {
 	refused([]string{"acl", "validate", "--from", "a.hujson", "--patch", "b.json"}, "usage")
 	refused([]string{"acl", "diff", "--from", "a.hujson", "--patch", "b.json"}, "usage")
 	for _, args := range [][]string{
-		{"acl", "test", "tag:ci"},                                               // no destination
-		{"acl", "test", "tag:ci", "--accept", "tag:prod"},                       // not host:port
+		{"acl", "test", "tag:ci"}, // no destination
+		{"acl", "test", "autogroup:member", "--ssh", `[{"dst":["tag:db"],"accept":["root"]}]`},                                               // an autogroup SSH source
+		{"acl", "test", "tag:ci", "--ssh", `[{"dst":["tag:db"],"accept":[` + strings.TrimSuffix(strings.Repeat(`"root",`, 17), ",") + `]}]`}, // 17 SSH users in one test
+		{"acl", "test", "tag:ci", "--accept", "tag:prod"},                                                                                    // not host:port
+		{"acl", "test", "a…@example.com", "--accept", "tag:prod:22"},                                                                         // a masked source with no pseudonym
+		{"acl", "test", "tag:ci", "--accept", "tag:prod:22", "--src-posture-attrs", `{"os":{"nested":true}}`},                                // an attribute value that is an object
+		{"acl", "test", "tag:ci", "--src-posture-attrs", `{"node:os":"linux"}`, "--ssh", `[{"dst":["tag:db"],"accept":["root"]}]`},           // posture attributes beside SSH tests
 		{"acl", "get", "--max-bytes", "5"},                                      // below the page minimum
 		{"acl", "get", "--view", "raw"},                                         // not a view
 		{"acl", "get", "--view", "summary", "--from-line", "2"},                 // the summary has no pages
@@ -87,6 +92,25 @@ func TestValidArgumentsStartTheWrapper(t *testing.T) {
 		h.run(args...)
 		if h.reexecProvider == nil || *builds != 1 {
 			t.Errorf("%v: wrapper started %v, Build ran %d times; want true and 1", args, h.reexecProvider != nil, *builds)
+		}
+	}
+}
+
+// A JSON flag the binder cannot accept is refused before the configuration loads and
+// before the wrapper starts: the same gate as a value the tool itself refuses.
+func TestAJSONFlagNeverReachesTheEnvironmentBeforeTheInputIsChecked(t *testing.T) {
+	for name, args := range map[string][]string{
+		"not JSON":      {"attr", "check", "--device-attrs", "not-json"},
+		"empty":         {"attr", "check", "--device-attrs", ""},
+		"over the cap":  {"attr", "check", "--rules", strings.Repeat("x", maxFlagText+1)},
+		"unknown field": {"attr", "check", "--rules", `[{"dst":["tag:a"],"nope":1}]`},
+	} {
+		h, builds, ran := fixtureHarness(t)
+		if exit := h.run(args...); exit != 2 || !strings.HasPrefix(h.err.String(), "tailkeeper: usage: ") {
+			t.Errorf("%s: exit %d, stderr %q; want 2 and usage", name, exit, h.err)
+		}
+		if h.reexecProvider != nil || *builds != 0 || *ran != 0 {
+			t.Errorf("%s: wrapper started %v, Build %d, ran %d; want none", name, h.reexecProvider != nil, *builds, *ran)
 		}
 	}
 }

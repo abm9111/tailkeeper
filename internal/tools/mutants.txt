@@ -1,4 +1,7 @@
 # Mutants of internal/tools: each is a change to the code that a test must notice.
+# The acl_test run is among them: a posture map dropped from the request, the
+# subject screen skipped, another source's results failing the call, a reply
+# shown without the resolver's mask, and an unevaluable test exiting 9.
 # scripts/mutate.go says what the format is and what the three outcomes mean. The list
 # holds one mutant for each class of defect the tests of the subject resolver, the
 # pseudonym substitution, the failure-line grammar, the verdicts of acl_validate and the
@@ -48,8 +51,8 @@ kill: TestResolveDoesNotRenameEveryLoginPerCall
 
 mutant: Hide compiles the pattern of each login on every call
 file: acl_subjects_hide.go
-old: t = hideLogin(t, l.pattern, mask)
-new: t = hideLogin(t, loginPattern(l.login), mask)
+old: t = hideLogin(t, l.pattern, mask, typed)
+new: t = hideLogin(t, loginPattern(l.login), mask, typed)
 kill: TestHideCompilesNothingPerCall
 
 mutant: Hide reads the whole text
@@ -366,8 +369,8 @@ kill: TestAColumnAfterAPseudonymIsAColumnOfTheCallersOwnText
 
 mutant: a canary whose line is outside the want/got grammar is accepted
 file: acl_canary.go
-old: if n != 1 || ParseFailureLine(line).Kind != AssertionFailed {
-new: if n != 1 || (ParseFailureLine(line).Kind != AssertionFailed && false) {
+old: if f.Kind != AssertionFailed || f.SSH || f.Dst != canaryDestination {
+new: if false {
 kill: TestAMissingCanaryIsUnknownAndExits1
 
 mutant: the second validation runs when the first was rejected
@@ -384,7 +387,7 @@ kill: TestTheStatusOfACallIsTheWorseOfItsTwoValidations
 
 mutant: the invariants' tests are not counted before the text is sent
 file: acl_invariants.go
-old: if s.Tests != len(inv.Tests)+1 || s.SSHTests != len(inv.SSHTests) || len(doc.Findings()) > 0 {
+old: if s.Tests != len(tests) || s.SSHTests != len(sshTests) || len(doc.Findings()) > 0 {
 new: if false {
 kill: TestTheTestCountGuardRefusesBeforeSending
 
@@ -795,3 +798,665 @@ file: acl_subjects_hide.go
 old: len(out) >= need || limit >= maxRead {
 new: len(out) >= need || limit >= firstRead {
 kill: TestHideShowsTheSameWhateverTheLengthOfTheLoginsInTheText|TestAMessageThatEchoesTheMembersSentShowsTheSameWhateverTheLengthOfTheirLogins
+
+mutant: a space in a test source is still refused
+file: acl_test_input.go
+old: case strings.Contains(src, "/"):
+new: case strings.ContainsAny(src, "/ "):
+kill: TestASourceMayHoldSpacesForASyncedGroup
+
+mutant: a literal login is accepted as an acl_test subject while masking is on
+file: acl_test_subjects.go
+old: if !literalTestSubject(value) {
+new: if true || !literalTestSubject(value) {
+kill: TestALiteralLoginInSrcOrADestinationIsRefusedWhileMasking
+
+mutant: a marker inside a longer test subject is left in place
+file: acl_test_subjects.go
+old: if holds {
+new: if false && holds {
+kill: TestAStringThatHoldsAMarkerButIsNoCarrierIsRefused
+
+mutant: a destination is split at the first colon
+file: acl_test_input.go
+old: i := strings.LastIndexByte(d, ':')
+new: i := strings.IndexByte(d, ':')
+kill: TestSplitDestinationReadsEveryFormACarrierCanTake
+
+mutant: a credential shape spelled with a JSON escape is sent
+file: acl_test_input.go
+old: if _, found := tripwireWhere([]byte(`{"v":"` + value + `"}`)); found {
+new: if _, found := tripwireWhere([]byte(`{"v":"` + value + `"}`)); false && found {
+kill: TestACredentialShapeInASubjectIsRefusedIncludingADecodedEscape
+
+# The verdicts read from a validate reply. A claim of access has to be one the lines support.
+
+mutant: an unmatched assertion line is read as a denial
+file: acl_test_verdicts.go
+old: case unmatched:\n\t\treturn groupOutcome{verdict: verdictUnknown, why: whyUnpairedLine}
+new: case unmatched:\n\t\treturn groupOutcome{verdict: verdictDenied, why: whyUnpairedLine}
+kill: TestAnAssertionLineNoDestinationMatchesIsUnmatchedAndEveryDestinationUnknown
+
+mutant: the verdict is read from the want word instead of the got word
+file: acl_test_verdicts.go
+old: if f.Got == "Accept" || f.Got == "accept" {
+new: if f.Want == "Accept" || f.Want == "accept" {
+kill: TestTheSameDestinationInAcceptAndDenyIsReadFromTheGotWord
+
+mutant: a line outside the grammar counts as an assertion
+file: acl_test_verdicts.go
+old: r.Lines = append(r.Lines, readLine{Text: text, Kind: kind})\n\t\t\tif kind != AssertionFailed {\n\t\t\t\tnotEvaluated = true\n\t\t\t\tcontinue\n\t\t\t}
+new: r.Lines = append(r.Lines, readLine{Text: text, Kind: kind})\n\t\t\tif kind != AssertionFailed {\n\t\t\t\tcontinue\n\t\t\t}
+kill: TestALineOutsideTheGrammarMakesTheTestUnresolvedNeverDenied
+
+mutant: quoted takes a backquoted field
+file: acl_verdicts.go
+old: if !strings.HasPrefix(s, `"`) {\n\t\treturn "", "", false\n\t}
+new: if false {\n\t\treturn "", "", false\n\t}
+kill: TestAFieldInBackquotesOrSingleQuotesIsNotInTheGrammar
+
+mutant: a host alias is not matched through the hosts section
+file: acl_test_verdicts.go
+old: if via := hostAddress(d.Sent, hosts); via != "" && via != key {\n\t\t\t\tg.keys = append(g.keys, via)\n\t\t\t}
+new: if via := hostAddress(d.Sent, hosts); false && via != key {\n\t\t\t\tg.keys = append(g.keys, via)\n\t\t\t}
+kill: TestAHostAliasPairsByNameOrThroughTheHostsSectionAndNothingElse
+
+mutant: srcPostureAttrs is dropped from the request
+file: acl_test_tool.go
+old: SrcPostureAttrs: in.SrcPostureAttrs,
+new: SrcPostureAttrs: nil,
+kill: TestASrcPostureAttrsMapIsSentAsGiven
+
+mutant: the subject screen is skipped
+file: acl_test_tool.go
+old: if err := screenTestSubjects(env, in.Src, written); err != nil {
+new: if err := screenTestSubjects(env, "tag:kept", nil); err != nil {
+kill: TestALiteralLoginIsFilterRefusedBeforeAnyRequestWhileMaskingAndAcceptedWithShow
+
+mutant: other sources' results fail the call
+file: acl_test_tool.go
+old: Status:         reading.Status,
+new: Status:           statusFail,
+kill: TestOtherTestsAreReportedApartAndDoNotFailTheCall
+
+mutant: the reply is shown without the resolver's mask
+file: acl_test_tool.go
+old: return messageDisplay(res, env, s)
+new: return s
+kill: TestAPseudonymSourceAndDestinationAreResolvedAndTheLoginReachesOnlyTheRequest
+
+mutant: an unevaluable status exits 9
+file: acl_test_tool.go
+old: case statusUnresolved:\n\t\treturn 2
+new: case statusUnresolved:\n\t\treturn 9
+kill: TestAUnresolvableSourceIsUnresolvedNotAFailureAndExitsTwo
+
+mutant: the SSH path sends the live policy with its own tests left in
+file: acl_invariants.go
+old: stripped, err := stripTests(ctx, sent)
+new: stripped, err := func() ([]byte, error) { return append([]byte(nil), sent...), nil }()
+kill: TestTheBuiltDocumentIsTheLivePolicyWithoutItsTestsPlusTheCallersSSHTestsAndTheCanary
+
+mutant: a silent check user is allowed
+file: acl_test_ssh.go
+old: func silentCheckVerdict() string { return verdictUnknown }
+new: func silentCheckVerdict() string { return verdictAllowed }
+kill: TestACheckUserWithNoLineIsUnknownNotAllowed
+
+mutant: the canary check ignores the destination
+file: acl_canary.go
+old: f.Dst != canaryDestination
+new: false
+kill: TestACanaryWithTheWrongDestinationOrDirectionIsNotTheCanary
+
+mutant: an entry for another spelling of the source is another test
+file: acl_test_verdicts.go
+old: if spellsSource(res.User, src) {
+new: if false {
+kill: TestAnEntryForAnotherSpellingOfTheSourceMakesEveryDestinationUnknown|TestAReplyForAnotherSpellingOfTheSourceIsUnknownThroughTheTool
+
+mutant: a line of another source never names a destination
+file: acl_test_verdicts.go
+old: if key == "" || !strings.Contains(text, key) {
+new: if true {
+kill: TestAnEntryForAnotherSourceThatNamesADestinationInAnyLineMakesItUnknown
+
+mutant: a colon after a destination does not end its token
+file: acl_test_verdicts.go
+old: return end+1 >= len(text) || !destRune(rune(text[end+1]))
+new: return false
+kill: TestATokenIsBoundedByAnythingButMoreOfTheToken|TestAnEntryForAnotherSourceThatNamesADestinationInAnyLineMakesItUnknown
+
+mutant: a warning of another source never names a destination
+file: acl_test_verdicts.go
+old: lines := append(append([]string{}, res.Errors...), res.Warnings...)
+new: lines := append([]string{}, res.Errors...)
+kill: TestAnEntryForAnotherSourceThatNamesADestinationInAnyLineMakesItUnknown
+
+mutant: the SSH path does not take an entry for another spelling of the source as its own
+file: acl_test_ssh.go
+old: spelled = spelled || spellsSource(r.User, src)
+new: spelled = false
+kill: TestAnSSHEntryForAnotherSpellingOfTheSourceMakesEveryUserUnknown|TestAnSSHReplyForAnotherSpellingOfTheSourceIsUnknownNeverAPass
+
+mutant: the SSH path drops the lines of an entry for another source
+file: acl_test_ssh.go
+old: unmatched = append(unmatched, r.Errors...)
+new: _ = r.Errors
+kill: TestAnSSHEntryForAnotherSpellingOfTheSourceMakesEveryUserUnknown|TestAnSSHReplyForAnotherSpellingOfTheSourceIsUnknownNeverAPass
+
+mutant: a credential shape is let through while personal data is shown
+file: acl_test_subjects.go
+old: func screenTestSubjects(env *registry.Env, src string, dsts []string) error {\n\tif err := refuseCredentialShape("src", src); err != nil {
+new: func screenTestSubjects(env *registry.Env, src string, dsts []string) error {\n\tif env != nil && env.ShowPersonalData() {\n\t\treturn nil\n\t}\n\tif err := refuseCredentialShape("src", src); err != nil {
+kill: TestACredentialShapeIsRefusedEvenWhenPersonalDataIsShown
+
+mutant: a cancelled call with no pseudonym in its text goes on
+file: acl_subjects_subst.go
+old: if err := ctx.Err(); err != nil {\n\t\treturn nil, 0, tkerr.Wrap(tkerr.APIError, err, "request cancelled", "")\n\t}\n\tfound, badLine
+new: found, badLine
+kill: TestSubstituteSubjectsBranches
+
+mutant: the cut text is not kept to a character boundary before the search for a login
+file: acl_subjects_hide.go
+old: \tfor n > 0 && !utf8.RuneStart(text[n]) {\n\t\tn--\n\t}\n\ttext = text[:n]
+new: \ttext = text[:n]
+kill: TestACutInsideAMultibyteCharacterOfALoginWithASlashDropsTheWholeLogin
+
+mutant: the search for the start of a login begins inside a character
+file: acl_subjects_hide.go
+old: \t\tif !utf8.RuneStart(text[s]) {\n\t\t\tcontinue\n\t\t}\n
+new:
+kill: TestTheStartOfALoginIsSoughtByWholeCharacters
+
+mutant: the walk back over address bytes stops inside a character
+file: acl_subjects_hide.go
+old: \tfor n > 0 && n < len(text) && !utf8.RuneStart(text[n]) {\n\t\tn--\n\t}\n\treturn n
+new: \treturn n
+kill: TestACutAfterALongRunOfAddressBytesNeverLeavesHalfACharacter
+
+mutant: the request puts the accept destinations in deny and the deny destinations in accept
+file: acl_test_tool.go
+old: Accept:          sent[:nAccept],\n\t\tDeny:            sent[nAccept:],
+new: Accept:          sent[nAccept:],\n\t\tDeny:            sent[:nAccept],
+kill: TestTheRequestCarriesAcceptInAcceptAndDenyInDeny|TestTheRequestKeepsEachResolvedDestinationOnItsOwnSideAndPort
+
+mutant: the verdicts are derived without the policy's hosts section
+file: acl_test_tool.go
+old: reading := deriveVerdicts(dests, subjects.Src, policyHosts, v.Results)
+new: reading := deriveVerdicts(dests, subjects.Src, func(map[string]string) map[string]string { return nil }(policyHosts), v.Results)
+kill: TestAHostAliasQuotedAsItsAddressIsReadThroughTheHostsSection
+
+mutant: the result states no caveat
+file: acl_test_tool.go
+old: Caveats:        testCaveats(in, reading),
+new: Caveats:        nil,
+kill: TestEveryCaveatTheResultCanCarryIsStatedByACallThatNeedsIt|TestAHostAliasQuotedAsItsAddressIsReadThroughTheHostsSection
+
+mutant: a rejected SSH copy states neither caveat
+file: acl_test_ssh.go
+old: out.Caveat = caveat
+new: out.Caveat = caveat[:0]
+kill: TestEveryCaveatTheResultCanCarryIsStatedByACallThatNeedsIt
+
+mutant: an SSH test of a group states no note
+file: acl_test_tool.go
+old: if note := sshSrcNote(in.Src); note != "" {
+new: if note := ""; note != "" {
+kill: TestEveryCaveatTheResultCanCarryIsStatedByACallThatNeedsIt
+
+mutant: a deny destination with proto omitted states no caveat
+file: acl_test_tool.go
+old: if in.Proto == "" && len(in.Deny) > 0 {
+new: if false {
+kill: TestEveryCaveatTheResultCanCarryIsStatedByACallThatNeedsIt
+
+mutant: the status of a call with both halves ignores the SSH half
+file: acl_test_tool.go
+old: out.Status = worse(out.Status, ssh.Status)
+new: out.Status = out.Status
+kill: TestACallWithBothHalvesTakesTheWorseStatusOfTheTwo
+
+mutant: the status of a call with both halves is the SSH half's alone
+file: acl_test_tool.go
+old: out.Status = worse(out.Status, ssh.Status)
+new: out.Status = ssh.Status
+kill: TestACallWithBothHalvesTakesTheWorseStatusOfTheTwo
+
+mutant: the SSH verdicts of a result are not capped
+file: acl_test_tool.go
+old: if len(in) <= maxSSHVerdicts {
+new: if true || len(in) <= maxSSHVerdicts {
+kill: TestSSHVerdictsInAResultAreCappedTheOnesNotAsAskedFirstAndTheRestCounted
+
+mutant: the cap lists the verdicts that are as asked before the ones that are not
+file: acl_test_tool.go
+old: for _, wantBad := range []bool{true, false} {
+new: for _, wantBad := range []bool{false, true} {
+kill: TestSSHVerdictsInAResultAreCappedTheOnesNotAsAskedFirstAndTheRestCounted
+
+mutant: the verdicts left out are not counted
+file: acl_test_tool.go
+old: return out, len(in) - n
+new: return out, 0
+kill: TestSSHVerdictsInAResultAreCappedTheOnesNotAsAskedFirstAndTheRestCounted
+
+mutant: the verdict line counts only the SSH verdicts it lists
+file: acl_test_tool.go
+old: nSSH := len(o.SSHVerdicts) + o.Omitted
+new: nSSH := len(o.SSHVerdicts)
+kill: TestSSHVerdictsInAResultAreCappedTheOnesNotAsAskedFirstAndTheRestCounted
+
+mutant: the users of one SSH test are not bounded
+file: acl_test_input.go
+old: if users > maxSSHUsers {
+new: if false && users > maxSSHUsers {
+kill: TestSSHTestsNeedADestinationAndAUserList|TestThousandsOfSSHUsersAreRefusedBeforeAnyRequest
+
+mutant: posture attributes are accepted beside SSH tests
+file: acl_test_tool.go
+old: \t\tif len(in.SrcPostureAttrs) > 0 {\n\t\t\treturn invalidf("srcPostureAttrs cannot be given together with ssh")\n\t\t}\n
+new:
+kill: TestACLTestInputChecksAtTheirEdges|TestInputChecksNeedNoEnvironment|TestARefusedCallSendsNoRequest
+
+mutant: a bare local part is masked inside a longer word that ends with it
+file: acl_subjects_hide.go
+old: if m[0] > 0 && wordByte(text[m[0]-1]) || m[1] < len(text) && wordByte(text[m[1]]) {
+new: if m[1] < len(text) && wordByte(text[m[1]]) {
+kill: TestHideMasksEveryOccurrenceOfARepeatedBareLocalPart
+
+mutant: a bare local part is masked inside a longer word that starts with it
+file: acl_subjects_hide.go
+old: if m[0] > 0 && wordByte(text[m[0]-1]) || m[1] < len(text) && wordByte(text[m[1]]) {
+new: if m[0] > 0 && wordByte(text[m[0]-1]) {
+kill: TestHideMasksEveryOccurrenceOfARepeatedBareLocalPart
+
+mutant: a bare local part at the start or at the end of the text is not masked
+file: acl_subjects_hide.go
+old: if m[0] > 0 && wordByte(text[m[0]-1]) || m[1] < len(text) && wordByte(text[m[1]]) {
+new: if m[0] == 0 || m[1] == len(text) || wordByte(text[m[0]-1]) || wordByte(text[m[1]]) {
+kill: TestHideMasksEveryOccurrenceOfARepeatedBareLocalPart
+
+mutant: a bare local part is masked in the first occurrence and not the next
+file: acl_subjects_hide.go
+old: b.WriteString(w.repl)\n\t\tlast = m[1]
+new: b.WriteString(w.repl)\n\t\tlast = m[1]\n\t\tbreak
+kill: TestHideMasksEveryOccurrenceOfARepeatedBareLocalPart
+
+mutant: a bare local part is masked word by word, so its hyphens and dots keep its shape
+file: acl_subjects_hide.go
+old: append([]string{local}, words...)
+new: words
+kill: TestHideMasksABareLocalPartToOneFormWhateverItHolds
+
+mutant: the posture names of a tests-mode result are shown as the policy wrote them
+file: acl_test_tool.go
+old: \t\tPosturesNeeded: testLines(res, env, postures),\n\t\tPostureNote:    postureNote,\n\t\tCaveats:
+new: \t\tPosturesNeeded: postures,\n\t\tPostureNote:    postureNote,\n\t\tCaveats:
+kill: TestPostureNamesAreMaskedLikeAnyOtherTextOfThePolicy
+
+mutant: the posture names of an SSH-only result are shown as the policy wrote them
+file: acl_test_tool.go
+old: PosturesNeeded: testLines(res, env, postures),\n\t\t\t\tPostureNote:
+new: PosturesNeeded: postures,\n\t\t\t\tPostureNote:
+kill: TestPostureNamesOfAnSSHOnlyCallAreMasked
+
+mutant: a posture name is a trusted finding of the report
+file: acl_test_tool.go
+old: Message: "posture attribute needed: " + name, Untrusted: true})
+new: Message: "posture attribute needed: " + name})
+kill: TestPostureNamesAreMaskedLikeAnyOtherTextOfThePolicy
+
+mutant: a word the caller typed is masked as a word of a login
+file: acl_subjects_hide.go
+old: \t\tif typed.standsAlone(text[m[0]:m[1]]) {\n\t\t\tcontinue\n\t\t}\n
+new: 
+kill: TestHideLeavesAWordTheCallerTypedAsItIsAndMasksTheOnesTailscaleAdds|TestHideLeavesAWholeLocalPartTheCallerTypedAsItIs
+
+mutant: a login the caller typed is masked by what the call resolved
+file: acl_subjects_hide.go
+old: if span := text[start:m[1]]; typed.standsAlone(span) {
+new: if span := text[start:m[1]]; false && typed.standsAlone(span) {
+kill: TestHideReadsATypedTextTheSameWhicheverLoginTheCallResolved
+
+mutant: a word that is only part of a typed word counts as typed
+file: acl_subjects_hide.go
+old: if (i == 0 || !wordByte(text[i-1])) && (end == len(text) || !wordByte(text[end])) {
+new: if end > 0 && (i == 0 || !wordByte(text[i-1])) {
+kill: TestHideLeavesAWordTheCallerTypedAsItIsAndMasksTheOnesTailscaleAdds
+
+mutant: a typed span is looked for at its first occurrence only
+file: acl_subjects_hide.go
+old: \t\tfrom = i + 1\n\t}\n\treturn false\n}
+new: \t\treturn false\n\t}\n\treturn false\n}
+kill: TestHideLeavesAWordTheCallerTypedAsItIsAndMasksTheOnesTailscaleAdds|TestHideLeavesAWholeLocalPartTheCallerTypedAsItIs|TestHideSearchesATypedTextForALaterOccurrenceAndKeepsEveryTelling
+
+mutant: the typed set forgets what it was told before
+file: acl_subjects_hide.go
+old: \tt.memo = nil\n}
+new: \tt.values = t.values[len(t.values)-len(values):]\n\tt.memo = nil\n}
+kill: TestHideLeavesAWordTheCallerTypedAsItIsAndMasksTheOnesTailscaleAdds|TestHideSearchesATypedTextForALaterOccurrenceAndKeepsEveryTelling
+
+mutant: the protocol is not among the typed words
+file: acl_test_echo.go
+old: out := []string{in.Src, in.Proto}
+new: out := []string{in.Src}
+kill: TestTheResultDoesNotTellWhichTypedWordIsALocalPartOfTheResolvedLoginInATool
+
+mutant: the deny destinations are not among the typed words
+file: acl_test_echo.go
+old: \tout = append(out, in.Deny...)\n
+new: 
+kill: TestTheResultDoesNotTellWhichTypedWordIsALocalPartOfTheResolvedLoginInATool
+
+mutant: the SSH users are not among the typed words
+file: acl_test_echo.go
+old: \t\tout = append(out, t.Accept...)\n
+new: 
+kill: TestTheResultDoesNotTellWhichTypedWordIsALocalPartOfTheResolvedLoginInATool
+
+mutant: the SSH destinations are not among the typed words
+file: acl_test_echo.go
+old: \t\tout = append(out, t.Dst...)\n
+new: 
+kill: TestTheResultDoesNotTellWhichTypedWordIsALocalPartOfTheResolvedLoginInATool
+
+mutant: a posture value is not among the typed words
+file: acl_test_echo.go
+old: \t\t\tout = append(out, s)\n
+new: \t\t\t_ = s\n
+kill: TestTheResultDoesNotTellWhichTypedWordIsALocalPartOfTheResolvedLoginInATool
+
+mutant: a typed address is shown with its pseudonym
+file: acl_test_echo.go
+old: return sanitize.MaskEmails(env.Masker().Unforge(s))
+new: return env.Masker().Emails(s) + sanitize.MaskEmails("")
+kill: TestWhatTheCallerTypedComesBackWithNoPseudonymItDidNotType
+
+mutant: a typed marker is shown as typed
+file: acl_test_echo.go
+old: return sanitize.MaskEmails(env.Masker().Unforge(s))
+new: return sanitize.MaskEmails(s)
+kill: TestWhatTheCallerTypedComesBackWithNoPseudonymItDidNotType|TestAPseudonymCarrierTheCallerTypedComesBackAsTyped
+
+mutant: a typed carrier is masked
+file: acl_test_echo.go
+old: \tif _, carrier, _ := carrierRef(s); carrier {\n\t\treturn s\n\t}\n
+new: 
+kill: TestAPseudonymCarrierTheCallerTypedComesBackAsTyped
+
+mutant: a typed carrier with a port is masked
+file: acl_test_echo.go
+old: \tif _, carrier, _ := carrierRef(subjectHost(s)); carrier {\n\t\treturn s\n\t}\n
+new: 
+kill: TestAPseudonymCarrierTheCallerTypedComesBackAsTyped
+
+mutant: a typed text is masked while personalData is show
+file: acl_test_echo.go
+old: \tif env.ShowPersonalData() {\n\t\treturn s\n\t}\n
+new: 
+kill: TestWithPersonalDataShownWhatTheCallerTypedComesBackAsTyped|TestWhatTheCallerTypedIsShownAsTypedWhilePersonalDataIsShown
+
+mutant: the SSH users are shown as the registry would show them
+file: acl_test_tool.go
+old: \t\t\tout.SSHVerdicts[i].User = echoed(env, out.SSHVerdicts[i].User)\n
+new: 
+kill: TestWhatTheCallerTypedComesBackWithNoPseudonymItDidNotType
+
+mutant: the resolver is not told what the caller typed
+file: acl_test_tool.go
+old: \tres.Typed(typedInputs(in)...)\n
+new: 
+kill: TestTheResultDoesNotTellWhichTypedWordIsALocalPartOfTheResolvedLoginInATool
+
+mutant: the SSH destinations are not screened for a login
+file: acl_test_tool.go
+old: \tif err := screenTestSubjects(env, in.Src, sshDestinations(in.SSH)); err != nil {\n\t\treturn ACLTestOutput{}, res.HideError(err)\n\t}\n
+new: 
+kill: TestALiteralLoginAsAnSSHDestinationIsRefusedBeforeAnyRequest
+
+mutant: a failed SSH half fails the whole call
+file: acl_test_tool.go
+old: \t\t\tif len(written) == 0 {\n\t\t\t\treturn ACLTestOutput{}, res.HideError(sshErr)\n\t\t\t}\n
+new: \t\t\treturn ACLTestOutput{}, res.HideError(sshErr)\n
+kill: TestACallWhoseSSHHalfCannotRunKeepsItsTestsHalf
+
+mutant: a failed SSH half is not said
+file: acl_test_tool.go
+old: \t\t\tout.SSHError = sshNotRunNote(res.HideError(sshErr))\n
+new: 
+kill: TestACallWhoseSSHHalfCannotRunKeepsItsTestsHalf
+
+mutant: the SSH verdicts not as asked are counted from the listed ones
+file: acl_test_tool.go
+old: \treturn max(1, o.SSHNotAsked)
+new: \tn := 0\n\tfor _, v := range o.SSHVerdicts {\n\t\tif sshNotAsked(v) {\n\t\t\tn++\n\t\t}\n\t}\n\treturn max(1, n)
+kill: TestTheHeadlineCountsEverySSHVerdictNotAsAskedNotOnlyTheListedOnes
+
+mutant: the count of SSH verdicts not as asked is not kept
+file: acl_test_tool.go
+old: \t\tout.SSHNotAsked = ssh.NotAsked\n
+new: 
+kill: TestTheHeadlineCountsEverySSHVerdictNotAsAskedNotOnlyTheListedOnes
+
+mutant: a protocol is ignored when the call has no destination
+file: acl_test_tool.go
+old: \t\tif n == 0 {\n\t\t\treturn invalidf("proto applies to the destinations of accept and deny, and this call gives none")\n\t\t}\n
+new: 
+kill: TestACLTestInputChecksAtTheirEdges
+
+mutant: the note of the result is a thing not checked
+file: acl_test_tool.go
+old: facts = append(facts, registry.Fact{Label: "note", Text: o.Note})
+new: notChecked = append(notChecked, o.Note)
+kill: TestPostureIsFalseForAPolicyWithoutAndANoteWhenThePolicyCannotBeRead
+
+mutant: the posture of the result is a thing not checked
+file: acl_test_tool.go
+old: facts = append(facts, registry.Fact{Label: "posture", Text: o.Posture})
+new: notChecked = append(notChecked, "posture: "+o.Posture)
+kill: TestPostureIsFalseForAPolicyWithoutAndANoteWhenThePolicyCannotBeRead
+
+mutant: an unknown posture is not said to leave something unproved
+file: acl_test_tool.go
+old: \t\tnotChecked = append(notChecked, postureUnproved)\n
+new: 
+kill: TestPostureIsFalseForAPolicyWithoutAndANoteWhenThePolicyCannotBeRead
+
+mutant: the lines left out of a result are not said
+file: acl_test_tool.go
+old: \tif o.OmittedLines > 0 {
+new: \tif false {
+kill: TestAHostileTestsModeReplyIsBoundedAndItsStatusIsUntouched
+
+mutant: the lines left out of a result are not counted
+file: acl_test_tool.go
+old: \tout.OmittedLines = shown.omitted\n
+new: 
+kill: TestAHostileTestsModeReplyIsBoundedAndItsStatusIsUntouched
+
+mutant: the SSH canary is taken without its user
+file: acl_test_ssh.go
+old: return f.Kind == AssertionFailed && f.SSH && f.User == sshCanaryUser && f.Dst == sshCanaryDst
+new: return f.Kind == AssertionFailed && f.SSH && f.Dst == sshCanaryDst
+kill: TestTheSSHCanaryIsCheckedWholeAndAnythingElseIsUnknownNeverAPass
+
+mutant: the SSH canary is taken without its destination
+file: acl_test_ssh.go
+old: return f.Kind == AssertionFailed && f.SSH && f.User == sshCanaryUser && f.Dst == sshCanaryDst
+new: return f.Kind == AssertionFailed && f.SSH && f.User == sshCanaryUser
+kill: TestTheSSHCanaryIsCheckedWholeAndAnythingElseIsUnknownNeverAPass
+
+mutant: any single line is the SSH canary
+file: acl_test_ssh.go
+old: \t\tf := ParseFailureLine(line)\n\t\treturn f.Kind == AssertionFailed && f.SSH && f.User == sshCanaryUser && f.Dst == sshCanaryDst
+new: \t\treturn true
+kill: TestTheSSHCanaryIsCheckedWholeAndAnythingElseIsUnknownNeverAPass
+
+mutant: the SSH request takes one token whoever the source is
+file: acl_test_ssh.go
+old: call, err := c.BeginValidateCharged(ctx, 1, sshTokens(in))
+new: call, err := c.BeginValidate(ctx, 1)
+kill: TestEachDistinctSSHUserOfAPseudonymSourceTakesAValidationToken|TestACallThatCannotTakeAllItsSSHTokensSendsNothingAndKeepsTheBucket
+
+mutant: a literal source is charged for its SSH users
+file: acl_test_ssh.go
+old: \tif !pseudonymCarrier(in.Src) {\n\t\treturn 1\n\t}\n
+new: 
+kill: TestEachDistinctSSHUserOfAPseudonymSourceTakesAValidationToken
+
+mutant: a pseudonym source is charged one token
+file: acl_test_ssh.go
+old: \treturn max(1, len(users))
+new: \treturn 1
+kill: TestEachDistinctSSHUserOfAPseudonymSourceTakesAValidationToken
+
+mutant: the check users of a pseudonym source are not charged
+file: acl_test_ssh.go
+old: for _, list := range [][]string{t.Accept, t.Check, t.Deny} {
+new: for _, list := range [][]string{t.Accept, t.Deny} {
+kill: TestEachDistinctSSHUserOfAPseudonymSourceTakesAValidationToken
+
+mutant: the deny users of a pseudonym source are not charged
+file: acl_test_ssh.go
+old: for _, list := range [][]string{t.Accept, t.Check, t.Deny} {
+new: for _, list := range [][]string{t.Accept, t.Check} {
+kill: TestEachDistinctSSHUserOfAPseudonymSourceTakesAValidationToken
+
+mutant: a user named twice is charged twice
+file: acl_test_ssh.go
+old: \t\t\t\tusers[u] = true\n
+new: \t\t\t\tusers[u+string(rune(len(users)))] = true\n
+kill: TestEachDistinctSSHUserOfAPseudonymSourceTakesAValidationToken
+
+mutant: an SSH line is paired with a user by scanning every line
+file: acl_test_ssh.go
+old: \t\tfor _, j := range byKey[keys[i]] {\n\t\t\tgot = append(got, lines[j])\n\t\t\tlines[j].used = true\n\t\t}
+new: \t\tfor j := range lines {\n\t\t\tif canonicalSSHDst(lines[j].f.Dst) == keys[i].dst && lines[j].f.User == keys[i].user {\n\t\t\t\tgot = append(got, lines[j])\n\t\t\t\tlines[j].used = true\n\t\t\t}\n\t\t}
+kill: TestTheSSHVerdictsOfTheWidestCallAreDerivedInLinearWork
+
+mutant: a line is read as the answer of a test of the other direction
+file: acl_test_ssh.go
+old: \tif (expect == expectAccept && f.Want != "accept") || (expect == expectDeny && f.Want != "deny") {\n\t\treturn verdictUnknown, whySSHDisagree\n\t}\n
+new: 
+kill: TestALineOfAnAcceptTestIsNotTheAnswerOfADenyTestOfTheSameUser
+
+mutant: a check user that a line names is allowed
+file: acl_test_ssh.go
+old: \t\treturn verdictUnknown, whySSHUnevaluable\n\t}\n\tif len(lines) == 0 {
+new: \t\treturn verdictAllowed, ""\n\t}\n\tif len(lines) == 0 {
+kill: TestACheckUserWithALineHasAnUnknownVerdictWhateverTheStatusSays
+
+mutant: a check user passes the SSH status
+file: acl_test_ssh.go
+old: \t\tcase one.Expect == expectCheck:\n\t\t\tst = worse(st, statusUnknown)\n
+new: 
+kill: TestACheckUserNeverLeavesAnSSHStatusOfPass
+
+mutant: a srcPosture key is read in one letter case
+file: acl_test_posture.go
+old: !strings.EqualFold(k, "srcPosture")
+new: k != "srcPosture"
+kill: TestPostureReadsASrcPostureKeyAndASectionNameInAnyCase
+
+mutant: a section name is read in one letter case
+file: acl_test_posture.go
+old: folded[strings.ToLower(k)] = v
+new: folded[k] = v
+kill: TestPostureReadsASrcPostureKeyAndASectionNameInAnyCase
+
+mutant: the list of posture names is cut without a note
+file: acl_test_posture.go
+old: return hosts, postureGated, postures, postureNoteMore
+new: return hosts, postureGated, postures, ""
+kill: TestAPolicyThatNamesMorePostureAttributesThanTheResultListsSaysSo
+
+mutant: the list of posture names is cut one name early
+file: acl_test_posture.go
+old: if len(postures) > maxPosturesListed {
+new: if len(postures) >= maxPosturesListed {
+kill: TestAPolicyThatNamesMorePostureAttributesThanTheResultListsSaysSo
+
+mutant: an SSH destination is refused as a masked value though it carries a pseudonym
+file: acl_test_input.go
+old: && !(dst && pseudonymCarrier(v))
+new: 
+kill: TestACLTestInputChecksAtTheirEdges
+
+mutant: an SSH user that is a masked value carrying a pseudonym is accepted
+file: acl_test_input.go
+old: case strings.Contains(v, "…") && !(dst && pseudonymCarrier(v)):
+new: case strings.Contains(v, "…") && dst && !pseudonymCarrier(v):
+kill: TestACLTestInputChecksAtTheirEdges
+
+mutant: a posture attribute name keeps its old shape
+file: acl_test_input.go
+old: `^[a-z][A-Za-z0-9:._-]*$`
+new: `^[a-z][a-z0-9]*:[a-z][A-Za-z0-9]*$`
+kill: TestPostureAttributeNamesTakeTheShapesTailscaleUsesAndNothingElse
+
+mutant: a posture attribute name has no length bound
+file: acl_test_input.go
+old: || len(k) > maxPostureValue
+new: 
+kill: TestPostureAttributeNamesTakeTheShapesTailscaleUsesAndNothingElse
+
+mutant: a line is counted by its length before masking
+file: acl_test_messages.go
+old: c := cost(shown)
+new: c := cost(l.text)
+kill: TestALineIsCountedByWhatItIsAfterMasking
+
+mutant: every line of an entry is masked
+file: acl_test_messages.go
+old: \t\t\tif j >= maxTestMessages {\n\t\t\t\tbreak\n\t\t\t}\n
+new: \t\t\t_ = j\n
+kill: TestLinesAreChosenBeforeTheyAreMasked
+
+mutant: a list has no bound on its entries
+file: acl_test_messages.go
+old: fits := i < maxTestMessages && s.lines > 0
+new: fits := s.lines > 0
+kill: TestLinesAreChosenBeforeTheyAreMasked
+
+mutant: a list of lines has no bound
+file: acl_test_messages.go
+old: \t\tif i >= maxTestMessages {\n\t\t\ts.omitted += len(in) - i\n\t\t\tbreak\n\t\t}\n
+new: 
+kill: TestLinesAreChosenBeforeTheyAreMasked
+
+mutant: a result has no bound on its lines
+file: acl_test_messages.go
+old: \tif s.lines == 0 {\n\t\treturn "", false\n\t}\n
+new: 
+kill: TestAResultShowsAtMostTheCapOfLinesInAllItsLists
+
+mutant: a result has no budget
+file: acl_test_messages.go
+old: \tif c > s.room {\n\t\treturn "", false\n\t}\n
+new: 
+kill: TestTheLinesOfAResultTakeAtMostTheBudgetAndTheFirstThatDoesNotFitEndsTheList
+
+mutant: a line that does not fit does not end its list
+file: acl_test_messages.go
+old: \t\tif full {
+new: \t\tif full && false {
+kill: TestTheLinesOfAResultTakeAtMostTheBudgetAndTheFirstThatDoesNotFitEndsTheList
+
+mutant: an entry's source costs nothing
+file: acl_test_messages.go
+old: \t\ts.room -= cost(src)\n
+new: 
+kill: TestTheLinesOfAResultTakeAtMostTheBudgetAndTheFirstThatDoesNotFitEndsTheList
+
+mutant: a line left out is not counted
+file: acl_test_messages.go
+old: \t\ts.omitted += len(e.lines) - len(shown)\n
+new: 
+kill: TestLinesAreChosenBeforeTheyAreMasked|TestAHostileTestsModeReplyIsBoundedAndItsStatusIsUntouched
+
+mutant: an SSH line loses the test it was placed at
+file: acl_test_messages.go
+old: \tif l.place >= 0 {
+new: \tif false {
+kill: TestAnSSHLineShowsTheTestItWasPlacedAt

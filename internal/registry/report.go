@@ -22,6 +22,10 @@ type Report struct {
 	// passed · invariants: none". Empty prints nothing.
 	Verdict string
 	Level   Level
+	// Facts are what the result states about itself, each under its own label ("note",
+	// "posture"): tailkeeper's own sentences, never a tailnet's text. They are not
+	// NotChecked, which names what the result does not answer.
+	Facts []Fact
 	// NotChecked names what the result does not answer ("lockout", "downgrades").
 	NotChecked []string
 	// Classes are the diff counts by class, in the order to show them: defaults,
@@ -31,6 +35,12 @@ type Report struct {
 	// counts of Gated.Findings are another thing: a count a tool does not compute is
 	// 0, and the command refuses the --fail-on token that names it; see Computes.)
 	Findings []Finding
+}
+
+// Fact is one statement of a Report under its label.
+type Fact struct {
+	Label string
+	Text  string
 }
 
 // ClassCount is the number of changes of one class.

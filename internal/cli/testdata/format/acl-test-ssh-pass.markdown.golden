@@ -1,0 +1,5 @@
+**PASS · 1 SSH user as asked**
+
+Facts:
+
+- note: Evaluated against the live policy. SSH tests are a copy of the live policy with its own tests removed, plus an SSH canary, sent to Tailscale, which changes nothing. srcPostureAttrs are refused together with ssh.

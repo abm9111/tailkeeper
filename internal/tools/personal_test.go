@@ -228,10 +228,11 @@ func TestEveryIdentifierFieldIsTaggedPersonal(t *testing.T) {
 	exact := map[string]bool{"user": true, "tailnetid": true}
 	// Fields with such names that name no person.
 	notPersonal := map[reflect.Type]map[string]bool{
-		reflect.TypeFor[tools.ACLSummary]():   {"tagOwners": true},       // the tags a policy defines, which name no person
-		reflect.TypeFor[tools.Service]():      {"displayName": true},     // a service's label
-		reflect.TypeFor[tools.DeviceInvite](): {"lastEmailSentAt": true}, // a time
-		reflect.TypeFor[tools.UserInvite]():   {"lastEmailSentAt": true},
+		reflect.TypeFor[tools.ACLSummary]():    {"tagOwners": true},       // the tags a policy defines, which name no person
+		reflect.TypeFor[tools.ACLSSHVerdict](): {"user": true},            // an operating-system account, not a tailnet user
+		reflect.TypeFor[tools.Service]():       {"displayName": true},     // a service's label
+		reflect.TypeFor[tools.DeviceInvite]():  {"lastEmailSentAt": true}, // a time
+		reflect.TypeFor[tools.UserInvite]():    {"lastEmailSentAt": true},
 	}
 	identifier := func(name string) bool {
 		n := strings.ToLower(name)

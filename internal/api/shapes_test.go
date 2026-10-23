@@ -3,10 +3,12 @@ package api_test
 import (
 	"context"
 	"slices"
+	"strings"
 	"testing"
 
 	"github.com/abm9111/tailkeeper/internal/api"
 	"github.com/abm9111/tailkeeper/internal/api/apitest"
+	"github.com/abm9111/tailkeeper/internal/tkerr"
 )
 
 // readsAsAPass says whether ValidateTests, sent one test, takes the shape for a pass.
@@ -43,8 +45,58 @@ func TestAssumedValidateShapesNeverReadAsAPass(t *testing.T) {
 			}
 		})
 	}
-	if n < 2 {
+	if n < 6 {
 		t.Errorf("only %d Assumed validate shapes in the ledger: the loop is not walking it", n)
+	}
+}
+
+// notAPassInTestsMode requires ValidateTests to refuse s as an unrecognised response.
+func notAPassInTestsMode(t *testing.T, s apitest.Shape) {
+	t.Helper()
+	f := apitest.New(t)
+	f.ServeValidate(s)
+	c := f.Client(t)
+	res, err := c.ValidateTests(context.Background(), []api.PolicyTest{{Src: "tag:p", Accept: []string{"tag:p:22"}}})
+	e := tkerr.From(err)
+	if err == nil || e.Code != tkerr.APIError || !strings.Contains(err.Error(), "unrecognised response") || res.Passed {
+		t.Errorf("%s: got %+v, %v; want api_error and the unrecognised response text", s.Name, res, err)
+	}
+}
+
+// An empty data list is not a pass. The tests-mode pass the probe saw was a blank body.
+func TestAnEmptyDataListIsNotAPass(t *testing.T) {
+	notAPassInTestsMode(t, apitest.TestsEmptyData())
+}
+
+// A null data field is not a pass. It is a data field with no entries.
+func TestANullDataListIsNotAPass(t *testing.T) {
+	notAPassInTestsMode(t, apitest.TestsNullData())
+}
+
+// An empty message and no entries is not a pass.
+func TestAnEmptyMessageIsNotAPass(t *testing.T) {
+	notAPassInTestsMode(t, apitest.TestsEmptyMessage())
+}
+
+// The two passes the probes saw stay passes in tests mode: a blank body (A-12) and {}
+// (A-1). A reader tightened until nothing passed would keep every refusal green.
+func TestTheTwoObservedPassesStillPass(t *testing.T) {
+	for _, s := range []apitest.Shape{apitest.TestsPass(), apitest.TestsPassEmptyObject()} {
+		if !readsAsAPass(t, s) {
+			t.Errorf("%s was not read as a pass", s.Name)
+		}
+	}
+}
+
+// Warnings alone stay a pass in tests mode, and the entry is kept.
+func TestWarningsAloneStillPassInTestsMode(t *testing.T) {
+	s := apitest.TestsWarned(apitest.Entry{User: "group:p", Warnings: []string{"host alias unused"}})
+	f := apitest.New(t)
+	f.ServeValidate(s)
+	c := f.Client(t)
+	res, err := c.ValidateTests(context.Background(), []api.PolicyTest{{Src: "tag:p", Accept: []string{"tag:p:22"}}})
+	if err != nil || !res.Passed || len(res.Results) != 1 || res.Results[0].User != "group:p" || len(res.Results[0].Errors) != 0 || len(res.Results[0].Warnings) != 1 || res.Results[0].Warnings[0] != "host alias unused" {
+		t.Fatalf("%s: %+v, %v", s.Name, res, err)
 	}
 }
 

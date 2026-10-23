@@ -52,8 +52,8 @@ func TestGetRawRetriesAndBoundsTheBody(t *testing.T) {
 }
 
 // The validate endpoint answers HTTP 200 for pass, fail and warnings alike. A pass
-// is inferred from the absence of errors, so every other shape must be an error,
-// never a pass.
+// is a blank body, {}, or data holding at least one entry. An empty data list, a
+// null data field and an empty message are unrecognised, never a pass.
 func TestValidateTestsReadsEveryResponseShape(t *testing.T) {
 	for _, c := range []struct {
 		name, body string
@@ -64,7 +64,9 @@ func TestValidateTestsReadsEveryResponseShape(t *testing.T) {
 	}{
 		{"empty body", "", true, 0, 0, false},
 		{"empty object", "{}", true, 0, 0, false},
-		{"no message, no data", `{"message":"","data":[]}`, true, 0, 0, false},
+		{"no message, no data", `{"message":"","data":[]}`, false, 0, 0, true},
+		{"an empty data list", `{"data":[]}`, false, 0, 0, true},
+		{"an empty message", `{"message":""}`, false, 0, 0, true},
 		{"errors", `{"message":"test(s) failed","data":[{"user":"tag:ci","errors":["address \"tag:prod:22\": want: Accept, got: Drop"]}]}`, false, 1, 0, false},
 		{"warnings only", `{"message":"warning(s) found","data":[{"user":"tag:ci","warnings":["host alias unused"]}]}`, true, 0, 1, false},
 		{"errors and warnings", `{"message":"x","data":[{"user":"a","errors":["e"]},{"user":"b","warnings":["w"]}]}`, false, 1, 1, false},
@@ -89,7 +91,9 @@ func TestValidateTestsReadsEveryResponseShape(t *testing.T) {
 		{"errors in another case", `{"data":[{"user":"a","errors":["e"],"Errors":[],"warnings":["w"]}]}`, false, 0, 0, true},
 		{"another field in an entry", `{"data":[{"user":"a","warnings":["w"],"error":"real failure"}]}`, false, 0, 0, true},
 		{"a second object", `{} {"data":[{"user":"a","errors":["e"]}]}`, false, 0, 0, true},
-		{"null data", `{"data":null}`, true, 0, 0, false},
+		{"null data", `{"data":null}`, false, 0, 0, true},
+		{"warnings and no message", `{"data":[{"user":"a","warnings":["w"]}]}`, true, 0, 1, false},
+		{"warnings and an empty message", `{"message":"","data":[{"user":"a","warnings":["w"]}]}`, true, 0, 1, false},
 		{"a failure reported beside warnings", `{"message":"warning(s) found; test(s) failed","data":[{"user":"a","warnings":["w"]}]}`, false, 0, 0, true},
 		{"warnings under another message", `{"message":"validation error: policy invalid","data":[{"user":"a","warnings":["w"]}]}`, false, 0, 0, true},
 	} {
@@ -117,6 +121,62 @@ func TestValidateTestsReadsEveryResponseShape(t *testing.T) {
 		if res.Passed != c.passed || failures != c.failures || warnings != c.warnings {
 			t.Errorf("%s: passed %v, %d failures, %d warnings", c.name, res.Passed, failures, warnings)
 		}
+	}
+}
+
+// A tests-mode request carries srcPostureAttrs as the caller gave them: a string, the
+// number 3 and true. JSON decodes the number as float64, which is the type a map keeps.
+// The field is absent when the map is nil or empty.
+func TestAPolicyTestCarriesItsPostureAttributesAsGiven(t *testing.T) {
+	with := api.PolicyTest{
+		Src:    "tag:p",
+		Accept: []string{"tag:p:22"},
+		SrcPostureAttrs: map[string]any{
+			"custom:level": 3,
+			"custom:ok":    true,
+			"custom:os":    "linux",
+		},
+	}
+	b, err := json.Marshal([]api.PolicyTest{with})
+	if err != nil {
+		t.Fatal(err)
+	}
+	const want = `[{"src":"tag:p","srcPostureAttrs":{"custom:level":3,"custom:ok":true,"custom:os":"linux"},"accept":["tag:p:22"]}]`
+	if string(b) != want {
+		t.Fatalf("body = %s\nwant %s", b, want)
+	}
+	var got []struct {
+		Attrs map[string]any `json:"srcPostureAttrs"`
+	}
+	if err := json.Unmarshal(b, &got); err != nil {
+		t.Fatal(err)
+	}
+	if len(got) != 1 {
+		t.Fatalf("decoded %d tests", len(got))
+	}
+	attrs := got[0].Attrs
+	if attrs["custom:os"] != "linux" {
+		t.Errorf("string = %#v", attrs["custom:os"])
+	}
+	if n, ok := attrs["custom:level"].(float64); !ok || n != 3 {
+		t.Errorf("number = %#v (%T), want the number 3", attrs["custom:level"], attrs["custom:level"])
+	}
+	if attrs["custom:ok"] != true {
+		t.Errorf("bool = %#v", attrs["custom:ok"])
+	}
+	empty, err := json.Marshal([]api.PolicyTest{{Src: "tag:p", Accept: []string{"tag:p:22"}}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(empty), "srcPostureAttrs") {
+		t.Errorf("a nil map is present: %s", empty)
+	}
+	blank, err := json.Marshal([]api.PolicyTest{{Src: "tag:p", SrcPostureAttrs: map[string]any{}}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(blank), "srcPostureAttrs") {
+		t.Errorf("an empty map is present: %s", blank)
 	}
 }
 

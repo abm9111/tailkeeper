@@ -12,7 +12,7 @@ import (
 func TestDoctorDoesNotSendTheReaderBackToItself(t *testing.T) {
 	f, a := newApp(t, allReadScopes(t))
 	f.JSON("GET", keyPath, 200, `{"id":"test-client-id","keyType":"client"}`)
-	f.ServeDetails(apitest.DetailsOK("{\"acls\": []}\n", `"e1"`, nil, nil))
+	f.ServeDetails(apitest.DetailsOK(canaryPolicy, `"e1"`, nil, nil))
 	f.Raw("POST", "/api/v2/tailnet/T1234CNTRL/acl/validate", 200, `{"errors":["tag not found"]}`, nil)
 	r := Run(context.Background(), Input{App: a, Now: now, Probe: true})
 	for _, c := range r.Checks {

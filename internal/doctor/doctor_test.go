@@ -404,28 +404,35 @@ func TestExpiredKeyFails(t *testing.T) {
 	}
 }
 
-// The acl_test canary cannot pass under any policy: a pass means the validate
-// response is misread, which doctor --probe must report as a failure.
+// canaryPolicy is a live policy that defines a tag, which is the source and the destination
+// of the acl_test canary.
+const canaryPolicy = "{\"tagOwners\": {\"tag:ci\": []}, \"acls\": []}\n"
+
+// The acl_test canary cannot pass under any policy: an answer with no failure for it means the
+// validate response is misread, which doctor --probe must report as a failure. It is sent
+// from a tag the live policy defines, so that Tailscale evaluates it.
 func TestACLTestCanary(t *testing.T) {
-	canaryFailure := apitest.Entry{User: "tag:tailkeeper-canary", Errors: []string{"want: Drop, got: Accept"}}
+	canaryFailure := apitest.Entry{User: "tag:ci", Errors: []string{`[acl test error]: address "tag:ci:1" (protocol "tcp"): want: Accept, got: Drop`}}
 	for _, c := range []struct {
 		name  string
 		shape apitest.Shape
 		want  Status
 	}{
 		{"read as failed", apitest.TestsFailed(canaryFailure), OK},
-		{"misread as passed", apitest.TestsPass(), Fail},
-		{"refused as invalid", apitest.Rejected400("tag not found"), Warn},
 		{"failures in a 400", apitest.TestsFailedIn400(canaryFailure), OK},
-		{"warnings only", apitest.TestsWarned(apitest.Entry{User: "tag:tailkeeper-canary", Warnings: []string{"tag:tailkeeper-canary is not defined"}}), Warn},
+		{"a pass body, which a test that cannot pass never gets", apitest.TestsPass(), Fail},
+		{"an empty object, which the live API answers a pass with", apitest.TestsPassEmptyObject(), Fail},
+		{"warnings only", apitest.TestsWarned(apitest.Entry{User: "tag:ci", Warnings: []string{"tag:ci is not defined"}}), Warn},
+		{"a line nobody can pair", apitest.TestsFailed(apitest.Entry{User: "tag:ci", Errors: []string{`[acl test error]: address "tag:other:9" (protocol "tcp"): want: Accept, got: Drop`}}), Warn},
+		{"refused as invalid", apitest.Rejected400("tag not found"), Warn},
 		{"an unrecognised pass", apitest.ErrorsListAt200("tag not found"), Warn},
-		{"refused with a bare message at 200, as the live API refuses a document", apitest.PolicyTagNotFound("tag:tailkeeper-canary"), Warn},
-		{"a source the policy does not define, as the live API answers it", apitest.TestUnevaluable("tag:tailkeeper-canary"), OK},
+		{"refused with a bare message at 200, as the live API refuses a document", apitest.PolicyTagNotFound("tag:ci"), Warn},
+		{"a source the policy does not resolve", apitest.TestUnevaluable("tag:ci"), Warn},
 		{"scope missing", apitest.Forbidden403(), Warn},
 	} {
 		f, a := newApp(t, allReadScopes(t))
 		f.JSON("GET", keyPath, 200, `{"id":"test-client-id","keyType":"client"}`)
-		f.ServeDetails(apitest.DetailsOK("{\"acls\": []}\n", `"e1"`, nil, nil))
+		f.ServeDetails(apitest.DetailsOK(canaryPolicy, `"e1"`, nil, nil))
 		f.ServeValidate(c.shape)
 		r := Run(context.Background(), Input{App: a, Now: now, Probe: true})
 		if got := status(r, "probe acl_test"); len(got) != 1 || got[0] != c.want {
@@ -440,14 +447,80 @@ func TestACLTestCanary(t *testing.T) {
 				sent = string(req.Body)
 			}
 		}
-		if !strings.Contains(sent, `"accept":["tag:tailkeeper-canary:1"],"deny":["tag:tailkeeper-canary:1"]`) {
+		if !strings.Contains(sent, `"src":"tag:ci"`) || !strings.Contains(sent, `"accept":["tag:ci:1"],"deny":["tag:ci:1"]`) {
 			t.Errorf("%s: canary sent %s", c.name, sent)
 		}
 	}
 }
 
+// On a tailnet whose policy defines no tag there is no source the canary can use, and the
+// check is not applicable: it is no warning, and nothing is sent. Tailscale answers a test from
+// a tag nobody defined with unresolved on every tailnet, which would warn every run.
+func TestTheCanaryNeedsATagTheLivePolicyDefines(t *testing.T) {
+	for name, policy := range map[string]string{
+		"no tag":             "{\"acls\": []}\n",
+		"tagOwners is empty": "{\"tagOwners\": {}, \"groups\": {\"group:eng\": []}}\n",
+		"only odd names":     "{\"tagOwners\": {\"tag:a b\": [], \"tag:\": []}}\n",
+	} {
+		f, a := newApp(t, allReadScopes(t))
+		f.JSON("GET", keyPath, 200, `{"id":"test-client-id","keyType":"client"}`)
+		f.ServeDetails(apitest.DetailsOK(policy, `"e1"`, nil, nil))
+		f.ServeValidate(apitest.TestUnevaluable("tag:ci"))
+		r := Run(context.Background(), Input{App: a, Now: now, Probe: true})
+		if got := status(r, "probe acl_test"); len(got) != 1 || got[0] != NA {
+			t.Errorf("%s: probe acl_test = %v, want %s", name, got, NA)
+		}
+		for _, req := range f.Requests() {
+			if req.Method == "POST" {
+				t.Errorf("%s: a canary was sent: %s", name, req.Body)
+			}
+		}
+	}
+	// The first tag, in the order the summary lists them, is the one used.
+	f, a := newApp(t, allReadScopes(t))
+	f.JSON("GET", keyPath, 200, `{"id":"test-client-id","keyType":"client"}`)
+	f.ServeDetails(apitest.DetailsOK("{\"tagOwners\": {\"tag:web\": [], \"tag:db\": []}}\n", `"e1"`, nil, nil))
+	f.ServeValidate(apitest.TestsFailed(apitest.Entry{User: "tag:db", Errors: []string{`[acl test error]: address "tag:db:1" (protocol "tcp"): want: Accept, got: Drop`}}))
+	r := Run(context.Background(), Input{App: a, Now: now, Probe: true})
+	if got := status(r, "probe acl_test"); len(got) != 1 || got[0] != OK {
+		t.Errorf("two tags: probe acl_test = %v", got)
+	}
+}
+
 // A canary that tailkeeper refuses itself never reaches the endpoint, so it can
 // prove nothing: that is a failure, not the endpoint's refusal.
+func TestCanaryVerdictReadsTheStatus(t *testing.T) {
+	fail := tools.ACLTestOutput{Status: "fail", Verdicts: []tools.ACLTestVerdict{{Verdict: "denied"}}}
+	if st, _, _, ok := canaryVerdict(fail, nil); !ok || st != OK {
+		t.Errorf("fail with a denied verdict = %s %v, want OK", st, ok)
+	}
+	pass := tools.ACLTestOutput{Status: "pass"}
+	if st, _, _, ok := canaryVerdict(pass, nil); !ok || st != Fail {
+		t.Errorf("pass = %s %v, want Fail", st, ok)
+	}
+	// An unknown with nothing in it is the answer of a validator that read a test no policy can
+	// pass as a pass; an unknown that holds a line or a warning is a line nobody could pair.
+	if st, detail, _, ok := canaryVerdict(tools.ACLTestOutput{Status: "unknown"}, nil); !ok || st != Fail || !strings.Contains(detail, "misreads") {
+		t.Errorf("unknown with nothing = %s %q %v, want Fail", st, detail, ok)
+	}
+	for name, out := range map[string]tools.ACLTestOutput{
+		"an unpaired line": {Status: "unknown", Unmatched: []string{"x"}},
+		"a failure":        {Status: "unknown", Failures: []tools.ACLTestResult{{Src: "tag:ci", Errors: []string{"x"}}}},
+		"a warning":        {Status: "unknown", Warnings: []string{"w"}},
+		"another test":     {Status: "unknown", OtherTests: []tools.ACLTestResult{{Src: "tag:o", Errors: []string{"x"}}}},
+	} {
+		if st, detail, _, ok := canaryVerdict(out, nil); !ok || st != Warn || !strings.Contains(detail, "was not exercised") {
+			t.Errorf("unknown with %s = %s %q %v, want Warn", name, st, detail, ok)
+		}
+	}
+	for _, status := range []string{"unresolved", "something else"} {
+		st, detail, _, ok := canaryVerdict(tools.ACLTestOutput{Status: status}, nil)
+		if !ok || st != Warn || !strings.Contains(detail, "was not exercised") {
+			t.Errorf("%s = %s %q %v, want Warn", status, st, detail, ok)
+		}
+	}
+}
+
 func TestCanaryRefusedLocallyFails(t *testing.T) {
 	local := tkerr.New(tkerr.ValidationFailed, "give at least one destination", "")
 	if st, detail, _, ok := canaryVerdict(tools.ACLTestOutput{}, local); !ok || st != Fail || !strings.Contains(detail, "refused its own canary") {
