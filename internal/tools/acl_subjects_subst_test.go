@@ -10,6 +10,7 @@ import (
 
 	"github.com/tailscale/hujson"
 
+	"github.com/abm9111/tailkeeper/internal/acl"
 	"github.com/abm9111/tailkeeper/internal/api/apitest"
 	"github.com/abm9111/tailkeeper/internal/privacy"
 	"github.com/abm9111/tailkeeper/internal/registry"
@@ -240,5 +241,50 @@ func TestSubstitutionRunsAfterTheSubjectCheck(t *testing.T) {
 	}
 	if bytes.Contains([]byte(text), []byte("amy@")) {
 		t.Error("the input was changed")
+	}
+}
+
+// The three branches the carrier walk takes besides a plain replacement: a cancelled
+// call, a text that would pass the byte cap once logins are written at their longest,
+// and a line comment that ends the text with no newline.
+func TestSubstituteSubjectsBranches(t *testing.T) {
+	f, env, _, refs := substEnv(t, "amy@example.com", "bob@example.org")
+	carrier := refs[0]
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	cancelled, n, err := tools.SubstituteSubjects(ctx, tools.NewSubjectResolver(env), []byte(`{"x":["`+carrier+`"]}`))
+	if code(err) != tkerr.APIError || !strings.Contains(err.Error(), "request cancelled") || cancelled != nil || n != 0 {
+		t.Errorf("cancelled: %q, %d, %v", cancelled, n, err)
+	}
+	// A cancelled call is cancelled whether or not the text holds a pseudonym: with none,
+	// nothing else would notice, and the caller would go on to send a request nobody waits for.
+	for _, plain := range []string{`{"x":["tag:web"]}`, `{}`, ``} {
+		out, n, err := tools.SubstituteSubjects(ctx, tools.NewSubjectResolver(env), []byte(plain))
+		if code(err) != tkerr.APIError || !strings.Contains(err.Error(), "request cancelled") || out != nil || n != 0 {
+			t.Errorf("cancelled, no pseudonym in %q: %q, %d, %v", plain, out, n, err)
+		}
+	}
+	if usersRequests(f) != 0 {
+		t.Errorf("a cancelled call read the users %d time(s)", usersRequests(f))
+	}
+
+	pad := acl.MaxBytes - len(carrier) - len(`{"x":"","pad":""}`) - 10
+	wide := `{"x":"` + carrier + `","pad":"` + strings.Repeat("a", pad) + `"}`
+	if len(wide) <= acl.MaxBytes-320 || len(wide) > acl.MaxBytes {
+		t.Fatalf("fixture length %d does not sit in the window below the cap", len(wide))
+	}
+	before := usersRequests(f)
+	out, n, err := substitute(env, wide)
+	if code(err) != tkerr.TooComplex || out != "" || n != 0 || usersRequests(f) != before {
+		t.Errorf("over the cap: %d replaced, %d requests, %v", n, usersRequests(f)-before, err)
+	}
+
+	raw := "{\"x\":\"" + carrier + "\"} // \"" + carrier + "\""
+	if strings.HasSuffix(raw, "\n") {
+		t.Fatal("the comment fixture ends in a newline")
+	}
+	got, n, err := substitute(env, raw)
+	if err != nil || n != 1 || !strings.Contains(got, "amy@example.com") || !strings.HasSuffix(got, "// \""+carrier+"\"") {
+		t.Errorf("comment at end of text: %q, %d, %v", got, n, err)
 	}
 }

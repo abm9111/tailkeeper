@@ -110,3 +110,63 @@ file: layout.go
 old: if f.Untrusted {\n\t\t\ttheirs = append(theirs, f)
 new: if !f.Untrusted {\n\t\t\ttheirs = append(theirs, f)
 kill: TestFindingsSplitIntoTheReportsOwnAndTailscales
+
+mutant: a JSON flag keeps a document instead of its size
+file: flags.go
+old: j.raw, j.big = "", len(v)
+new: j.raw, j.big = v, 0
+kill: TestAJSONFlagOverTheFlagCapIsRefusedWithoutEcho
+
+mutant: an empty JSON flag is read as not given
+file: flags.go
+old: if strings.TrimSpace(jp.val.raw) == "" {
+new: if false && strings.TrimSpace(jp.val.raw) == "" {
+kill: TestAnEmptyJSONFlagIsRefusedLikeAnEmptyFile
+
+mutant: an empty JSON object is read as a value
+file: flags.go
+old: if jsonValueEmpty(target) {
+new: if false && jsonValueEmpty(target) {
+kill: TestAnEmptyJSONFlagIsRefusedLikeAnEmptyFile
+
+mutant: a JSON flag keeps the text after the value
+file: flags.go
+old: if err := dec.Decode(&extra); !errors.Is(err, io.EOF) {
+new: if err := dec.Decode(&extra); false && !errors.Is(err, io.EOF) {
+kill: TestAJSONFlagRefusesAnUnknownFieldATrailingValueAndAnOversizedText
+
+mutant: a JSON flag may be named for a policy
+file: flags.go
+old: case isPolicyTextName(jsonName):
+new: case false && isPolicyTextName(jsonName):
+kill: TestAJSONFlagKeepsPolicyTextOutOfFlags
+
+mutant: a required JSON field is accepted
+file: flags.go
+old: case !strings.Contains(f.Tag.Get("json"), "omitempty"):
+new: case false && !strings.Contains(f.Tag.Get("json"), "omitempty"):
+kill: TestARequiredJSONFieldIsRefusedAtBindTime
+
+mutant: a JSON flag drops a field the type does not have
+file: flags.go
+old: dec.DisallowUnknownFields()
+new: _ = 0
+kill: TestAJSONFlagRefusesAnUnknownFieldATrailingValueAndAnOversizedText
+
+mutant: a JSON error repeats the decoder text
+file: flags.go
+old: return "names a field the flag does not take"
+new: return err.Error()
+kill: TestAJSONFlagRefusesAnUnknownFieldATrailingValueAndAnOversizedText
+
+mutant: the facts of a result are not printed in the text layout
+file: layout.go
+old: \tfor _, f := range rep.Facts {\n\t\tif err := line("%s: %s", esc(f.Label), esc(f.Text)); err != nil {\n\t\t\treturn err\n\t\t}\n\t}\n
+new: 
+kill: TestEveryLayoutOfACLTestMatchesItsGolden
+
+mutant: the facts of a result are not printed in the Markdown layout
+file: format_markdown.go
+old: \tif len(rep.Facts) > 0 {
+new: \tif false {
+kill: TestEveryLayoutOfACLTestMatchesItsGolden

@@ -50,12 +50,16 @@ var provenanceOf = map[string]Kind{
 	"PolicyKeyRejected":    Observed,
 	"CanaryFailed":         Observed,
 	"SSHTestFailed":        Observed,
+	"SSHCheckFailed":       Assumed,
 	"TestUnevaluable":      Observed,
 	"DetailsOK":            Observed,
 	"PolicyText":           Observed,
 
-	"TestsFailedIn400": Assumed,
-	"ErrorsListAt200":  Assumed,
+	"TestsFailedIn400":  Assumed,
+	"ErrorsListAt200":   Assumed,
+	"TestsEmptyData":    Assumed,
+	"TestsNullData":     Assumed,
+	"TestsEmptyMessage": Assumed,
 }
 
 // observedBy is the probe whose capture each Observed shape names, written out: a shape
@@ -70,8 +74,8 @@ var observedBy = map[string]string{
 
 func TestEveryShapesProvenanceIsPinned(t *testing.T) {
 	const how = "update provenanceOf only when the API documentation or a capture committed by make probe-acl says so"
-	if len(provenanceOf) != 20 {
-		t.Fatalf("the table holds %d builders, want 20", len(provenanceOf))
+	if len(provenanceOf) != 24 {
+		t.Fatalf("the table holds %d builders, want 24", len(provenanceOf))
 	}
 	inLedger := map[string]bool{}
 	for _, s := range AllShapes() {
@@ -185,6 +189,36 @@ func TestProvenanceString(t *testing.T) {
 	} {
 		if got := p.String(); got != want {
 			t.Errorf("%+v = %q, want %q", p, got, want)
+		}
+	}
+}
+
+// The three Assumed tests-mode bodies are in the ledger, with the bytes they name,
+// and the ledger check reports nothing about them. They have a source and no capture:
+// an Assumed shape is not promoted to Observed by being listed.
+func TestTheLedgerListsTheNewShapesAndTheyAreAssumed(t *testing.T) {
+	if problems := checkLedger(AllShapes(), hasCapture); len(problems) > 0 {
+		t.Fatalf("the ledger: %s", strings.Join(problems, "; "))
+	}
+	want := map[string]string{
+		"TestsEmptyData":    `{"data":[]}`,
+		"TestsNullData":     `{"data":null}`,
+		"TestsEmptyMessage": `{"message":""}`,
+	}
+	seen := map[string]bool{}
+	for _, s := range AllShapes() {
+		body, ok := want[s.Name]
+		if !ok {
+			continue
+		}
+		seen[s.Name] = true
+		if s.Prov.Kind != Assumed || s.Status != 200 || s.Endpoint != EndpointValidate || s.Body != body {
+			t.Errorf("%s = status %d, %s, body %q", s.Name, s.Status, s.Prov, s.Body)
+		}
+	}
+	for name := range want {
+		if !seen[name] {
+			t.Errorf("AllShapes has no %s", name)
 		}
 	}
 }

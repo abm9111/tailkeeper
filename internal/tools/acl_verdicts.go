@@ -27,6 +27,7 @@ type FailureLine struct {
 	Kind     FailureKind
 	SSH      bool
 	Dst      string // the address as the server quoted it (tests form), or the dst (SSH form)
+	User     string // the ssh user the server quoted (SSH form); "" otherwise
 	Protocol string // "" when the line has none
 	Want     string // "Accept" or "Drop" (tests), "accept" or "deny" (SSH)
 	Got      string
@@ -73,8 +74,13 @@ func ParseFailureLine(line string) FailureLine {
 	return FailureLine{Kind: TestUnevaluable}
 }
 
-// quoted reads a Go-quoted string at the start of s and returns it with the rest.
+// quoted reads a double-quoted Go string at the start of s and returns it with the rest.
+// strconv.QuotedPrefix also reads a raw string in backquotes and a rune literal in single
+// quotes; no line of the server's grammar holds either, so neither is read.
 func quoted(s string) (value, rest string, ok bool) {
+	if !strings.HasPrefix(s, `"`) {
+		return "", "", false
+	}
 	q, err := strconv.QuotedPrefix(s)
 	if err != nil {
 		return "", "", false
@@ -148,7 +154,7 @@ func parseSSHLine(s string) (FailureLine, bool) {
 	if !sshVerdictWords[want] || !sshVerdictWords[got] || want == got {
 		return FailureLine{}, false
 	}
-	return FailureLine{Kind: AssertionFailed, SSH: true, Dst: v[2], Want: want, Got: got}, true
+	return FailureLine{Kind: AssertionFailed, SSH: true, Dst: v[2], User: v[4], Want: want, Got: got}, true
 }
 
 // maxQuotedToken is the longest token quotedToken returns.

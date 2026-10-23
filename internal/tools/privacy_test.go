@@ -344,10 +344,11 @@ func TestErrorsEchoingAnAddressNeverCarryAPseudonym(t *testing.T) {
 func TestACLTestEchoOfACallersGuessCarriesNoPseudonym(t *testing.T) {
 	f, reg, env := apiEnv(t)
 	kenv, _ := keyed(t, env)
-	f.ServeValidate(apitest.TestsFailed(apitest.Entry{User: "amy@example.com",
+	f.ServeValidate(apitest.TestsFailed(apitest.Entry{User: "tag:ci",
 		Errors:   []string{`address "203.0.113.9:22": want: Accept, got: Drop for amy@example.com`},
 		Warnings: []string{"amy@example.com has no rule"}}))
-	s := mustCall(t, reg, kenv, "acl_test", `{"src":"amy@example.com","accept":["203.0.113.9:22"]}`, nil)
+	servePolicy(f, "{}\n", `"e1"`)
+	s := mustCall(t, reg, kenv, "acl_test", `{"src":"tag:ci","accept":["203.0.113.9:22"]}`, nil)
 	absent(t, s, "amy@", "[p:")
 	if !strings.Contains(s, "a…@example.com") {
 		t.Errorf("the echo must still be there, masked: %s", s)

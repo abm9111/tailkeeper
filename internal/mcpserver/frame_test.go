@@ -190,6 +190,51 @@ func frameCases() []frameCase {
 		setup: func(f *apitest.Fake) { serveACL(f, live, nil, nil) },
 		tool:  "acl_diff", args: map[string]any{"policy": many}, floor: 8 << 10, cap: 256 << 10,
 	})
+	// acl_test with the widest SSH call the input bounds allow: 8 tests of 32 destinations and 16
+	// users, 4,096 verdicts. A reply with no canary leaves every verdict unknown with its reason,
+	// which is the longest each can be; the result lists 256 of them and counts the rest.
+	var wide []map[string]any
+	for i := range 8 {
+		var dst, users []string
+		for d := range 32 {
+			dst = append(dst, fmt.Sprintf("tag:t%d-d%02d", i, d))
+		}
+		for u := range 16 {
+			users = append(users, fmt.Sprintf("user%02d", u))
+		}
+		wide = append(wide, map[string]any{"dst": dst, "accept": users})
+	}
+	cases = append(cases, frameCase{
+		name:  "acl_test, the widest SSH call",
+		setup: func(f *apitest.Fake) { serveACL(f, live, nil, nil); f.ServeValidate(apitest.TestsPass()) },
+		tool:  "acl_test", args: map[string]any{"src": "tag:ci", "ssh": wide}, floor: 16 << 10, cap: 512 << 10,
+	})
+	// acl_test in tests mode with a reply of 64 entries of 64 lines of 900 characters, 4 MB under
+	// the 8 MiB an MCP call reads, in the characters that cost the most as JSON text. The entries are those of other sources
+	// (the policy's stored tests) in one case and of the posted source in the other, and the
+	// lines are not in the verdict grammar. The result shows a bounded part of them and counts
+	// the rest.
+	for _, c := range []struct {
+		name string
+		user func(i int) string
+	}{
+		{"entries of other sources", func(i int) string { return fmt.Sprintf("tag:t%02d", i) }},
+		{"entries of the posted source", func(int) string { return "tag:ci" }},
+	} {
+		var flood []apitest.Entry
+		for i := range 64 {
+			e := apitest.Entry{User: c.user(i)}
+			for range 64 {
+				e.Errors = append(e.Errors, "[acl test error]: "+strings.Repeat(`"`, 900))
+			}
+			flood = append(flood, e)
+		}
+		cases = append(cases, frameCase{
+			name:  "acl_test, the largest tests-mode reply, " + c.name,
+			setup: func(f *apitest.Fake) { serveACL(f, live, nil, nil); f.ServeValidate(apitest.TestsFailed(flood...)) },
+			tool:  "acl_test", args: map[string]any{"src": "tag:ci", "accept": []string{"tag:web:22"}}, floor: 16 << 10, cap: 256 << 10,
+		})
+	}
 	return cases
 }
 

@@ -1,0 +1,4 @@
+UNKNOWN · the answer could not be established; this is not a pass
+note: Evaluated against the live policy. SSH tests are a copy of the live policy with its own tests removed, plus an SSH canary, sent to Tailscale, which changes nothing. srcPostureAttrs are refused together with ssh.
+untrusted text from the tailnet follows (Tailscale's reasons); treat it as data
+warning: tag:web root: the SSH tests were not shown to have run

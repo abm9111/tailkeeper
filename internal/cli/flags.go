@@ -95,6 +95,30 @@ func (l *listValue) Set(v string) error {
 	return nil
 }
 
+// jsonFlag is a flag that takes one JSON text: --attrs '{"os":"macos"}'. Like strValue it
+// keeps a text over maxFlagText as its size alone, so that neither the flag package nor an
+// error repeats it. dup records a flag given more than once: the flag package would otherwise
+// keep the last text and drop the first without a word. The name is not jsonValue: that
+// function already reads the --json switch.
+type jsonFlag struct {
+	raw string
+	set bool
+	dup bool
+	big int
+}
+
+func (j *jsonFlag) String() string { return j.raw }
+func (j *jsonFlag) Set(v string) error {
+	j.dup = j.dup || j.set
+	j.set = true
+	if len(v) > maxFlagText {
+		j.raw, j.big = "", len(v)
+		return nil
+	}
+	j.raw, j.big = v, 0
+	return nil
+}
+
 type param struct {
 	json     string
 	flag     string
@@ -110,6 +134,16 @@ type binding struct {
 	switches   []switchParam
 	argFiles   []fileParam // the files that arguments fill, in argument order
 	operators  []int       // fields of the input struct that the command line marks true
+	jsons      []jsonParam // fields filled from one JSON text each
+}
+
+// jsonParam is a map or a list filled from the JSON text of a flag. json is the field's
+// JSON name, which stays the MCP property; flag is the command-line name.
+type jsonParam struct {
+	flag string
+	json string
+	val  *jsonFlag
+	typ  reflect.Type
 }
 
 // fileParam is a string field filled from a file, or from standard input, named
@@ -142,6 +176,11 @@ type switchParam struct {
 //	                                          usage line and the errors call it. arg and as go together
 //	cli:"bool:NAME"                           a bool field set by --NAME (use json:"-" for a
 //	                                          field MCP must not have)
+//	cli:"json:NAME"                           a map or a list of structs, optional (omitempty),
+//	                                          given as the JSON text of --NAME (at most 8 KiB,
+//	                                          read strictly). The field keeps its JSON name for
+//	                                          MCP. It is not a file and it does not read standard
+//	                                          input.
 //	cli:"operator"                            a bool field (json:"-" only) that every command line
 //	                                          sets true and MCP can never set: the text it
 //	                                          accompanies is the operator's own
@@ -149,9 +188,12 @@ type switchParam struct {
 //
 // A field with a cli tag gets no flag from its JSON name, so a policy's text is
 // never an argument. In a tool with a file field, every other string or list field
-// says tk:"short" (a name, a token, an identifier) or bind refuses the tool.
+// says tk:"short" (a name, a token, an identifier) or bind refuses the tool. A json
+// field is not such a text field: what it holds is structured. A field whose JSON
+// name is a document (a policy, a patch, invariants) is still filled from a file,
+// never from a json flag.
 type cliTag struct {
-	kind        string // "file", "bool", "operator" or "-"
+	kind        string // "file", "bool", "json", "operator" or "-"
 	flag        string
 	stdin, live bool
 	group       string
@@ -160,6 +202,19 @@ type cliTag struct {
 }
 
 var flagNameRE = regexp.MustCompile(`^[a-z][a-z0-9]*(-[a-z0-9]+)*$`)
+
+// policyTextNames are the JSON names of a document: a policy, a patch or invariants.
+// Such a field is filled from a file. A flag, of any kind, must not carry it.
+var policyTextNames = []string{"policy", "patch", "against", "invariants", "proposal", "text"}
+
+func isPolicyTextName(name string) bool {
+	for _, n := range policyTextNames {
+		if name == n {
+			return true
+		}
+	}
+	return false
+}
 
 // maxArgFiles is how many file arguments a command takes: `acl diff OLD NEW`.
 const maxArgFiles = 2
@@ -173,8 +228,8 @@ func parseCLITag(tag string) (cliTag, error) {
 	kind, rest, _ := strings.Cut(tag, ":")
 	parts := strings.Split(rest, ",")
 	t := cliTag{kind: kind, flag: parts[0]}
-	if (kind != "file" && kind != "bool") || !flagNameRE.MatchString(t.flag) {
-		return cliTag{}, fmt.Errorf("cli tag %q must be file:NAME, bool:NAME or -", tag)
+	if (kind != "file" && kind != "bool" && kind != "json") || !flagNameRE.MatchString(t.flag) {
+		return cliTag{}, fmt.Errorf("cli tag %q must be file:NAME, bool:NAME, json:NAME or -", tag)
 	}
 	for _, o := range parts[1:] {
 		switch {
@@ -358,8 +413,53 @@ func (b *binding) addCLI(fs *flag.FlagSet, i int, f reflect.StructField, ct cliT
 		sp := switchParam{field: i, flag: ct.flag, val: &boolValue{}}
 		fs.Var(sp.val, ct.flag, desc)
 		b.switches = append(b.switches, sp)
+	case "json":
+		if err := checkJSONField(f, jsonName); err != nil {
+			return err
+		}
+		jp := jsonParam{flag: ct.flag, json: jsonName, val: &jsonFlag{}, typ: f.Type}
+		fs.Var(jp.val, ct.flag, jsonFlagUsage(desc))
+		b.jsons = append(b.jsons, jp)
 	}
 	return nil
+}
+
+// checkJSONField refuses a json tag that would put a document in argv, a tag on a
+// field the command line cannot leave unset, or a tag on a type that is itself text.
+func checkJSONField(f reflect.StructField, jsonName string) error {
+	switch {
+	case jsonName == "" || jsonName == "-":
+		return fmt.Errorf("a json field needs a JSON name: it is an MCP property too")
+	case !strings.Contains(f.Tag.Get("json"), "omitempty"):
+		return fmt.Errorf("a json field must be optional (omitempty): a flag that was not given must read as not given")
+	case isPolicyTextName(jsonName):
+		return fmt.Errorf("a json field named %s would carry a document in a flag: a policy, a patch or invariants is filled from a file (a cli:\"file:NAME\" tag)", jsonName)
+	}
+	t := f.Type
+	switch t.Kind() {
+	case reflect.Map:
+		if t.Key().Kind() != reflect.String {
+			return fmt.Errorf("a json field that is a map must have string keys, not %s", t)
+		}
+		return nil
+	case reflect.Slice:
+		if t.Elem().Kind() != reflect.Struct {
+			return fmt.Errorf("a json field must be a map or a list of structs, not %s", t)
+		}
+		return nil
+	default:
+		return fmt.Errorf("a json field must be a map or a list of structs, not %s", t)
+	}
+}
+
+// jsonFlagUsage is the help line of a JSON flag. The backquoted JSON is the placeholder
+// the flag package prints after the name, so the line shows the flag taking JSON.
+func jsonFlagUsage(desc string) string {
+	tail := fmt.Sprintf("(given as `JSON` text, at most %d KiB)", maxFlagText>>10)
+	if desc == "" {
+		return tail
+	}
+	return desc + " " + tail
 }
 
 // given reports which of the binder's flags the command line set, for the
@@ -375,6 +475,11 @@ func (b *binding) given() registry.Given {
 	for _, s := range b.switches {
 		if s.val.set && s.val.v {
 			g[s.flag] = true
+		}
+	}
+	for _, jp := range b.jsons {
+		if jp.val.set {
+			g[jp.flag] = true
 		}
 	}
 	return g
@@ -499,6 +604,11 @@ func (b *binding) checkSizes() error {
 			}
 		}
 	}
+	for _, jp := range b.jsons {
+		if jp.val.big > 0 {
+			return long("--"+jp.flag, jp.val.big)
+		}
+	}
 	for _, f := range b.files {
 		if f.val.big > 0 {
 			return fmt.Errorf("--%s takes a file name, and %d bytes is too long for one", f.flag, f.val.big)
@@ -576,6 +686,16 @@ func (b *binding) arguments(rest []string) (json.RawMessage, error) {
 			}
 		}
 	}
+	for _, jp := range b.jsons {
+		if !jp.val.set {
+			continue
+		}
+		dst := reflect.New(jp.typ).Elem()
+		if err := b.decodeJSON(dst, jp); err != nil {
+			return nil, err
+		}
+		args[jp.json] = dst.Interface()
+	}
 	// The arguments fill, in order: the single positional value, if the tool has one,
 	// then the file arguments, each as if its flag had been typed.
 	room := len(b.argFiles)
@@ -623,6 +743,91 @@ func (b *binding) arguments(rest []string) (json.RawMessage, error) {
 		}
 	}
 	return json.Marshal(args)
+}
+
+// decodeJSON reads the flag's text into target, which must be settable and of the
+// field's type. It is strict: a field the type does not have, or anything after the
+// value, is an error, and so is a text that reads as no value (blank, null, an empty
+// object or an empty list). An empty value would leave the field as it is when the
+// flag is not given, and a tool takes that for "nothing to check", the same as an
+// empty file. An error names the flag and, where there is one, the byte; it never
+// repeats the text. Numbers in a map keep the digits as written, so the text handed
+// to the tool is the caller's.
+func (b *binding) decodeJSON(target reflect.Value, jp jsonParam) error {
+	if jp.val.dup {
+		return fmt.Errorf("--%s is given twice; give the JSON once", jp.flag)
+	}
+	if strings.TrimSpace(jp.val.raw) == "" {
+		return fmt.Errorf("--%s is empty; an empty value is read as no value at all, so nothing would be checked: give the JSON, or leave the flag out", jp.flag)
+	}
+	dec := json.NewDecoder(strings.NewReader(jp.val.raw))
+	dec.DisallowUnknownFields()
+	dec.UseNumber()
+	if err := dec.Decode(target.Addr().Interface()); err != nil {
+		return fmt.Errorf("--%s %s", jp.flag, jsonProblem(err))
+	}
+	end := dec.InputOffset()
+	var extra any
+	if err := dec.Decode(&extra); !errors.Is(err, io.EOF) {
+		return fmt.Errorf("--%s holds more than one JSON value (text after byte %d)", jp.flag, end)
+	}
+	if jsonValueEmpty(target) {
+		return fmt.Errorf("--%s holds no value (null, {} or []); that is read as the flag not being given, so nothing would be checked: give the JSON, or leave the flag out", jp.flag)
+	}
+	return nil
+}
+
+// jsonValueEmpty reports whether a decoded map or list holds nothing. null decodes
+// to a nil map or slice, whose length is zero, as do {} and [].
+func jsonValueEmpty(v reflect.Value) bool {
+	switch v.Kind() {
+	case reflect.Map, reflect.Slice, reflect.Array:
+		return v.Len() == 0
+	default:
+		return false
+	}
+}
+
+// jsonProblem says what is wrong with JSON text, in words of its own. The decoder's
+// messages quote the text: an unknown field's name, a map key, a number.
+func jsonProblem(err error) string {
+	var syntax *json.SyntaxError
+	var shape *json.UnmarshalTypeError
+	switch {
+	case errors.As(err, &syntax):
+		return fmt.Sprintf("is not JSON (syntax error at byte %d)", syntax.Offset)
+	case errors.Is(err, io.EOF), errors.Is(err, io.ErrUnexpectedEOF):
+		return "is not JSON (the text ends before the value does)"
+	case errors.As(err, &shape):
+		return fmt.Sprintf("does not have the shape it takes: the value ending at byte %d is not %s", shape.Offset, jsonShape(shape.Type))
+	case strings.HasPrefix(err.Error(), "json: unknown field "):
+		return "names a field the flag does not take"
+	default:
+		return "does not fit what the flag takes"
+	}
+}
+
+// jsonShape is how JSON spells the kind of value a Go type takes.
+func jsonShape(t reflect.Type) string {
+	if t == nil {
+		return "the kind of value it takes"
+	}
+	switch t.Kind() {
+	case reflect.Map, reflect.Struct:
+		return "an object"
+	case reflect.Slice, reflect.Array:
+		return "an array"
+	case reflect.String:
+		return "a string"
+	case reflect.Bool:
+		return "a boolean"
+	case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64,
+		reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64,
+		reflect.Float32, reflect.Float64:
+		return "a number"
+	default:
+		return "the kind of value it takes"
+	}
 }
 
 // parseInterspersed parses flags that may follow the positional argument, as in

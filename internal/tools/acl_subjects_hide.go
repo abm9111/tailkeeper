@@ -3,6 +3,7 @@ package tools
 import (
 	"math"
 	"regexp"
+	"slices"
 	"strings"
 	"unicode"
 	"unicode/utf8"
@@ -30,7 +31,11 @@ func loginPattern(login string) *regexp.Regexp {
 // bytes that stand right before it, as one address: where amy@example.com was resolved,
 // bigamy@example.com is another user's address, and masking the match alone would show
 // "big". mask is how an address is masked: without a pseudonym, or as users_list shows it.
-func hideLogin(text string, p *regexp.Regexp, mask func(string) string) string {
+//
+// Text the caller typed is not masked by what the call resolved: it is left to the plain
+// address scan, which reads nothing but the text. Where the call's logins decided how a typed
+// span reads, the text would tell the caller which of its guesses were logins.
+func hideLogin(text string, p *regexp.Regexp, mask func(string) string, typed *typedValues) string {
 	var b strings.Builder
 	last := 0
 	for _, m := range p.FindAllStringIndex(text, -1) {
@@ -39,7 +44,11 @@ func hideLogin(text string, p *regexp.Regexp, mask func(string) string) string {
 			start--
 		}
 		b.WriteString(text[last:start])
-		b.WriteString(mask(text[start:m[1]]))
+		if span := text[start:m[1]]; typed.standsAlone(span) {
+			b.WriteString(span)
+		} else {
+			b.WriteString(mask(span))
+		}
 		last = m[1]
 	}
 	b.WriteString(text[last:])
@@ -270,9 +279,11 @@ func (r *SubjectResolver) read(text string, need int, named bool, maxRead int) (
 		if named {
 			mask = mk.Identifier
 		}
+		typed := r.state().typed
 		for _, l := range resolved {
-			t = hideLogin(t, l.pattern, mask)
+			t = hideLogin(t, l.pattern, mask, typed)
 		}
+		t = hideLocalParts(t, resolved, typed)
 		if named {
 			return mk.Emails(t)
 		}
@@ -286,6 +297,163 @@ func (r *SubjectResolver) read(text string, need int, named bool, maxRead int) (
 			return out, limit
 		}
 	}
+}
+
+// localWord is one word of a resolved login's local part and the form that replaces
+// it. The pattern is compiled when the login is remembered, not when a reply is masked.
+type localWord struct {
+	re   *regexp.Regexp
+	repl string
+	n    int
+}
+
+// localWords compiles the local part of a login and the words in it. One shorter than two
+// bytes is skipped. The replacement is the first character and the mask mark, so
+// two logins that share that character mask a bare word to one text.
+func localWords(login string) []localWord {
+	local, _, ok := strings.Cut(login, "@")
+	if !ok {
+		return nil
+	}
+	var out []localWord
+	seen := map[string]bool{}
+	words := strings.FieldsFunc(local, func(r rune) bool {
+		return !((r >= '0' && r <= '9') || (r >= 'A' && r <= 'Z') || (r >= 'a' && r <= 'z') || r == '_')
+	})
+	// The whole local part comes first: a reply that echoes it, hyphens, dots and plus signs
+	// and all, is masked as one span to the same text whatever the bytes in it, and not
+	// word by word, which would keep its shape.
+	for _, w := range append([]string{local}, words...) {
+		if len(w) < 2 {
+			continue
+		}
+		key := strings.ToLower(w)
+		if seen[key] {
+			continue
+		}
+		seen[key] = true
+		r, _ := utf8.DecodeRuneInString(w)
+		out = append(out, localWord{
+			re:   regexp.MustCompile(`(?i)` + regexp.QuoteMeta(w)),
+			repl: string(unicode.ToLower(r)) + "…",
+			n:    len(w),
+		})
+	}
+	slices.SortStableFunc(out, func(a, b localWord) int { return b.n - a.n })
+	return out
+}
+
+// hideLocalParts masks each word of a resolved login's local part when that word
+// stands alone. A reply that says "no such user: amy" would otherwise show the
+// local part after the address itself had been masked. A word the caller typed stands alone
+// in what it typed is left as it is (see typedValues): a text that masked it only when it
+// was a word of a login would answer each guess.
+func hideLocalParts(text string, logins []resolvedLogin, typed *typedValues) string {
+	for _, l := range logins {
+		for _, w := range l.words {
+			text = w.mask(text, typed)
+		}
+	}
+	return text
+}
+
+// mask replaces each place the word stands alone: the byte before it and the byte after it
+// are not word bytes, or there is none. The boundary is read from the text, not consumed by
+// a match, so two occurrences one separator apart are both masked. A word is made of word
+// bytes only, so a match refused for a neighbour never hides a match that is allowed.
+func (w localWord) mask(text string, typed *typedValues) string {
+	var b strings.Builder
+	last := 0
+	for _, m := range w.re.FindAllStringIndex(text, -1) {
+		if m[0] > 0 && wordByte(text[m[0]-1]) || m[1] < len(text) && wordByte(text[m[1]]) {
+			continue
+		}
+		if typed.standsAlone(text[m[0]:m[1]]) {
+			continue
+		}
+		b.WriteString(text[last:m[0]])
+		b.WriteString(w.repl)
+		last = m[1]
+	}
+	if last == 0 {
+		return text
+	}
+	b.WriteString(text[last:])
+	return b.String()
+}
+
+func wordByte(c byte) bool {
+	return c >= '0' && c <= '9' || c >= 'A' && c <= 'Z' || c >= 'a' && c <= 'z' || c == '_'
+}
+
+// typedValues is what the caller of one call typed: the strings it sent as a source, a
+// destination, an SSH user, a protocol or a posture attribute. Tailscale quotes them back, and
+// a quotation is not news to the caller. Masking a part of one of them only when it is a word
+// of a login the call resolved would tell the caller which of the words it typed are: the
+// reply for "amy:22" would read a…:22 and the one for "bob:22" would not. A span of a reply
+// that is, in any letter case, a span of a typed value bounded by the bytes that bound a word
+// in the text is therefore not masked as a part of a resolved login.
+type typedValues struct {
+	values []string // lower case
+	memo   map[string]bool
+}
+
+// add remembers the values the caller typed.
+func (t *typedValues) add(values ...string) {
+	for _, v := range values {
+		if v != "" {
+			t.values = append(t.values, strings.ToLower(v))
+		}
+	}
+	t.memo = nil
+}
+
+// standsAlone reports whether span, in any letter case, is a span of a typed value that has
+// no word byte right before it or right after it. A nil set holds nothing.
+func (t *typedValues) standsAlone(span string) bool {
+	if t == nil || len(t.values) == 0 || span == "" {
+		return false
+	}
+	key := strings.ToLower(span)
+	if v, ok := t.memo[key]; ok {
+		return v
+	}
+	found := false
+	for _, v := range t.values {
+		if holdsAlone(v, key) {
+			found = true
+			break
+		}
+	}
+	if t.memo == nil {
+		t.memo = map[string]bool{}
+	}
+	t.memo[key] = found
+	return found
+}
+
+// holdsAlone reports whether text holds key bounded on both sides by anything but a word byte.
+func holdsAlone(text, key string) bool {
+	for from := 0; from < len(text); {
+		i := strings.Index(text[from:], key)
+		if i < 0 {
+			return false
+		}
+		i += from
+		end := i + len(key)
+		if (i == 0 || !wordByte(text[i-1])) && (end == len(text) || !wordByte(text[end])) {
+			return true
+		}
+		from = i + 1
+	}
+	return false
+}
+
+// Typed tells the resolver what the caller typed, so that Hide does not treat a quotation of
+// it as the echo of a login the call resolved (see typedValues). It adds to what was told
+// before.
+func (r *SubjectResolver) Typed(values ...string) {
+	r.state().typed.add(values...)
 }
 
 // HideError returns a copy of err, as a *tkerr.Error, with its message and hint passed

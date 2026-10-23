@@ -17,7 +17,10 @@ import (
 
 // aclResultTypes are the result types of the policy tools. A tool that adds one lists it
 // here, so that the class test below holds its strings to the rule.
-var aclResultTypes = []reflect.Type{reflect.TypeFor[tools.ACLGetOutput](), reflect.TypeFor[tools.ACLValidateOutput](), reflect.TypeFor[tools.ACLDiffOutput]()}
+var aclResultTypes = []reflect.Type{
+	reflect.TypeFor[tools.ACLGetOutput](), reflect.TypeFor[tools.ACLValidateOutput](), reflect.TypeFor[tools.ACLDiffOutput](),
+	reflect.TypeFor[tools.ACLTestOutput](),
+}
 
 // aclConstantStrings are the string fields of the policy tools' results that hold
 // tailkeeper's own words, a digest, a time or a version token, never text from a policy or
@@ -61,6 +64,18 @@ var aclConstantStrings = map[string]string{
 	"ACLProblem.Kind":                         "one of a fixed list of kinds",
 	"ACLProblem.Severity":                     "error, warning or notice",
 	"ACLProblem.Source":                       "from, against, patch, invariants or live",
+	"ACLTestOutput.Status":                    "pass, fail, unresolved or unknown",
+	"ACLTestOutput.EvaluatedAt":               "a time",
+	"ACLTestOutput.Note":                      "one fixed sentence",
+	"ACLTestOutput.Posture":                   "none, gated or unknown",
+	"ACLTestOutput.PostureNote":               "one of two fixed sentences, or empty when the policy was read",
+	"ACLTestOutput.Caveats":                   "fixed sentences about how a verdict was read",
+	"ACLTestVerdict.Expect":                   "accept, deny or accept+deny",
+	"ACLTestVerdict.Verdict":                  "allowed, denied, unresolved or unknown",
+	"ACLTestVerdict.Why":                      "one of the verdict reader's fixed sentences, or empty",
+	"ACLSSHVerdict.Expect":                    "accept, check or deny",
+	"ACLSSHVerdict.Verdict":                   "allowed, denied, unresolved or unknown",
+	"ACLSSHVerdict.Why":                       "one of the SSH verdict reader's fixed sentences, or empty",
 }
 
 // aclClosedLists are, for the constant fields that hold words and not a digest, a time or a
@@ -83,6 +98,46 @@ var aclClosedLists = map[string][]string{
 	"ACLValidateOutput.Status":              {"pass", "fail", "invalid", "rejected", "unresolved", "unknown"},
 	"ACLValidateOutput.NotChecked":          append(append([]string{}, acl.NotChecked...), "server_validation", "tests", "invariants", "invariants_file", "invariants_signature"),
 	"ACLValidateOutput.InvariantsSignature": {"none"},
+	"ACLTestOutput.Status":                  {"pass", "fail", "unresolved", "unknown"},
+	"ACLTestOutput.Note": {
+		"Evaluated against the live policy. SSH rules are tested only when the call gives ssh. Posture-gated rules match only when srcPostureAttrs names their attributes.",
+		"Evaluated against the live policy. SSH tests are a copy of the live policy with its own tests removed, plus an SSH canary, sent to Tailscale, which changes nothing. srcPostureAttrs are refused together with ssh.",
+	},
+	"ACLTestOutput.Posture": {"none", "gated", "unknown"},
+	"ACLTestOutput.PostureNote": {
+		"the live policy could not be read, so whether it is posture-sensitive was not checked",
+		"the policy names more posture attributes than this result lists",
+	},
+	"ACLTestOutput.Caveats": {
+		"with proto omitted, a destination that must be denied can yield one line for tcp and one for udp",
+		"a destination in accept and in deny is told apart by the line's got word",
+		"the server may quote a host alias as its address",
+		"a group: source in an SSH test can be reported denied when the user is in the group (tailscale/tailscale#11790)",
+		"the live policy does not validate",
+		"your SSH tests were refused",
+	},
+	"ACLSSHVerdict.Expect":  {"accept", "check", "deny"},
+	"ACLSSHVerdict.Verdict": {"allowed", "denied", "unresolved", "unknown"},
+	"ACLSSHVerdict.Why": {
+		"a check user with no line is not a pass",
+		"a line of this SSH test is not in the grammar",
+		"the SSH tests were not shown to have run",
+		"an SSH line matches no single user",
+		"the lines for this SSH user do not agree",
+		"a result is for another spelling of this source",
+	},
+	"ACLTestVerdict.Expect":  {"accept", "deny", "accept+deny"},
+	"ACLTestVerdict.Verdict": {"allowed", "denied", "unresolved", "unknown"},
+	"ACLTestVerdict.Why": {
+		"the lines for this destination do not agree",
+		"a destination in accept and deny needs exactly one line",
+		"an assertion line matches no single destination",
+		"a line of this test is not in the grammar",
+		"this destination is in accept and in deny",
+		"the server quoted the address of this host alias",
+		"a result for another source names a destination of this test",
+		"a result is for another spelling of this source",
+	},
 }
 
 func sectionNames() []string {
@@ -256,6 +311,7 @@ func TestEveryFixedSentenceOfAResultHasAClosedList(t *testing.T) {
 		"ACLValidateOutput.PolicyVersion": true, "ACLValidateOutput.PolicySHA256": true, "ACLValidateOutput.CheckedAt": true,
 		"ACLValidateOutput.PatchedDigest": true, "ACLDiffOutput.NextChange": true, "ACLDiffOutput.TailscaleWrittenAsOf": true,
 		"ACLDiffOutput.CheckedAt": true, "ACLDiffSide.PolicyVersion": true, "ACLDiffSide.PolicySHA256": true,
+		"ACLTestOutput.EvaluatedAt": true,
 		// An error code and tailkeeper's words around it: the code is from tkerr's list.
 		"ACLGetOutput.ExternallyManagedNote": true, "ACLValidateOutput.ExternallyManagedNote": true, "ACLDiffOutput.ExternallyManagedNote": true,
 		// true, false or unknown, and an enumeration of three states.

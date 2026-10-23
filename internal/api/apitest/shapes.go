@@ -151,6 +151,24 @@ func TestsPassEmptyObject() Shape {
 	return validate("TestsPassEmptyObject", observed(runOf20Oct, "A-1"), 200, jsonHeader, `{}`)
 }
 
+// TestsEmptyData is HTTP 200 and {"data":[]}. The tests-mode pass seen on 20 Oct 2026
+// was an empty body (A-12), not an empty list, so this stays Assumed and is not a pass.
+func TestsEmptyData() Shape {
+	return validate("TestsEmptyData", assumed("an empty data list; a tests-mode pass was an empty body"), 200, jsonHeader, `{"data":[]}`)
+}
+
+// TestsNullData is HTTP 200 and {"data":null}. A null list is not an empty body and
+// was not seen on 20 Oct 2026, so this stays Assumed and is not a pass.
+func TestsNullData() Shape {
+	return validate("TestsNullData", assumed("a null data field; a tests-mode pass was an empty body"), 200, jsonHeader, `{"data":null}`)
+}
+
+// TestsEmptyMessage is HTTP 200 and {"message":""}. An empty message with no entries
+// was not seen on 20 Oct 2026, so this stays Assumed and is not a pass.
+func TestsEmptyMessage() Shape {
+	return validate("TestsEmptyMessage", assumed("an empty message and no entries; a tests-mode pass was an empty body"), 200, jsonHeader, `{"message":""}`)
+}
+
 // TestsFailed is a failed test: HTTP 200, the message "test(s) failed" and one data
 // entry per source with its errors. The same body carries a policy-mode failure. The
 // live error lines read `[acl test error]: address "<dst>" (protocol "<p>"): want: <V>,
@@ -271,6 +289,15 @@ func SSHTestFailed(src, srcAddr, dst, dstAddr, user string) Shape {
 		entryBody("test(s) failed", []Entry{{User: src, Errors: []string{text}}}))
 }
 
+// SSHCheckFailed is a guess at the line a check user would produce. No probe has seen a
+// check failure, so the words want "check" and got "accept" stay Assumed, and a reader
+// must not turn the line into a pass.
+func SSHCheckFailed(src, srcAddr, dst, dstAddr, user string) Shape {
+	text := fmt.Sprintf("[ssh test error]: src %q at %q, dst %q at %q, ssh user %q: want: \"check\" got: \"accept\"", src, srcAddr, dst, dstAddr, user)
+	return validate("SSHCheckFailed", assumed("a check user; probe A-10 saw only accept and deny"), 200, jsonHeader,
+		entryBody("test(s) failed", []Entry{{User: src, Errors: []string{text}}}))
+}
+
 // TestUnevaluable is a test whose src is a tag the policy does not define: an error entry
 // that is not in the want/got grammar (A-2). The line carries the `[acl test error]: `
 // heading and names the tag again, `user or host is invalid: tag not found: "<tag>"`.
@@ -308,6 +335,7 @@ func PolicyText(policy, etag string) Shape {
 func AllShapes() []Shape {
 	return []Shape{
 		TestsPass(), TestsPassEmptyObject(),
+		TestsEmptyData(), TestsNullData(), TestsEmptyMessage(),
 		TestsFailed(Entry{User: "tag:p", Errors: []string{`[acl test error]: address "tag:p:22" (protocol "tcp"): want: Accept, got: Drop`}}),
 		TestsWarned(Entry{User: "group:p", Warnings: []string{`host alias "p" unused`}}),
 		Rejected400("invalid test"), Forbidden403(),
@@ -316,7 +344,8 @@ func AllShapes() []Shape {
 		PolicySyntaxError(3, 5, "invalid literal: invalidtext"), PolicyUnknownField("nodeAttr"), PolicyTagNotFound("tag:p"),
 		PolicyServerError500(), PolicyDuplicateKey(2, 3, 5, 3), PolicyKeyRejected("nobody-aaaaaaaa@example.com"),
 		CanaryFailed("tag:canary-one-two", false),
-		SSHTestFailed("tag:p", "100.64.0.1", "tag:p", "100.64.0.2", "root"), TestUnevaluable("tag:p"),
+		SSHTestFailed("tag:p", "100.64.0.1", "tag:p", "100.64.0.2", "root"),
+		SSHCheckFailed("tag:p", "100.64.0.1", "tag:p", "100.64.0.2", "root"), TestUnevaluable("tag:p"),
 		DetailsOK("{}\n", `"e1"`, []string{`host alias "p" unused`}, nil), PolicyText("{}\n", `"e1"`),
 	}
 }

@@ -51,7 +51,7 @@ func TestOptionalScopesAreInfoNotFailures(t *testing.T) {
 }
 
 func TestAGrantedOptionalScopeIsNotReported(t *testing.T) {
-	f, a := newApp(t, allReadScopes(t)+" zz_users:read")
+	f, a := newApp(t, allReadScopes(t)+" users:read zz_users:read")
 	f.JSON("GET", keyPath, 200, `{"id":"test-client-id","keyType":"client"}`)
 	addOptionalTool(a.Registry, "zz_ask", registry.StageGA,
 		registry.OptionalScope{Scope: "zz_users:read", Reason: "resolve a pseudonym"})

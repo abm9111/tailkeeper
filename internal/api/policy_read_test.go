@@ -171,12 +171,12 @@ func TestRemoveCanaryNeedsTheCanarySrcAndExactlyOneEntry(t *testing.T) {
 	other := failed("tag:p", "an error")
 
 	t.Run("the one entry is removed and what is left decides", func(t *testing.T) {
-		got, ok := api.RemoveCanary(good, canary)
+		got, ok := api.RemoveCanary(good, canary, nil)
 		if !ok || len(got.Results) != 0 || got.Status != api.PolicyPass || got.HTTP != 200 {
 			t.Errorf("= %+v, %v", got, ok)
 		}
 		both := read(apitest.TestsFailed(failed(canary, "e"), other))
-		got, ok = api.RemoveCanary(both, canary)
+		got, ok = api.RemoveCanary(both, canary, nil)
 		if !ok || len(got.Results) != 1 || got.Results[0].User != "tag:p" || got.Status != api.PolicyFail {
 			t.Errorf("with another failure = %+v, %v", got, ok)
 		}
@@ -190,7 +190,7 @@ func TestRemoveCanaryNeedsTheCanarySrcAndExactlyOneEntry(t *testing.T) {
 	// A fail that stays a fail keeps its message.
 	t.Run("a pass carries no failure message", func(t *testing.T) {
 		pass := read(apitest.TestsPassEmptyObject())
-		got, ok := api.RemoveCanary(good, canary)
+		got, ok := api.RemoveCanary(good, canary, nil)
 		if !ok || got.Status != pass.Status || got.Message != pass.Message || got.Why != pass.Why || got.Hint != pass.Hint {
 			t.Errorf("= %+v, %v; want a pass with the message %q", got, ok, pass.Message)
 		}
@@ -198,11 +198,11 @@ func TestRemoveCanaryNeedsTheCanarySrcAndExactlyOneEntry(t *testing.T) {
 			t.Fatal("the argument has no message: the test checks nothing")
 		}
 		warned := apitest.Entry{User: "group:p", Warnings: []string{"w"}}
-		got, ok = api.RemoveCanary(read(apitest.TestsFailed(failed(canary, "e"), warned)), canary)
+		got, ok = api.RemoveCanary(read(apitest.TestsFailed(failed(canary, "e"), warned)), canary, nil)
 		if !ok || got.Status != api.PolicyPass || got.Message != "" || len(got.Results) != 1 || got.Results[0].User != "group:p" {
 			t.Errorf("with a warning left = %+v, %v; want a pass with the warning and no message", got, ok)
 		}
-		got, ok = api.RemoveCanary(read(apitest.TestsFailed(failed(canary, "e"), other)), canary)
+		got, ok = api.RemoveCanary(read(apitest.TestsFailed(failed(canary, "e"), other)), canary, nil)
 		if !ok || got.Status != api.PolicyFail || got.Message != good.Message {
 			t.Errorf("with a failure left = %+v, %v; want a fail that keeps its message %q", got, ok, good.Message)
 		}
@@ -220,7 +220,7 @@ func TestRemoveCanaryNeedsTheCanarySrcAndExactlyOneEntry(t *testing.T) {
 		{"a pass", read(apitest.TestsPassEmptyObject())},
 		{"a rejection", read(apitest.BareMessage200("x"))},
 	} {
-		got, ok := api.RemoveCanary(c.v, canary)
+		got, ok := api.RemoveCanary(c.v, canary, nil)
 		if ok || got.Status != c.v.Status || len(got.Results) != len(c.v.Results) {
 			t.Errorf("%s: = %+v, %v; want the argument back and false", c.name, got, ok)
 		}

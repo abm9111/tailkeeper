@@ -106,9 +106,9 @@ func readEntries(v *PolicyValidation, results []TestResult) {
 // and no warning, and sets the status from what is left: a fail while an entry has errors,
 // else a pass, which carries no message. It reports false, and returns v unchanged, when v is not a fail, when no
 // result or more than one has that User (compared exactly), or when the one has anything
-// but a single error. The caller checks that the error is the line it expects: a canary
-// that comes back in another shape is not a pass.
-func RemoveCanary(v PolicyValidation, src string) (PolicyValidation, bool) {
+// but a single error. grammar, when not nil, is the caller's check of that one error: a canary
+// that comes back in another shape is not a pass. The check lives in grammar, not in a second copy here.
+func RemoveCanary(v PolicyValidation, src string, grammar func(line string) bool) (PolicyValidation, bool) {
 	if v.Status != PolicyFail {
 		return v, false
 	}
@@ -123,6 +123,9 @@ func RemoveCanary(v PolicyValidation, src string) (PolicyValidation, bool) {
 		at = i
 	}
 	if at < 0 || len(v.Results[at].Errors) != 1 || len(v.Results[at].Warnings) != 0 {
+		return v, false
+	}
+	if grammar != nil && !grammar(v.Results[at].Errors[0]) {
 		return v, false
 	}
 	out := v

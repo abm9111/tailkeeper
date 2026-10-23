@@ -1,6 +1,7 @@
 package tools_test
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"os/exec"
@@ -57,6 +58,33 @@ func TestAMillionLevelsOfNestingIsAnInvalidResult(t *testing.T) {
 	cmd.Env = append(os.Environ(), validateDepthChildEnv+"=1")
 	out, err := cmd.CombinedOutput()
 	if err != nil || !strings.Contains(string(out), "DEPTH-OK acl_validate") {
+		t.Fatalf("the child did not finish cleanly: %v\n%s", err, tailOf(string(out), 1500))
+	}
+}
+
+const sshDepthChildEnv = "TAILKEEPER_SSH_DEPTH_CHILD"
+
+func TestSSHDepthChild(t *testing.T) {
+	if os.Getenv(sshDepthChildEnv) == "" {
+		return
+	}
+	f, reg, env := apiEnv(t)
+	servePolicy(f, strings.Repeat("[", 1<<20), `"e1"`)
+	s, err := call(t, reg, env, "acl_test", `{"src":"tag:db","ssh":[{"dst":["tag:db"],"accept":["root"]}]}`)
+	if err != nil || strings.Contains(s, `"status":"unknown"`) {
+		fmt.Println("DEPTH-OK acl_test_ssh")
+		return
+	}
+	fmt.Printf("DEPTH-FAIL %v %s\n", err, s)
+}
+
+func TestTheSSHPathSurvivesAMillionLevelsOfNestingInTheLivePolicy(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+	defer cancel()
+	cmd := exec.CommandContext(ctx, os.Args[0], "-test.run=^TestSSHDepthChild$", "-test.count=1")
+	cmd.Env = append(os.Environ(), sshDepthChildEnv+"=1")
+	out, err := cmd.CombinedOutput()
+	if err != nil || !strings.Contains(string(out), "DEPTH-OK acl_test_ssh") {
 		t.Fatalf("the child did not finish cleanly: %v\n%s", err, tailOf(string(out), 1500))
 	}
 }

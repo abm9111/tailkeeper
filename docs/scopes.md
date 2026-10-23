@@ -24,5 +24,5 @@ tailkeeper needs one OAuth client with read scopes only. Grant every scope below
 | `oauth_keys:read` |  | `key_get`, `keys_list` |  |  |
 | `policy_file:read` | `acl_diff`, `acl_get`, `acl_test`, `acl_validate` | `settings_get` |  |  |
 | `services:read` | `service_get`, `services_list` |  |  |  |
-| `users:read` | `user_get`, `user_invite_get`, `user_invites_list`, `users_list` |  | `acl_diff` (resolve a pseudonym in a text or patch), `acl_validate` (resolve a pseudonym in a proposal or patch) |  |
+| `users:read` | `user_get`, `user_invite_get`, `user_invites_list`, `users_list` |  | `acl_diff` (resolve a pseudonym in a text or patch), `acl_test` (resolve a pseudonym in src or a destination), `acl_validate` (resolve a pseudonym in a proposal or patch) |  |
 | `webhooks:read` | `webhook_get`, `webhooks_list` |  |  |  |

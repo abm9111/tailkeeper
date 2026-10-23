@@ -2,7 +2,11 @@ package cli
 
 import (
 	"context"
+	"encoding/json"
+	"fmt"
 	"reflect"
+	"sort"
+	"strings"
 	"testing"
 	"time"
 
@@ -41,6 +45,28 @@ type fixtureOut struct {
 	NoInvariants bool   `json:"noInvariants"`
 	Offline      bool   `json:"offline"`
 	Operator     bool   `json:"operator"`
+}
+
+// attrRule is one element of a list a JSON flag carries: the shape of an SSH test, a
+// destination and the users it accepts.
+type attrRule struct {
+	Dst    []string `json:"dst"`
+	Accept []string `json:"accept,omitempty"`
+}
+
+// attrIn is a map and a list of structs. MCP sends them as JSON properties; the command
+// line sends the same JSON as the text of a flag. The tool reads no file, so the fields
+// need no short tag. The flag name and the MCP name differ on purpose for the map.
+type attrIn struct {
+	Attrs map[string]any `json:"attrs,omitempty" cli:"json:device-attrs" jsonschema:"device attributes, key to value"`
+	Rules []attrRule     `json:"rules,omitempty" cli:"json:rules" jsonschema:"rules echoed back"`
+}
+
+// attrOut echoes what reached the tool, and the Go type of each attribute, so a test can
+// tell a number from a string.
+type attrOut struct {
+	Echo  string `json:"echo" tk:"untrusted"`
+	Kinds string `json:"kinds" tk:"untrusted"`
 }
 
 // gateIn builds a typed result with the status and finding counts a test asks
@@ -97,7 +123,7 @@ func (partialOut) FailOnKinds() []string {
 	return []string{"tests-reduced", "defaults", "widening", "change"}
 }
 
-// fixtureRegistry holds the test tools; ran counts the runs of fixture_check.
+// fixtureRegistry holds the test tools; ran counts the runs of fixture_check and attr_check.
 func fixtureRegistry(ran *int) *registry.Registry {
 	reg := registry.New()
 	reg.MustAdd(registry.Define(registry.Meta{Name: "fixture_check", Area: "fixture", Verb: "check", Summary: "A test tool for the framework.",
@@ -105,6 +131,25 @@ func fixtureRegistry(ran *int) *registry.Registry {
 		func(_ context.Context, _ *registry.Env, in fixtureIn) (fixtureOut, error) {
 			*ran++
 			return fixtureOut(in), nil
+		}))
+	reg.MustAdd(registry.Define(registry.Meta{Name: "attr_check", Area: "attr", Verb: "check", Summary: "A test tool with a map and a list of structs as flags.",
+		Tier: registry.TierRead, Stage: registry.StageGA, Credential: registry.CredOptional, Scopes: []string{"devices:core:read"}},
+		func(_ context.Context, _ *registry.Env, in attrIn) (attrOut, error) {
+			*ran++
+			echo, err := json.Marshal(in)
+			if err != nil {
+				return attrOut{}, err
+			}
+			keys := make([]string, 0, len(in.Attrs))
+			for k := range in.Attrs {
+				keys = append(keys, k)
+			}
+			sort.Strings(keys)
+			kinds := make([]string, len(keys))
+			for i, k := range keys {
+				kinds[i] = fmt.Sprintf("%s=%T", k, in.Attrs[k])
+			}
+			return attrOut{Echo: string(echo), Kinds: strings.Join(kinds, ",")}, nil
 		}))
 	reg.MustAdd(registry.Define(registry.Meta{Name: "gate_check", Area: "gate", Verb: "check", Summary: "A test tool whose result can be gated.",
 		Tier: registry.TierLocal, Stage: registry.StageGA, Credential: registry.CredNone},

@@ -30,6 +30,10 @@ func TestInputChecksNeedNoEnvironment(t *testing.T) {
 		{"acl_get", `{"view":"summary","maxBytes":2048}`},
 		{"acl_test", `{"src":"tag:ci"}`},
 		{"acl_test", `{"src":"tag:ci","accept":["tag:prod"]}`},
+		{"acl_test", `{"src":"a…@example.com","accept":["tag:prod:22"]}`},
+		{"acl_test", `{"src":"tag:ci","accept":["tag:prod:22"],"srcPostureAttrs":{"os":{"nested":true}}}`},
+		{"acl_test", sshUsersArgs(17)},
+		{"acl_test", `{"src":"tag:ci","srcPostureAttrs":{"node:os":"linux"},"ssh":[{"dst":["tag:db"],"accept":["root"]}]}`},
 		{"acl_validate", `{"policy":"{}","patch":"[]"}`},
 		{"acl_diff", `{"policy":"{}","patch":"[]"}`},
 		{"acl_diff", `{"section":"nope"}`},
@@ -85,6 +89,9 @@ func TestInputChecksNeedNoEnvironment(t *testing.T) {
 	for _, c := range []struct{ tool, args string }{
 		{"acl_get", `{}`}, {"acl_get", `{"fromLine":3,"maxBytes":2048}`}, {"acl_get", `{"view":"summary"}`}, {"acl_get", `{"view":"text","fromLine":3}`},
 		{"acl_test", `{"src":"tag:ci","accept":["tag:prod:22"]}`},
+		{"acl_test", `{"src":"group:finance team@example.com","accept":["tag:prod:22"],"srcPostureAttrs":{"node:os":"macos","node:n":1,"node:ok":true}}`},
+		{"acl_test", sshUsersArgs(16)},
+		{"acl_test", `{"src":"tag:ci","accept":["tag:prod:22"],"ssh":[{"dst":["tag:db"],"accept":["root"]}]}`},
 		{"acl_validate", `{}`}, {"acl_validate", `{"policy":"{}"}`}, {"acl_validate", `{"patch":"[]"}`},
 		{"acl_diff", `{}`}, {"acl_diff", `{"against":"{}"}`}, {"acl_diff", `{"policy":"{}","section":"Groups"}`}, {"acl_diff", `{"patch":"[]","section":"unknown","ignoreTailscaleWritten":true}`},
 		{"devices_list", `{"staleDays":30,"tags":["tag:a"]}`}, {"users_list", `{"type":"member","role":"admin"}`},
@@ -143,6 +150,10 @@ func TestARefusedCallSendsNoRequest(t *testing.T) {
 	f, reg, env := apiEnv(t)
 	for _, c := range []struct{ tool, args string }{
 		{"acl_test", `{"src":"tag:ci"}`},
+		{"acl_test", `{"src":"a…@example.com","accept":["tag:prod:22"]}`},
+		{"acl_test", `{"src":"tag:ci","accept":["tag:prod:22"],"srcPostureAttrs":{"os":{"nested":true}}}`},
+		{"acl_test", sshUsersArgs(17)},
+		{"acl_test", `{"src":"tag:ci","srcPostureAttrs":{"node:os":"linux"},"ssh":[{"dst":["tag:db"],"accept":["root"]}]}`},
 		{"acl_validate", `{"policy":"{}","patch":"[]"}`},
 		{"acl_get", `{"maxBytes":10}`},
 		{"acl_get", `{"view":"raw"}`},
@@ -162,4 +173,9 @@ func TestARefusedCallSendsNoRequest(t *testing.T) {
 			t.Fatalf("%s %s: %d requests reached the API, want none", c.tool, c.args, n)
 		}
 	}
+}
+
+// sshUsersArgs is an acl_test call with one SSH test of n users.
+func sshUsersArgs(n int) string {
+	return `{"src":"tag:ci","ssh":[{"dst":["tag:db"],"accept":[` + strings.TrimSuffix(strings.Repeat(`"root",`, n), ",") + `]}]}`
 }

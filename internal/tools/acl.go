@@ -34,10 +34,14 @@ func aclTools() []registry.Tool {
 		"With view summary the result lists the sections, the names the policy defines and a keyed digest of what it means, and no text. " +
 		"The whole policy, comments included, goes to whoever reads the result."
 	test := withOps(readMeta("acl_test", "acl", "test", "Test whether a source can or cannot reach destinations under the live policy, without changing it.", aclScopes...),
-		"POST /tailnet/{tailnet}/acl/validate")
+		"POST /tailnet/{tailnet}/acl/validate", "GET /tailnet/{tailnet}/acl", "GET /tailnet/{tailnet}/users")
 	test.Title, test.OpenWorld = "Test access under the live policy", true
-	test.Notes = "One source per call, against the live policy only, with no posture attributes; SSH rules are not tested. A masked value (one with …) cannot be tested: ask the user for it. " +
-		"A source or destination Tailscale cannot resolve fails the test, with its reason. The CLI exits 9 when the test fails."
+	test.OptionalScopes = []registry.OptionalScope{{Scope: "users:read", Reason: "resolve a pseudonym in src or a destination"}}
+	test.Notes = "A user is named by the pseudonym from users_list; a masked value with no pseudonym cannot be tested. The text of the test goes to Tailscale and changes nothing. " +
+		"One source per call, against the live policy. Status is pass (exit 0), unknown (1, never a pass), unresolved (2: a name Tailscale cannot resolve) or fail (9: an assertion failed). " +
+		"srcPostureAttrs pass through when ssh is not given, and posture is none, gated or unknown: unknown means the live policy could not be read, which is not a pass of that question. A test without the attributes does not match a posture-gated rule. " +
+		"A destination with no line has what it was listed to get, and the line's got word is the verdict. A result for another source is otherTests only when it names none of this call's destinations; one that names one of them makes that destination unknown. " +
+		"SSH rules are tested only when the call gives ssh. SSH tests are a separate request: a copy of the live policy with its own tests removed, the caller's SSH tests and an SSH canary appended, sent to Tailscale, which changes nothing. A missing SSH canary is unknown. A check user with no line is unknown, never a pass. srcPostureAttrs together with ssh are refused, and so is proto when the call gives no accept or deny destination. With only SSH tests, no tests-mode request is sent. When src is a pseudonym, each distinct SSH user of the call takes one validation token (acl.validatePerMinute) instead of one for the request: a rule written localpart:*@domain accepts the SSH user that is a login's local part, so users guessed in one call would read a masked local part off the verdicts at the price of one token. A call that cannot take them all is validate_rate_limited before the SSH request is sent. What you typed comes back as typed, masked without a pseudonym. When the SSH half cannot run in a call that also has destinations, the tests half is kept, the SSH verdicts are unknown and sshError says why. Lines of Tailscale's text are cut to a bound and omittedLines counts the rest."
 	validate := withOps(readMeta("acl_validate", "acl", "validate",
 		"Validate a policy proposal, or the live policy, and the invariants the owner configured, with Tailscale's own validator: the policy text is sent to Tailscale and changes nothing.",
 		aclScopes...),

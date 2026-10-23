@@ -14,6 +14,69 @@ import (
 	"github.com/abm9111/tailkeeper/internal/tools"
 )
 
+func TestHideMasksABareLocalPart(t *testing.T) {
+	r := resolvedAll(t, "amy@example.com", "AmyLongerName@example.com")
+	got := r.Hide("no such user: amy; no such user: AMY; no such user: AmyLongerName")
+	if strings.Contains(strings.ToLower(got), "amy") || strings.Contains(got, "Longer") {
+		t.Fatalf("a bare local part was shown: %q", got)
+	}
+	if strings.Count(got, "a…") < 2 {
+		t.Fatalf("the two local parts did not mask to one form: %q", got)
+	}
+}
+
+// A bare local part is masked at every place it stands alone, however close the places are:
+// one separator between two of them, a part at the start or at the end of the text, beside
+// punctuation. The boundary around one occurrence is not consumed by the next.
+func TestHideMasksEveryOccurrenceOfARepeatedBareLocalPart(t *testing.T) {
+	r := resolvedAll(t, "amy@example.com")
+	for in, want := range map[string]string{
+		"amy amy":              "a… a…",
+		"amy:amy":              "a…:a…",
+		"no user amy/amy":      "no user a…/a…",
+		"amy,amy,amy":          "a…,a…,a…",
+		"amy amy amy amy amy":  "a… a… a… a… a…",
+		"AMY Amy aMy":          "a… a… a…",
+		"amy":                  "a…",
+		"amy is unknown":       "a… is unknown",
+		"unknown user amy":     "unknown user a…",
+		"amy: not amy":         "a…: not a…",
+		"(amy)":                "(a…)",
+		"[amy].amy.":           "[a…].a….",
+		`"amy" 'amy' amy;amy`:  `"a…" 'a…' a…;a…`,
+		"amy\namy\tamy":        "a…\na…\ta…",
+		"amy-amy":              "a…-a…",
+		"amy=amy&amy=amy":      "a…=a…&a…=a…",
+		"bigamy amy amyx":      "bigamy a… amyx",
+		"amy_x amy x_amy amy2": "amy_x a… x_amy amy2",
+	} {
+		if got := r.Hide(in); got != want {
+			t.Errorf("Hide(%q) = %q, want %q", in, got, want)
+		}
+	}
+}
+
+// A bare local part masks to one form whatever bytes it holds: hyphens, dots, plus signs,
+// digits and underscores do not leave a piece of it showing or a trace of its length.
+func TestHideMasksABareLocalPartToOneFormWhateverItHolds(t *testing.T) {
+	for _, local := range []string{"amy", "amy-zzzzqqqqmuchlongerlocalpart", "amy.smith", "amy+tag", "amy123", "amy_x", "amy-z.q+9_k", "Amy-Zed"} {
+		r := resolvedAll(t, local+"@example.com")
+		for _, c := range []struct{ in, want string }{
+			{local, "a…"},
+			{"no such user: " + local, "no such user: a…"},
+			{"user=" + local + ";", "user=a…;"},
+			{"(" + local + ")", "(a…)"},
+			{local + " " + local, "a… a…"},
+			{strings.ToUpper(local), "a…"},
+			{"x " + local + "-" + local, "x a…-a…"},
+		} {
+			if got := r.Hide(c.in); got != c.want {
+				t.Errorf("local part %q: Hide(%q) = %q, want %q", local, c.in, got, c.want)
+			}
+		}
+	}
+}
+
 // A resolver that has resolved two users, the first with a slash in its login: a byte the
 // address scan does not read as part of a local part.
 func resolvedTwo(t *testing.T) (*tools.SubjectResolver, string, string) {
@@ -315,6 +378,68 @@ func TestHideEndsAtACharacterNotInsideOne(t *testing.T) {
 	}
 }
 
+// A login that holds a multi-byte character is dropped whole when the cut falls inside
+// that character or inside the login. Nothing of the login, and no split byte, remains.
+func TestCutForHideKeepsAMultibyteLoginWhole(t *testing.T) {
+	const login = "amé@example.com"
+	r := resolvedAll(t, login)
+	prefix := "preface "
+	text := prefix + login + " tail"
+	at := strings.Index(text, "é")
+	if at < 0 {
+		t.Fatal("the fixture lost its character")
+	}
+	for _, limit := range []int{at + 1, at + len("é@exa")} {
+		got := r.CutAt(text, limit)
+		if !utf8.ValidString(got) || strings.Contains(got, "amé") || strings.Contains(got, "@example.com") || strings.Contains(got, "é") {
+			t.Errorf("CutAt(%d) = %q, want only the preface", limit, got)
+		}
+		if got != prefix {
+			t.Errorf("CutAt(%d) = %q, want %q", limit, got, prefix)
+		}
+	}
+}
+
+// The three places the cut keeps a character whole, each shown by a text that the other two
+// do not mend. A login with a slash in front of its multi-byte character: the address bytes
+// before the cut would otherwise stop at the slash and leave it showing.
+func TestACutInsideAMultibyteCharacterOfALoginWithASlashDropsTheWholeLogin(t *testing.T) {
+	const login = "ops/amé@example.com"
+	r := resolvedAll(t, login)
+	prefix := "preface "
+	text := prefix + login + " tail"
+	at := strings.Index(text, "é")
+	for _, limit := range []int{at + 1, at + len("é@exa")} {
+		if got := r.CutAt(text, limit); got != prefix {
+			t.Errorf("CutAt(%d) = %q, want %q", limit, got, prefix)
+		}
+	}
+}
+
+// A run of address bytes longer than the longest address is not walked back whole, and the
+// byte it stops at can be the second of a character: the cut then steps back to the
+// character's first byte and never leaves half of one.
+func TestACutAfterALongRunOfAddressBytesNeverLeavesHalfACharacter(t *testing.T) {
+	r := resolvedAll(t, "amy@example.com")
+	text := strings.Repeat("é", 1500) + "z" + " tail"
+	got := r.CutAt(text, 2*1500+1)
+	if !utf8.ValidString(got) || got != strings.Repeat("é", 540) {
+		t.Errorf("CutAt = %d bytes, valid %t, want 540 characters", len(got), utf8.ValidString(got))
+	}
+}
+
+// A login whose first character is the replacement character reads the continuation byte
+// of any character as its start. The search for the start of a login goes by whole
+// characters, so a text that ends in an ordinary character is not taken as ending in a login.
+func TestTheStartOfALoginIsSoughtByWholeCharacters(t *testing.T) {
+	r := resolvedAll(t, string(rune(0xFFFD))+"@example.com")
+	text := "x" + strings.Repeat("é", 1500) + " tail"
+	got := r.CutAt(text, 1+2*1500)
+	if !utf8.ValidString(got) || got != "x"+strings.Repeat("é", 540) {
+		t.Errorf("CutAt = %d bytes, valid %t, want 1081 bytes of whole characters", len(got), utf8.ValidString(got))
+	}
+}
+
 // Hide reads as far as the masked form needs and no further, whatever the length of the text:
 // a megabyte and four megabytes of addresses are read to the same place, a small multiple of
 // what the display shows. A masked address stands for the whole login, so a long login takes
@@ -369,5 +494,93 @@ func TestHideStopsReadingATextThatMasksToAlmostNothing(t *testing.T) {
 	}
 	if len(got) == 0 || strings.Contains(got, "aaaaaaaaaa") || !strings.Contains(got, "a…@b.co") {
 		t.Errorf("the result of the limited read is %.100q, want masked addresses and nothing of the run", got)
+	}
+}
+
+// A word the caller typed is shown as it is, whether or not it is a word of a login the call
+// resolved: a reply that masked it only when it was one would answer each guess. A word that
+// Tailscale adds is still masked.
+func TestHideLeavesAWordTheCallerTypedAsItIsAndMasksTheOnesTailscaleAdds(t *testing.T) {
+	for _, typed := range []string{"amy", "ops", "bob", "zed", "ops/amy", "AMY"} {
+		r := resolvedAll(t, "ops/amy@example.com", "bob@example.org")
+		r.Typed(typed + ":22")
+		quoted := `address "` + typed + `:22" (protocol "tcp"): want: Drop, got: Accept`
+		if got := r.Hide(quoted); got != quoted {
+			t.Errorf("a word typed as %q was masked: %q", typed, got)
+		}
+	}
+	r := resolvedAll(t, "ops/amy@example.com")
+	r.Typed("zed:22")
+	if got := r.Hide(`address "zed:22": no such user: amy`); got != `address "zed:22": no such user: a…` {
+		t.Errorf("a word Tailscale added was shown or a typed one changed: %q", got)
+	}
+	// What is typed as part of a longer word does not make the shorter word typed.
+	r = resolvedAll(t, "amy@example.com")
+	r.Typed("amyx:22")
+	if got := r.Hide("no such user: amy; amyx"); got != "no such user: a…; amyx" {
+		t.Errorf("a word that is only part of a typed one was left alone: %q", got)
+	}
+}
+
+// A local part of several words is typed whole or in part: neither the span nor a word of it
+// is masked in the text that holds it, and a word that was not typed still is.
+func TestHideLeavesAWholeLocalPartTheCallerTypedAsItIs(t *testing.T) {
+	r := resolvedAll(t, "amy-smith@example.com")
+	r.Typed("amy-smith:22")
+	for _, in := range []string{`"amy-smith:22"`, `amy-smith-jones:22`, `smith:22`, `amy:22`} {
+		if got := r.Hide(in); got != in {
+			t.Errorf("Hide(%q) = %q: a span the caller typed was masked", in, got)
+		}
+	}
+	r = resolvedAll(t, "amy-smith@example.com")
+	r.Typed("amy:22")
+	for in, want := range map[string]string{`amy:22`: `amy:22`, `smith:22`: `s…:22`, `amy-smith:22`: `a…:22`} {
+		if got := r.Hide(in); got != want {
+			t.Errorf("Hide(%q) = %q, want %q", in, got, want)
+		}
+	}
+}
+
+// What the call resolved cannot show through the way a typed text reads: for every text the
+// caller typed, the reply reads the same whichever login the call resolved. The login with a
+// slash is the one the plain address scan reads differently from the resolved pattern.
+func TestHideReadsATypedTextTheSameWhicheverLoginTheCallResolved(t *testing.T) {
+	typed := []string{"ops/amy@example.com", "ops/zed@example.com", "amy", "ops", "bob@example.org", "amy:22", "ops/amy", "bigamy@example.com"}
+	for _, text := range typed {
+		var shown []string
+		for _, resolved := range []string{"ops/amy@example.com", "bob@example.org", "carol@example.net"} {
+			r := resolvedAll(t, resolved)
+			r.Typed(text)
+			shown = append(shown, r.Hide(`ssh user "`+text+`" is unknown for `+text+`:22`))
+		}
+		if shown[0] != shown[1] || shown[1] != shown[2] {
+			t.Errorf("the reply to a typed %q depends on the login the call resolved:\n%q\n%q\n%q", text, shown[0], shown[1], shown[2])
+		}
+	}
+}
+
+func TestATypedSetOfNothingChangesNothing(t *testing.T) {
+	r := resolvedAll(t, "amy@example.com")
+	r.Typed()
+	r.Typed("")
+	if got := r.Hide("no such user: amy"); got != "no such user: a…" {
+		t.Errorf("Hide = %q", got)
+	}
+}
+
+// A typed text whose first occurrence of a word is inside a longer word is searched on: the
+// word stands alone further along. What the caller was told twice is held twice.
+func TestHideSearchesATypedTextForALaterOccurrenceAndKeepsEveryTelling(t *testing.T) {
+	r := resolvedAll(t, "amy@example.com", "bob@example.org")
+	r.Typed("xamy amy:22")
+	if got := r.Hide(`address "amy:22"`); got != `address "amy:22"` {
+		t.Errorf("a word that stands alone later in a typed text was masked: %q", got)
+	}
+	r.Typed("bob:22")
+	r.Typed("")
+	for _, in := range []string{`"amy:22"`, `"bob:22"`} {
+		if got := r.Hide(in); got != in {
+			t.Errorf("Hide(%s) = %q: an earlier telling was forgotten", in, got)
+		}
 	}
 }

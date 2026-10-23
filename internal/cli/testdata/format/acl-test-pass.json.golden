@@ -1,0 +1,26 @@
+{
+  "status": "pass",
+  "verdicts": [
+    {
+      "dst": "tag:web:22",
+      "expect": "accept",
+      "verdict": "allowed"
+    },
+    {
+      "dst": "tag:db:443",
+      "expect": "accept",
+      "verdict": "allowed"
+    },
+    {
+      "dst": "tag:ci:22",
+      "expect": "deny",
+      "verdict": "denied"
+    }
+  ],
+  "posture": "none",
+  "caveats": [
+    "with proto omitted, a destination that must be denied can yield one line for tcp and one for udp"
+  ],
+  "evaluatedAt": "2026-10-10T12:00:00Z",
+  "note": "Evaluated against the live policy. SSH rules are tested only when the call gives ssh. Posture-gated rules match only when srcPostureAttrs names their attributes."
+}

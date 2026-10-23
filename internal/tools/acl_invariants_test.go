@@ -330,7 +330,14 @@ func TestTheCanaryJoinsATagOwnersWrittenInAnotherCaseOrMakesOne(t *testing.T) {
 	} {
 		f, _, env := apiEnv(t)
 		serveLive(f, live, nil, nil)
-		serveInvariants(f, func(tag string) apitest.Shape { return apitest.TestsFailed(canaryEntry(tag)) })
+		// acls: [] is deny-all, so the canary's acceptance fails. The other texts here are allow-all.
+		line := canaryLine
+		if strings.Contains(live, `"acls": []`) {
+			line = `[acl test error]: address "192.0.2.1:1" (protocol "tcp"): want: Accept, got: Drop`
+		}
+		serveInvariants(f, func(tag string) apitest.Shape {
+			return apitest.TestsFailed(apitest.Entry{User: tag, Errors: []string{line}})
+		})
 		out, err := validateWith(t, env, invariantsText)
 		if err != nil || out.Status != "pass" {
 			t.Errorf("%s: %+v, %v", name, out, err)

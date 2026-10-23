@@ -20,7 +20,7 @@ import (
 // that raises the total raises this number in the same commit, and says why in
 // the CHANGELOG. It is tight on purpose: the test also fails when the total falls
 // more than 1,024 bytes below it, so the number follows the code down as well.
-const toolListBudget = 90404
+const toolListBudget = 96540
 
 const budgetSlack = 1024
 

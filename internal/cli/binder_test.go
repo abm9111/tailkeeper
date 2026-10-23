@@ -277,9 +277,13 @@ func untaggedTextFields(t reflect.Type) []string {
 	for i := 0; i < t.NumField(); i++ {
 		f := t.Field(i)
 		name, _, _ := strings.Cut(f.Tag.Get("json"), ",")
+		tag := f.Tag.Get("cli")
+		// A document is filled from a file. No cli tag makes it a flag of its own; a
+		// json tag would carry the same document as a flag's text. The names are the
+		// same list bind refuses (policyTextNames).
 		switch name {
 		case "policy", "patch", "against", "invariants", "proposal", "text":
-			if f.Tag.Get("cli") == "" {
+			if tag == "" || strings.HasPrefix(tag, "json:") {
 				out = append(out, f.Name)
 			}
 		}
@@ -303,5 +307,11 @@ func TestPolicyTextNeverBecomesAFlag(t *testing.T) {
 	}
 	if got := untaggedTextFields(reflect.TypeOf(planted{})); len(got) != 1 || got[0] != "Policy" {
 		t.Errorf("untaggedTextFields(planted) = %v, want [Policy]", got)
+	}
+	type plantedJSON struct {
+		Policy map[string]any `json:"policy,omitempty" cli:"json:policy"`
+	}
+	if got := untaggedTextFields(reflect.TypeOf(plantedJSON{})); len(got) != 1 || got[0] != "Policy" {
+		t.Errorf("untaggedTextFields(plantedJSON) = %v, want [Policy]", got)
 	}
 }

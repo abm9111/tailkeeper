@@ -63,17 +63,20 @@ Test whether a source can or cannot reach destinations under the live policy, wi
 - Title: Test access under the live policy
 - Sends your input to Tailscale: yes
 - OAuth scopes: `policy_file:read`, `devices:core:read`, `devices:posture_attributes:read`
-- API operations: `POST /tailnet/{tailnet}/acl/validate`
-- Note: One source per call, against the live policy only, with no posture attributes; SSH rules are not tested. A masked value (one with …) cannot be tested: ask the user for it. A source or destination Tailscale cannot resolve fails the test, with its reason. The CLI exits 9 when the test fails.
-- Untrusted output fields: `failures[].errors`, `failures[].src`, `warnings`
-- Email addresses masked unless `personalData` is `show`, the rest kept (configuration): `failures[].errors`, `failures[].src`, `warnings`
+- Optional OAuth scopes: `users:read` (resolve a pseudonym in src or a destination)
+- API operations: `POST /tailnet/{tailnet}/acl/validate`, `GET /tailnet/{tailnet}/acl`, `GET /tailnet/{tailnet}/users`
+- Note: A user is named by the pseudonym from users_list; a masked value with no pseudonym cannot be tested. The text of the test goes to Tailscale and changes nothing. One source per call, against the live policy. Status is pass (exit 0), unknown (1, never a pass), unresolved (2: a name Tailscale cannot resolve) or fail (9: an assertion failed). srcPostureAttrs pass through when ssh is not given, and posture is none, gated or unknown: unknown means the live policy could not be read, which is not a pass of that question. A test without the attributes does not match a posture-gated rule. A destination with no line has what it was listed to get, and the line's got word is the verdict. A result for another source is otherTests only when it names none of this call's destinations; one that names one of them makes that destination unknown. SSH rules are tested only when the call gives ssh. SSH tests are a separate request: a copy of the live policy with its own tests removed, the caller's SSH tests and an SSH canary appended, sent to Tailscale, which changes nothing. A missing SSH canary is unknown. A check user with no line is unknown, never a pass. srcPostureAttrs together with ssh are refused, and so is proto when the call gives no accept or deny destination. With only SSH tests, no tests-mode request is sent. When src is a pseudonym, each distinct SSH user of the call takes one validation token (acl.validatePerMinute) instead of one for the request: a rule written localpart:*@domain accepts the SSH user that is a login's local part, so users guessed in one call would read a masked local part off the verdicts at the price of one token. A call that cannot take them all is validate_rate_limited before the SSH request is sent. What you typed comes back as typed, masked without a pseudonym. When the SSH half cannot run in a call that also has destinations, the tests half is kept, the SSH verdicts are unknown and sshError says why. Lines of Tailscale's text are cut to a bound and omittedLines counts the rest.
+- Untrusted output fields: `failures[].errors`, `failures[].src`, `otherTests[].errors`, `otherTests[].src`, `posturesNeeded`, `sshError`, `sshVerdicts[].dst`, `sshVerdicts[].user`, `unmatched`, `verdicts[].dst`, `verdicts[].protocols`, `warnings`
+- Email addresses masked unless `personalData` is `show`, the rest kept (configuration): `failures[].errors`, `failures[].src`, `otherTests[].errors`, `otherTests[].src`, `posturesNeeded`, `sshError`, `sshVerdicts[].dst`, `sshVerdicts[].user`, `unmatched`, `verdicts[].dst`, `warnings`
 
 | Parameter | Type | Required | Description |
 |---|---|---|---|
 | `accept` | string[] |  | destinations src must reach, as host:port (tag:prod:22, 100.64.0.5:443, [fd7a:115c:a1e0::5]:22) |
 | `deny` | string[] |  | destinations src must not reach, as host:port |
-| `proto` | string |  | IP protocol, a name such as tcp, udp or icmp, or a number from 1 to 255; icmp needs port 0 |
-| `src` | string | yes | the source: a user's login, group:name, tag:name, a host alias or a tailnet address; never a masked value |
+| `proto` | string |  | IP protocol, a name such as tcp, udp or icmp, or a number from 1 to 255; icmp needs port 0. Needs accept or deny destinations: an SSH-only call refuses it |
+| `src` | string | yes | the source: a tag, a group (a synced group may contain spaces), a host alias, a tailnet address, or a user named by the pseudonym users_list shows |
+| `srcPostureAttrs` | object |  | posture attributes passed through to the test, at most 16: a name such as node:tsVersion or custom:my_attr (a lower-case letter, then letters, digits and : . - _) with a string, number or bool value. Refused together with ssh |
+| `ssh` | object[] |  | SSH tests of this source, at most 8: each names up to 32 destinations with no port and up to 16 users in accept, check or deny |
 
 ### `acl_validate`
 
@@ -709,7 +712,7 @@ This map is checked against a pinned list of the operations in Tailscale's OpenA
 | `GET /device/{deviceId}/routes` | `device_routes` |  |
 | `GET /organizations/{organization}/tailnets` |  | organization endpoints are a non-goal in v1 (spec §2) |
 | `GET /posture/integrations/{id}` | `posture_integration_get` |  |
-| `GET /tailnet/{tailnet}/acl` | `acl_diff`, `acl_get`, `acl_validate` |  |
+| `GET /tailnet/{tailnet}/acl` | `acl_diff`, `acl_get`, `acl_test`, `acl_validate` |  |
 | `GET /tailnet/{tailnet}/contacts` | `contacts_get` |  |
 | `GET /tailnet/{tailnet}/devices` | `device_get`, `device_invites_list`, `device_posture_attributes`, `device_routes`, `devices_list` |  |
 | `GET /tailnet/{tailnet}/dns/configuration` | `dns_get` |  |
@@ -732,7 +735,7 @@ This map is checked against a pinned list of the operations in Tailscale's OpenA
 | `GET /tailnet/{tailnet}/services/{serviceName}/devices` |  | a privileged read: the API demands the write-level services scope with devices:core, so service_hosts waits for the approval gate (M2) |
 | `GET /tailnet/{tailnet}/settings` | `acl_diff`, `acl_get`, `acl_validate`, `network_flow_logs`, `settings_get` |  |
 | `GET /tailnet/{tailnet}/user-invites` | `user_invites_list` |  |
-| `GET /tailnet/{tailnet}/users` | `acl_diff`, `acl_validate`, `users_list` |  |
+| `GET /tailnet/{tailnet}/users` | `acl_diff`, `acl_test`, `acl_validate`, `users_list` |  |
 | `GET /tailnet/{tailnet}/webhooks` | `webhooks_list` |  |
 | `GET /user-invites/{userInviteId}` | `user_invite_get` |  |
 | `GET /users/{userId}` | `user_get` |  |

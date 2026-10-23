@@ -562,3 +562,68 @@ func TestTheBucketIsRaceFree(t *testing.T) {
 		t.Errorf("granted %d, refused %d of 64 calls on a bucket of 120", granted.Load(), refused.Load())
 	}
 }
+
+// A charged call takes all its tokens at once and gives back none of the extra ones.
+func TestAChargedCallTakesItsTokensAtOnceAndRefundsOnlyWhatItDidNotSend(t *testing.T) {
+	f := passingFake(t)
+	clk := newClock()
+	c := newClient(t, f, api.Options{Now: clk.now, ValidatePerMinute: 5})
+	call, err := c.BeginValidateCharged(context.Background(), 1, 3)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := call.Send([]byte(emptyPolicy)); err != nil {
+		t.Fatal(err)
+	}
+	call.End()
+	// 5 - 3 = 2 tokens, however the call ended.
+	if _, err := c.BeginValidateCharged(context.Background(), 1, 3); !limited(err) {
+		t.Fatalf("a call charged 3 with 2 left: %v", err)
+	}
+	for i := 0; i < 2; i++ {
+		if err := spend(c, 1, 1); err != nil {
+			t.Fatalf("token %d left after a call charged 3: %v", i+1, err)
+		}
+	}
+	if err := spend(c, 1, 1); !limited(err) {
+		t.Errorf("a third token: %v, want the limit", err)
+	}
+
+	// A charged call that sent nothing gets back the policy it did not send, not the charge.
+	c = newClient(t, f, api.Options{Now: clk.now, ValidatePerMinute: 5})
+	call, err = c.BeginValidateCharged(context.Background(), 1, 3)
+	if err != nil {
+		t.Fatal(err)
+	}
+	call.End()
+	for i := 0; i < 3; i++ {
+		if err := spend(c, 1, 1); err != nil {
+			t.Fatalf("token %d after a charged call that sent nothing: %v", i+1, err)
+		}
+	}
+	if err := spend(c, 1, 1); !limited(err) {
+		t.Errorf("a fourth token: %v: the charge came back", err)
+	}
+}
+
+// A call charged more than the bucket holds can never be granted: the error says so, tells
+// no one to wait, and holds no slot and no token.
+func TestAChargedCallBiggerThanTheBucketIsRefusedAtOnceAndNamesTheCause(t *testing.T) {
+	f := passingFake(t)
+	clk := newClock()
+	c := newClient(t, f, api.Options{Now: clk.now, ValidatePerMinute: 4})
+	_, err := c.BeginValidateCharged(context.Background(), 1, 5)
+	e, ok := tkerr.As(err)
+	if !ok || e.Code != tkerr.ValidateRateLimited || e.RetryAfterSeconds != 0 || !strings.Contains(e.Message, "waiting will not help") {
+		t.Fatalf("err = %v, want validate_rate_limited that says waiting will not help, with no retryAfterSeconds", err)
+	}
+	// A call is never charged fewer tokens than the policies it sends, and the bucket is full.
+	if _, err := c.BeginValidateCharged(context.Background(), 2, 1); err == nil {
+		t.Error("a call charged fewer tokens than it sends was accepted")
+	}
+	for i := 0; i < 4; i++ {
+		if err := spend(c, 1, 1); err != nil {
+			t.Fatalf("token %d: the refused calls took tokens or a slot: %v", i+1, err)
+		}
+	}
+}

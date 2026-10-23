@@ -134,3 +134,11 @@ parse: kind=test_unevaluable ssh=false dst="" protocol="" want="" got=""
 line:  "[ssh test error]: src \"tag:p\" at \"100.64.0.1\", dst \"tag:db\" at \"100.64.0.2\", ssh user \"root\": want: \"accept\" got: \"deny\" "
 parse: kind=test_unevaluable ssh=false dst="" protocol="" want="" got=""
 
+## a destination in backquotes
+line:  "[acl test error]: address `192.0.2.10:22` (protocol \"tcp\"): want: Accept, got: Drop"
+parse: kind=test_unevaluable ssh=false dst="" protocol="" want="" got=""
+
+## a destination as a rune literal
+line:  "[acl test error]: address 'x': want: Accept, got: Drop"
+parse: kind=test_unevaluable ssh=false dst="" protocol="" want="" got=""
+
