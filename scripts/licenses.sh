@@ -106,13 +106,26 @@ echo "==========================================================================
 echo "Go standard library $goversion"
 echo "linked on: $(printf '%s' "$targets" | sed 's/ /, /g')"
 for f in LICENSE PATENTS; do
-	if [ ! -f "$goroot/$f" ]; then
-		echo "licenses.sh: $goroot/$f does not exist" >&2
+	src="$goroot/$f"
+	# Homebrew's go keeps GOROOT in <keg>/libexec and moves LICENSE (not PATENTS) up to the
+	# keg, beside libexec and the keg's bin/go; the text is the same file. Read it there only
+	# in that layout, and only when it is Go's licence, so no other file next to a directory
+	# named libexec is taken for it.
+	keg="$(dirname "$goroot")"
+	why="$src does not exist"
+	if [ "$f" = LICENSE ] && [ ! -f "$src" ] && [ "$(basename "$goroot")" = libexec ] && [ -x "$keg/bin/go" ]; then
+		why="$src does not exist, and $keg/$f is missing or is not Go's licence"
+		if [ -f "$keg/$f" ] && grep -q 'Copyright 2009 The Go Authors' "$keg/$f"; then
+			src="$keg/$f"
+		fi
+	fi
+	if [ ! -f "$src" ]; then
+		echo "licenses.sh: $why" >&2
 		exit 1
 	fi
 	echo "--------------------------------------------------------------------------------"
 	echo "$f"
 	echo "--------------------------------------------------------------------------------"
-	cat "$goroot/$f"
-	if [ -n "$(tail -c 1 "$goroot/$f")" ]; then echo; fi
+	cat "$src"
+	if [ -n "$(tail -c 1 "$src")" ]; then echo; fi
 done
