@@ -9,6 +9,10 @@
       "maxBytes": {
         "description": "page size: bytes of the page once masked, escaped and encoded as JSON text, 1024 to 4194304 (default 153600); a line longer than the page is refused with the size to ask for",
         "type": "integer"
+      },
+      "view": {
+        "description": "text (default): the policy a page at a time; summary: its sections and the names it defines, no text. Start with summary",
+        "type": "string"
       }
     },
     "type": "object"
@@ -19,6 +23,10 @@
       "bytes": {
         "description": "size of the whole policy: as the API returned it with personalData show; otherwise as shown, every page joined, so it cannot confirm a guessed address",
         "type": "integer"
+      },
+      "checkedAt": {
+        "description": "when the policy was read: RFC 3339, in UTC",
+        "type": "string"
       },
       "etag": {
         "description": "the policy version's ETag, verbatim; only with personalData show, since it may be derived from the unmasked file",
@@ -37,6 +45,7 @@
         "type": "string"
       },
       "fromLine": {
+        "description": "first line of this page; 0 in the summary",
         "type": "integer"
       },
       "lines": {
@@ -44,7 +53,7 @@
         "type": "integer"
       },
       "masked": {
-        "description": "email addresses on this page were masked",
+        "description": "email addresses on this page were masked (in the summary: anywhere in the policy)",
         "type": "boolean"
       },
       "nextLine": {
@@ -52,20 +61,214 @@
         "type": "integer"
       },
       "policy": {
-        "description": "lines fromLine to toLine of the policy file (HuJSON, comments included) as the API returned it, line ends shown as LF; email addresses masked unless personalData is show",
+        "description": "lines fromLine to toLine of the policy file (HuJSON, comments included) as the API returned it, line ends shown as LF; email addresses masked unless personalData is show; empty in the summary view",
         "type": "string",
+        "x-tailkeeper-untrusted": true
+      },
+      "policySha256": {
+        "description": "the same value as sha256",
+        "type": "string"
+      },
+      "policyVersion": {
+        "description": "the version read: a keyed digest of its ETag with a privacy key, the ETag with personalData show, else absent",
+        "type": "string"
+      },
+      "serverErrors": {
+        "description": "errors Tailscale reports for the policy as stored, at most 64; addresses masked, no pseudonym",
+        "items": {
+          "type": "string",
+          "x-tailkeeper-untrusted": true
+        },
+        "type": [
+          "null",
+          "array"
+        ],
         "x-tailkeeper-untrusted": true
       },
       "sha256": {
         "description": "SHA-256 of the whole policy, of the same bytes as bytes",
         "type": "string"
       },
+      "summary": {
+        "additionalProperties": false,
+        "description": "the policy at a glance; view summary only",
+        "properties": {
+          "groups": {
+            "description": "names defined in groups, sorted",
+            "items": {
+              "type": "string",
+              "x-tailkeeper-untrusted": true
+            },
+            "type": [
+              "null",
+              "array"
+            ],
+            "x-tailkeeper-untrusted": true
+          },
+          "hosts": {
+            "description": "host aliases, sorted",
+            "items": {
+              "type": "string",
+              "x-tailkeeper-untrusted": true
+            },
+            "type": [
+              "null",
+              "array"
+            ],
+            "x-tailkeeper-untrusted": true
+          },
+          "ipsets": {
+            "description": "ipset names, sorted",
+            "items": {
+              "type": "string",
+              "x-tailkeeper-untrusted": true
+            },
+            "type": [
+              "null",
+              "array"
+            ],
+            "x-tailkeeper-untrusted": true
+          },
+          "namesDigest": {
+            "description": "keyed digest of the names; needs a privacy key",
+            "type": "string"
+          },
+          "namesTruncated": {
+            "description": "a list was cut: at 100 names, or to fit the result",
+            "type": "boolean"
+          },
+          "postures": {
+            "description": "posture names, sorted",
+            "items": {
+              "type": "string",
+              "x-tailkeeper-untrusted": true
+            },
+            "type": [
+              "null",
+              "array"
+            ],
+            "x-tailkeeper-untrusted": true
+          },
+          "sections": {
+            "description": "every section: those this version knows in table order, then the others by name",
+            "items": {
+              "additionalProperties": false,
+              "properties": {
+                "count": {
+                  "description": "elements or entries; 1 for a value",
+                  "type": "integer"
+                },
+                "known": {
+                  "description": "this version knows the section",
+                  "type": "boolean"
+                },
+                "name": {
+                  "description": "section name",
+                  "type": "string",
+                  "x-tailkeeper-untrusted": true
+                },
+                "scalar": {
+                  "description": "the value of a scalar section",
+                  "type": "string",
+                  "x-tailkeeper-untrusted": true
+                },
+                "state": {
+                  "description": "absent, empty or non-empty",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "name",
+                "known",
+                "state",
+                "count"
+              ],
+              "type": "object"
+            },
+            "type": [
+              "null",
+              "array"
+            ]
+          },
+          "semanticDigest": {
+            "description": "keyed digest of what the policy means: equal after a reformat or an acls-to-grants rewrite; needs a privacy key",
+            "type": "string"
+          },
+          "sshTests": {
+            "description": "elements of sshTests",
+            "type": "integer"
+          },
+          "syncedGroups": {
+            "description": "group:name@domain references it does not define: groups synced from an identity provider",
+            "items": {
+              "type": "string",
+              "x-tailkeeper-untrusted": true
+            },
+            "type": [
+              "null",
+              "array"
+            ],
+            "x-tailkeeper-untrusted": true
+          },
+          "tagOwners": {
+            "description": "tags in tagOwners, sorted",
+            "items": {
+              "type": "string",
+              "x-tailkeeper-untrusted": true
+            },
+            "type": [
+              "null",
+              "array"
+            ],
+            "x-tailkeeper-untrusted": true
+          },
+          "tests": {
+            "description": "elements of tests",
+            "type": "integer"
+          },
+          "unknown": {
+            "description": "sections this version does not know",
+            "items": {
+              "type": "string",
+              "x-tailkeeper-untrusted": true
+            },
+            "type": [
+              "null",
+              "array"
+            ],
+            "x-tailkeeper-untrusted": true
+          }
+        },
+        "required": [
+          "sections",
+          "namesTruncated",
+          "tests",
+          "sshTests"
+        ],
+        "type": [
+          "null",
+          "object"
+        ]
+      },
       "toLine": {
+        "description": "last line of this page; 0 in the summary",
         "type": "integer"
       },
       "truncated": {
         "description": "more lines follow this page",
         "type": "boolean"
+      },
+      "warnings": {
+        "description": "Tailscale's warnings about the policy as stored, at most 64; addresses masked, no pseudonym",
+        "items": {
+          "type": "string",
+          "x-tailkeeper-untrusted": true
+        },
+        "type": [
+          "null",
+          "array"
+        ],
+        "x-tailkeeper-untrusted": true
       }
     },
     "required": [
@@ -78,6 +281,8 @@
       "masked",
       "bytes",
       "sha256",
+      "policySha256",
+      "checkedAt",
       "externallyManaged"
     ],
     "type": "object"

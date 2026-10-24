@@ -17,6 +17,18 @@ Also different on Windows:
 - **The audit log's permissions.** On macOS and Linux tailkeeper creates the log's directory with mode 0700 and the file with 0600. On Windows `os.Chmod` only sets or clears the read-only attribute, so neither mode is applied: access to the log is whatever `%LocalAppData%\tailkeeper` inherits.
 - **The local tools.** `tailkeeper local ...` and the `local_*` tools look for `C:\Program Files\Tailscale\tailscale.exe`; anywhere else, set `local.tailscaleBinary` to an absolute path. No test has run them against a real `tailscale.exe`: the tests use a shell script as the stand-in CLI, which Windows cannot run (see the list below).
 
+## Policy files
+
+A policy file is UTF-8 with no byte order mark (BOM). A UTF-8 BOM and UTF-16 (a BOM of either byte order) are `invalid`, kind `encoding`, at line 1, column 1. The UTF-8 BOM message says to save the file as UTF-8 without one; the UTF-16 message says to save it as UTF-8. PowerShell 5.1 adds a UTF-8 BOM with `-Encoding UTF8`, and it writes UTF-16 for `>`. A NUL byte and a byte that is not valid UTF-8 are the same status and the same kind, at the line and column of that byte.
+
+On PowerShell 7, write the file with `-Encoding utf8NoBOM`. Set `[Console]::InputEncoding` and `$OutputEncoding` to UTF-8 with no BOM before a policy is read from the console or written by a command that uses those encodings. PowerShell 5.1's `>` and `-Encoding UTF8` are what the refusal is for. Do not point `$OutputEncoding` at UTF-16: that is an encoding the tool refuses.
+
+Lines are counted by line feed and columns in bytes, as Tailscale counts them. A lone carriage return is whitespace, not a line break, so a file whose lines end in CRLF is reported on the same line and column as the same file with line feeds only. When a finding of `acl validate` or `acl diff` has a line, the text, GitHub and Markdown layouts add a notice, whether or not the file contains a carriage return: "Lines are counted by line feed and columns in bytes, as Tailscale counts them: an editor that counts a lone carriage return may disagree." A report with no line number does not add it. The notice is a line of those layouts; it is not a field of the JSON result.
+
+A path is printed as it was typed, a space included, in the text layout and in Markdown. A GitHub annotation's `file` property is that path when it names a file of the repository: backslashes become forward slashes, a space stays, and a comma, a colon and a percent sign are escaped. A path it cannot place is omitted from `file` and shown in the message as typed.
+
+On Windows the name is refused before the file is opened. Refused: a UNC path; a path whose prefix is `\\?\`, `\\.\` or `\??\` (a `/` counts as a `\`, including a mix of the two); a device name (`CON`, `PRN`, `AUX`, `NUL`, `CONIN$`, `CONOUT$`, `COM` or `LPT` with a digit 0 to 9, and `COM` or `LPT` with a superscript 1, 2 or 3), in any directory, with any extension, in any case; an alternate data stream (a colon after the drive letter). Other platforms do not apply that name check.
+
 ## Tests that do not run on Windows
 
 The suite runs on Windows in CI (the `test-os` job). These tests do not run there, each for the reason given. `scripts/windows-skips.sh` compares the first list with the tests that report SKIP in that job, by package and test name, and the job fails when they differ, so the list is kept true; a test that stops skipping, or a new one that skips, must change it. A test in the second list is not compiled on Windows, which `internal/workflows/windows_test.go` checks against the source.
@@ -37,6 +49,7 @@ The suite runs on Windows in CI (the `test-os` job). These tests do not run ther
 - `TestTheDoctorProbeJudgesItsOutputAndItsExit` (`cmd/tailkeeper`): the stand-in binary is a POSIX shell script.
 - `TestTheDoctorProbeCountsItsAuditLinesAndFailsWhenItWroteNone` (`cmd/tailkeeper`): the stand-in binary is a POSIX shell script.
 - `TestTheDoctorProbeJudgesTheRowsAndNotOnlyTheCount` (`cmd/tailkeeper`): the stand-in binary is a POSIX shell script.
+- `TestTheDoctorJudgeExcusesOnlyTheReadProbeOfAListedTool` (`cmd/tailkeeper`): the stand-in binary is a POSIX shell script.
 - `TestTheGitOpsOracleSaysNotRequestedWhenTheVariableIsUnsetAndItIsNotASkippedTest` (`cmd/tailkeeper`): the stand-in binary is a POSIX shell script.
 - `TestTheGitOpsOracleIsNotRunWhenThePolicyIsNotExternallyManagedAndItPrintsNoPath` (`cmd/tailkeeper`): the stand-in binary is a POSIX shell script.
 - `TestTheGitOpsOracleDiffsTheOwnersFileAgainstTheLivePolicyAndHoldsWhenEqual` (`cmd/tailkeeper`): the stand-in binary is a POSIX shell script.
@@ -127,6 +140,22 @@ The suite runs on Windows in CI (the `test-os` job). These tests do not run ther
 - `TestReleaseNotesCheckJudgesALog` (`internal/workflows`): the check it runs is a POSIX shell script.
 - `TestChangelogTopSectionGivesReleaseNotes` (`internal/workflows`): the release job's command is a POSIX shell command that runs awk.
 - `TestChangelogNotesCheckFindsAnEmptySection` (`internal/workflows`): the release job's command is a POSIX shell command that runs awk.
+- `TestTheActionlintTargetFailsWhenAnyCheckOfTheRecipesFails` (`internal/workflows`): the target is a POSIX shell recipe that runs make with shell stand-ins.
+- `TestTheCronScriptExitsWithTheCodeOfTheFailingCommandAndPingsOnlyOnSuccess` (`internal/workflows`): the recipe's check script is a POSIX shell script.
+- `TestTheVerifyStepStopsBeforeInstallingWhenAnyCheckFails` (`internal/workflows`): the workflow step is a bash script.
+- `TestTheVerifyStepFallsBackToShasumAndStopsOnItsFailure` (`internal/workflows`): the workflow step is a bash script.
+- `TestTheVerifyStepWritesNothingIntoTheWorkspace` (`internal/workflows`): the workflow step is a bash script.
+- `TestTheLiveCheckStepWritesTheConfigurationAndRunsTheGatesWithTheirFlags` (`internal/workflows`): the workflow step is a bash script.
+- `TestTheCheckStepsRecordTheValidateExitThenTheDiffExit` (`internal/workflows`): the workflow step is a bash script.
+- `TestTheLiveCheckStepStopsWithoutAnIdAndRefusesAnOddOne` (`internal/workflows`): the workflow step is a bash script.
+- `TestTheLiveCheckStepRefusesASystemConfigurationWithExitSix` (`internal/workflows`): the workflow step is a bash script.
+- `TestTheOfflineCheckStepRunsOnlyOfflineCommands` (`internal/workflows`): the workflow step is a bash script.
+- `TestTheExitStepMapsEachRecordedCodeAndNeverPassesAForkOnTheOfflineChecksAlone` (`internal/workflows`): the workflow step is a bash script.
+- `TestTheSummaryStepAppendsTheDiffAndKeepsTheOfflineJobOffline` (`internal/workflows`): the workflow step is a bash script.
+- `TestTheBaseFilesStepKeepsItsModesAndFailsWhenTheBaseHasNoPolicy` (`internal/workflows`): the workflow step is a bash script.
+- `TestTheResultStepPassesOnlyWhenTheLiveJobSucceededAndTheOfflineJobWasSkipped` (`internal/workflows`): the workflow step is a bash script.
+- `TestReleaseRefusesAnythingButAPublicRepository` (`internal/workflows`): the release workflow's check is a POSIX shell command, which the test runs with `sh`.
+- `TestTheCronFileBaselineIsThePolicyTextAndDiffReadsIt` (`internal/cli`): the recipe's lines are a POSIX shell script that runs `jq`.
 <!-- windows-skipped:end -->
 
 ### Not compiled on Windows

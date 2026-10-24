@@ -51,6 +51,41 @@ func TestSpyReportsEveryOtherRequest(t *testing.T) {
 	}
 }
 
+// The details read was observed with no Accept header and with application/hujson
+// only; a live read that sent application/json got an acl field that is not base64.
+func TestSpyReportsADetailsReadWithAnAcceptThatWasNotObserved(t *testing.T) {
+	for _, c := range []struct {
+		query, accept string
+		sent          bool // set the header even when accept is empty
+		spied         bool
+	}{
+		{"?details=true", "", false, false},
+		{"?details=true", "", true, true},
+		{"?details=true", "application/hujson", true, false},
+		{"?details=true", "application/json", true, true},
+		{"?details=true", "*/*", true, true},
+		{"", "application/json", true, false},
+	} {
+		rec := &recordingTB{TB: t}
+		f := New(rec)
+		req, err := http.NewRequest("GET", f.URL()+aclPath+c.query, nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if c.sent {
+			req.Header["Accept"] = []string{c.accept}
+		}
+		resp, err := http.DefaultClient.Do(req)
+		if err != nil {
+			t.Fatal(err)
+		}
+		_ = resp.Body.Close()
+		if spied := len(rec.errs) > 0; spied != c.spied {
+			t.Errorf("GET %s with Accept %q (sent %v): spy reported %v, want %v", c.query, c.accept, c.sent, spied, c.spied)
+		}
+	}
+}
+
 // A fallback answers the paths with no route of their own, after recording them
 // and checking the bearer token like any other request; a route still wins.
 func TestFallbackAnswersUnroutedPathsOnly(t *testing.T) {

@@ -13,6 +13,7 @@ import (
 	"github.com/abm9111/tailkeeper/internal/api"
 	"github.com/abm9111/tailkeeper/internal/api/apitest"
 	"github.com/abm9111/tailkeeper/internal/creds"
+	"github.com/abm9111/tailkeeper/internal/tkerr"
 	"github.com/abm9111/tailkeeper/internal/tools"
 )
 
@@ -51,6 +52,20 @@ func TestACLValidateOfflineNeedsNoCredential(t *testing.T) {
 	h, _ = execHarness(t)
 	if code := h.run("acl", "validate", "--offline", "--quiet", "--from", path); code != 0 || h.out.Len() != 0 {
 		t.Errorf("--quiet: exit %d, output %q", code, h.out)
+	}
+}
+
+// --quiet hides the result on exit 0 and still writes the audit warning when the
+// line cannot be recorded. The warning is not an exit of its own.
+func TestQuietOnExitZeroStillWarnsWhenTheReadWasNotAudited(t *testing.T) {
+	h, _ := execHarness(t)
+	h.app.Audit, h.app.AuditErr = nil, tkerr.New(tkerr.AuditUnavailable, "cannot open the audit log", "")
+	path := writeFile(t, "policy.hujson", cliPolicy)
+	if code := h.run("acl", "validate", "--offline", "--quiet", "--from", path); code != 0 || h.out.Len() != 0 {
+		t.Fatalf("--quiet exit %d, stdout %q", code, h.out)
+	}
+	if !strings.Contains(h.err.String(), "this read was not audited: cannot open the audit log") {
+		t.Fatalf("stderr = %q", h.err)
 	}
 }
 
