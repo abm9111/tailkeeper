@@ -5,6 +5,7 @@ import (
 	"os"
 	"os/exec"
 	"reflect"
+	"runtime"
 	"strings"
 	"testing"
 )
@@ -91,6 +92,9 @@ func TestReleaseRefusesAnythingButAPublicRepository(t *testing.T) {
 	}
 	if !strings.Contains(s.Run, `[ "$PRIVATE" != false ]`) {
 		t.Errorf("the check does not refuse everything that is not false: %q", s.Run)
+	}
+	if runtime.GOOS == "windows" {
+		t.Skip("the release workflow's check is a POSIX shell command, which the test runs with sh")
 	}
 	sh, err := exec.LookPath("sh")
 	if err != nil {

@@ -1,0 +1,134 @@
+{
+  "input": {
+    "additionalProperties": false,
+    "properties": {
+      "cursor": {
+        "description": "nextCursor of the previous page; it fixes the window, so omit start and end",
+        "type": "string"
+      },
+      "end": {
+        "description": "RFC 3339 end (default now)",
+        "type": "string"
+      },
+      "limit": {
+        "description": "page size, 1-200 (default 50)",
+        "type": "integer"
+      },
+      "start": {
+        "description": "RFC 3339 start (default end minus 30 days); the window may span at most 90 days",
+        "type": "string"
+      }
+    },
+    "type": "object"
+  },
+  "output": {
+    "additionalProperties": false,
+    "properties": {
+      "count": {
+        "type": "integer"
+      },
+      "nextCursor": {
+        "type": "string"
+      },
+      "note": {
+        "type": "string"
+      },
+      "skipped": {
+        "type": "integer"
+      },
+      "versions": {
+        "items": {
+          "additionalProperties": false,
+          "properties": {
+            "actor": {
+              "additionalProperties": false,
+              "properties": {
+                "displayName": {
+                  "type": "string",
+                  "x-tailkeeper-masked": true,
+                  "x-tailkeeper-untrusted": true
+                },
+                "id": {
+                  "type": "string"
+                },
+                "loginName": {
+                  "type": "string",
+                  "x-tailkeeper-masked": true,
+                  "x-tailkeeper-untrusted": true
+                },
+                "tags": {
+                  "items": {
+                    "type": "string",
+                    "x-tailkeeper-untrusted": true
+                  },
+                  "type": [
+                    "null",
+                    "array"
+                  ],
+                  "x-tailkeeper-untrusted": true
+                },
+                "type": {
+                  "type": "string"
+                }
+              },
+              "type": "object"
+            },
+            "bytes": {
+              "type": "integer"
+            },
+            "digest": {
+              "type": "string"
+            },
+            "eventTime": {
+              "type": "string"
+            },
+            "origin": {
+              "type": "string",
+              "x-tailkeeper-untrusted": true
+            },
+            "policySha256": {
+              "type": "string"
+            },
+            "policyVersion": {
+              "type": "string"
+            },
+            "previous": {
+              "type": "string"
+            },
+            "version": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "version",
+            "eventTime",
+            "origin",
+            "actor",
+            "bytes",
+            "policySha256"
+          ],
+          "type": "object"
+        },
+        "type": [
+          "null",
+          "array"
+        ]
+      },
+      "windowEnd": {
+        "type": "string"
+      },
+      "windowStart": {
+        "type": "string"
+      }
+    },
+    "required": [
+      "versions",
+      "count",
+      "windowStart",
+      "windowEnd",
+      "note"
+    ],
+    "type": "object"
+  },
+  "tool": "acl_history"
+}

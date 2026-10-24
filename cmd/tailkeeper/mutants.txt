@@ -201,7 +201,7 @@ kill: TestTheDNSAndPseudonymChecksAreMadeOnTheAnswer
 
 mutant: the doctor probe's rows are not judged
 file: live_test.go
-old: problems, notes := judgeDoctorRows(doc, n)
+old: problems, notes := judgeDoctorRows(doc, n, unavailable)
 new: problems, notes := []string{}, []string{}
 kill: TestTheDoctorProbeJudgesTheRowsAndNotOnlyTheCount
 
@@ -213,8 +213,8 @@ kill: TestTheDoctorProbeJudgesTheRowsAndNotOnlyTheCount
 
 mutant: a warning on a probe row is not a problem
 file: live_test.go
-old: if strings.HasPrefix(name, "probe ") {
-new: if strings.HasPrefix(name, "probe-") {
+old: case !strings.HasPrefix(name, "probe "):
+new: case !strings.HasPrefix(name, "probe-"):
 kill: TestTheDoctorProbeJudgesTheRowsAndNotOnlyTheCount
 
 mutant: a failing row is not a problem
@@ -390,3 +390,27 @@ file: live_test.go
 old: "--to-version", version)\n\tl.field("acl_diff", diff, "status", "equal")
 new: "--to-version", version)\n\t_ = diff
 kill: TestAVersionPairThatIsNotEqualIsAProblem
+
+mutant: a listed tool's read probe is excused whatever its own row says
+file: live_test.go
+old: if r.outcome == outcomeUnavailable {
+new: if l.uncovered[r.tool] {
+kill: TestTheDoctorJudgeExcusesOnlyTheReadProbeOfAListedTool
+
+mutant: the read probe of a listed tool is never excused
+file: live_test.go
+old: case !isPolicy && !isKind && !isCanary && unavailable[strings.TrimPrefix(name, "probe ")]:
+new: case false && unavailable[strings.TrimPrefix(name, "probe ")]:
+kill: TestTheDoctorJudgeExcusesOnlyTheReadProbeOfAListedTool
+
+mutant: the canary test is excused when acl_test is listed
+file: live_test.go
+old: case !isPolicy && !isKind && !isCanary && unavailable[strings.TrimPrefix(name, "probe ")]:
+new: case !isPolicy && !isKind && unavailable[strings.TrimPrefix(name, "probe ")]:
+kill: TestTheDoctorJudgeExcusesOnlyTheReadProbeOfAListedTool
+
+mutant: not_found is never a coverage code
+file: live_test.go
+old: "payment_required": true, "not_found": true}
+new: "payment_required": true}
+kill: TestOutcomeOf

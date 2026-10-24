@@ -70,6 +70,28 @@ func actionlintProblems(makefile string) []string {
 	if !scripts {
 		problems = append(problems, "the actionlint target has no plain `shellcheck scripts/*.sh` line (a leading - or `|| true` would let a finding pass): the scripts under scripts/ go unchecked")
 	}
+	// The three commands that check the recipes are joined by `;` in one shell, which goes on
+	// after a failure unless each line says `|| exit 1`. A line with `|| true` or with nothing
+	// lets a broken recipe, or a failed extraction that skips both linters, pass.
+	for _, need := range []struct{ marker, what string }{
+		{"scripts/recipes.go -dir", "the extraction of the recipes"},
+		{`$(ACTIONLINT) "$$tmp"`, "actionlint of the extracted workflows"},
+		{`shellcheck "$$tmp"`, "shellcheck of the extracted scripts"},
+	} {
+		found := false
+		for _, line := range recipe {
+			if !strings.Contains(line, need.marker) {
+				continue
+			}
+			found = true
+			if !strings.Contains(line, "|| exit 1") || strings.Contains(line, "|| true") {
+				problems = append(problems, "the actionlint target's line for "+need.what+" does not end in `|| exit 1`: a failure there would not fail the target")
+			}
+		}
+		if !found {
+			problems = append(problems, "the actionlint target has no line for "+need.what)
+		}
+	}
 	return problems
 }
 
@@ -147,7 +169,12 @@ func TestActionlintTargetPrintsTheShellcheckVersion(t *testing.T) {
 // The check above is run on Makefiles that have each fault, so it cannot pass by reading
 // nothing.
 func TestActionlintCheckFindsEachFault(t *testing.T) {
-	const good = "actionlint:\n\t@command -v shellcheck >/dev/null || exit 1\n\tshellcheck --version\n\t$(GO) run $(ACTIONLINT)\n\tshellcheck scripts/*.sh\n\nvuln:\n\techo x\n"
+	const good = "actionlint:\n\t@command -v shellcheck >/dev/null || exit 1\n\tshellcheck --version\n" +
+		"\t@tmp=\"$$(mktemp -d)\" || exit 1; \\\n" +
+		"\t$(GO) run scripts/recipes.go -dir \"$$tmp\" || exit 1; \\\n" +
+		"\tif [ -d \"$$tmp/github/workflows\" ]; then $(GO) run $(ACTIONLINT) \"$$tmp\"/github/workflows/*.yml || exit 1; fi; \\\n" +
+		"\tif [ -d \"$$tmp/scripts\" ]; then shellcheck \"$$tmp\"/scripts/*.sh || exit 1; fi\n" +
+		"\t$(GO) run $(ACTIONLINT)\n\tshellcheck scripts/*.sh\n\nvuln:\n\techo x\n"
 	for _, c := range []struct {
 		name, makefile, want string
 	}{
@@ -163,6 +190,11 @@ func TestActionlintCheckFindsEachFault(t *testing.T) {
 		{"no scripts line", strings.Replace(good, "\tshellcheck scripts/*.sh\n", "", 1), "no plain `shellcheck scripts/*.sh` line"},
 		{"a scripts line whose failure is ignored", strings.Replace(good, "\tshellcheck scripts/*.sh", "\t-shellcheck scripts/*.sh", 1), "no plain `shellcheck scripts/*.sh` line"},
 		{"a scripts line that cannot fail", strings.Replace(good, "\tshellcheck scripts/*.sh", "\tshellcheck scripts/*.sh || true", 1), "no plain `shellcheck scripts/*.sh` line"},
+		{"an extraction that may fail", strings.Replace(good, `-dir "$$tmp" || exit 1;`, `-dir "$$tmp" || true;`, 1), "line for the extraction of the recipes"},
+		{"an extraction with no exit", strings.Replace(good, `-dir "$$tmp" || exit 1;`, `-dir "$$tmp";`, 1), "line for the extraction of the recipes"},
+		{"actionlint of the extracted workflows may fail", strings.Replace(good, `.yml || exit 1;`, `.yml || true;`, 1), "line for actionlint of the extracted workflows"},
+		{"shellcheck of the extracted scripts may fail", strings.Replace(good, `.sh || exit 1;`, `.sh || true;`, 1), "line for shellcheck of the extracted scripts"},
+		{"no line for the extracted scripts", strings.Replace(good, `shellcheck "$$tmp"/scripts/*.sh || exit 1`, `true`, 1), "no line for shellcheck of the extracted scripts"},
 		{"the version line belongs to the next target", "actionlint:\n\t$(GO) run $(ACTIONLINT)\n\nvuln:\n\tshellcheck --version\n", "does not print the version"},
 	} {
 		problems := actionlintProblems(c.makefile)

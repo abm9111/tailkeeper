@@ -6,6 +6,120 @@
   "output": {
     "additionalProperties": false,
     "properties": {
+      "attrTableAsOf": {
+        "description": "the date of the table of DNS node attributes this tool knows",
+        "type": "string"
+      },
+      "controlD": {
+        "items": {
+          "additionalProperties": false,
+          "properties": {
+            "id": {
+              "type": "string",
+              "x-tailkeeper-masked": true,
+              "x-tailkeeper-untrusted": true
+            },
+            "noDeviceInfo": {
+              "type": "boolean"
+            },
+            "priority": {
+              "type": [
+                "null",
+                "integer"
+              ]
+            },
+            "targets": {
+              "items": {
+                "type": "string",
+                "x-tailkeeper-untrusted": true
+              },
+              "type": [
+                "null",
+                "array"
+              ],
+              "x-tailkeeper-untrusted": true
+            }
+          },
+          "required": [
+            "targets",
+            "id"
+          ],
+          "type": "object"
+        },
+        "type": [
+          "null",
+          "array"
+        ]
+      },
+      "dnsNodeAttrs": {
+        "items": {
+          "additionalProperties": false,
+          "properties": {
+            "attr": {
+              "type": "string"
+            },
+            "targets": {
+              "items": {
+                "type": "string",
+                "x-tailkeeper-untrusted": true
+              },
+              "type": [
+                "null",
+                "array"
+              ],
+              "x-tailkeeper-untrusted": true
+            }
+          },
+          "required": [
+            "attr",
+            "targets"
+          ],
+          "type": "object"
+        },
+        "type": [
+          "null",
+          "array"
+        ]
+      },
+      "extraDnsRecords": {
+        "items": {
+          "additionalProperties": false,
+          "properties": {
+            "name": {
+              "type": "string",
+              "x-tailkeeper-untrusted": true
+            },
+            "type": {
+              "type": "string",
+              "x-tailkeeper-untrusted": true
+            },
+            "value": {
+              "description": "email addresses in it are masked",
+              "type": "string",
+              "x-tailkeeper-untrusted": true
+            }
+          },
+          "required": [
+            "name",
+            "value"
+          ],
+          "type": "object"
+        },
+        "type": [
+          "null",
+          "array"
+        ]
+      },
+      "extraDnsRecordsEffectiveIf": {
+        "description": "settings the extra records need before they take effect",
+        "items": {
+          "type": "string"
+        },
+        "type": [
+          "null",
+          "array"
+        ]
+      },
       "magicDns": {
         "description": "null when the API did not say",
         "type": [
@@ -36,6 +150,58 @@
           "array"
         ]
       },
+      "nextdns": {
+        "items": {
+          "additionalProperties": false,
+          "properties": {
+            "id": {
+              "type": "string",
+              "x-tailkeeper-masked": true,
+              "x-tailkeeper-untrusted": true
+            },
+            "noDeviceInfo": {
+              "type": "boolean"
+            },
+            "priority": {
+              "type": [
+                "null",
+                "integer"
+              ]
+            },
+            "targets": {
+              "items": {
+                "type": "string",
+                "x-tailkeeper-untrusted": true
+              },
+              "type": [
+                "null",
+                "array"
+              ],
+              "x-tailkeeper-untrusted": true
+            }
+          },
+          "required": [
+            "targets",
+            "id"
+          ],
+          "type": "object"
+        },
+        "type": [
+          "null",
+          "array"
+        ]
+      },
+      "otherAttrs": {
+        "items": {
+          "type": "string",
+          "x-tailkeeper-untrusted": true
+        },
+        "type": [
+          "null",
+          "array"
+        ],
+        "x-tailkeeper-untrusted": true
+      },
       "overrideLocalDns": {
         "description": "null when the API did not say",
         "type": [
@@ -43,9 +209,17 @@
           "boolean"
         ]
       },
+      "policyNote": {
+        "description": "why the policy part is missing or cut: a fixed sentence",
+        "type": "string"
+      },
       "policyOverridesAnalysed": {
-        "description": "false until milestone M3: split-DNS policies and extraDNSRecords in the policy file are not yet included",
+        "description": "true when extraDNSRecords and DNS node attributes were read from the policy",
         "type": "boolean"
+      },
+      "resolverNote": {
+        "description": "what the resolver attributes cannot tell: precedence between profiles, and that targets are selectors",
+        "type": "string"
       },
       "searchPaths": {
         "items": {
@@ -100,6 +274,10 @@
           "null",
           "array"
         ]
+      },
+      "truncated": {
+        "description": "true when a list was cut at 100 entries or at the size limit",
+        "type": "boolean"
       }
     },
     "required": [

@@ -512,7 +512,9 @@ func (c *Client) do(ctx context.Context, method, rawURL string, body []byte, con
 	if err != nil {
 		return tkerr.Wrap(tkerr.Internal, err, "cannot build request", "")
 	}
-	req.Header.Set("Accept", accept)
+	if accept != "" { // the details read sends none: see GetPolicyDetails
+		req.Header.Set("Accept", accept)
+	}
 	if body != nil && contentType != "" {
 		req.Header.Set("Content-Type", contentType)
 	}
