@@ -156,9 +156,13 @@ mutate:
 #
 # LIVE_UNAVAILABLE: list the tools your credential or plan does not cover, as a comma
 # list of tool names (make live LIVE_UNAVAILABLE=network_flow_logs,oauth_apps_list,oauth_app_get).
-# A tool that answers with a scope, plan or payment error counts as unavailable only
+# A tool that answers with a scope, plan or payment error, or with not_found (Tailscale
+# answers 404 to some documented paths a plan does not have), counts as unavailable only
 # if it is listed here; any other tool that does is a failure, so a credential with no
-# usable scope cannot pass. The test logs the list when it starts.
+# usable scope cannot pass, and a wrong path still fails. doctor --probe's read probe of a
+# tool that came out unavailable may warn, which is a note; a listed tool that failed another
+# way is not excused, and the canary test and policy probes must still read ok.
+# The test logs the list when it starts.
 #
 # scripts/live-check.sh fails the run if a live test skipped (it checked nothing) or
 # did not reach its closing line, and prints only the lines that hold no tailnet value.
@@ -206,13 +210,16 @@ probe-acl:
 	TAILKEEPER_LIVE=1 "$$dir/tailkeeper-probe" probe-acl --out "$(PROBE_OUT)" $(PROBE_ARGS)
 
 # Strict mode, re-exec and log locking have Windows-only files: vet them too.
-# scripts/mutate.go has `//go:build ignore`, so ./... never loads it; naming the file
-# makes go vet (and golangci-lint, in lint-extra) read it despite the tag.
+# scripts/mutate.go and scripts/recipes.go have `//go:build ignore`, so ./... never
+# loads them; naming the file makes go vet (and golangci-lint, in lint-extra) read
+# each despite the tag.
 vet:
 	$(GO) vet ./...
 	GOOS=windows $(GO) vet ./...
 	$(GO) vet scripts/mutate.go
+	$(GO) vet scripts/recipes.go
 	GOOS=windows $(GO) vet scripts/mutate.go
+	GOOS=windows $(GO) vet scripts/recipes.go
 
 fmt-check:
 	@out="$$(gofmt -l .)" || exit 1; if [ -n "$$out" ]; then echo "gofmt needed:"; echo "$$out"; exit 1; fi
@@ -228,11 +235,16 @@ lint:
 lint-extra:
 	$(GO) run $(GOLANGCI) run ./...
 	$(GO) run $(GOLANGCI) run scripts/mutate.go
+	$(GO) run $(GOLANGCI) run scripts/recipes.go
 
 # Checks the workflow files: syntax, expressions, permissions and the shell in run:
-# steps; and, with shellcheck itself, the scripts in scripts/. Not in verify (it needs no
-# Go code); CI runs it in verify.yml. Run from the repository root, it reads
-# .github/workflows.
+# steps; and, with shellcheck itself, the scripts in scripts/. The fenced yaml, sh and
+# bash blocks of docs/recipes (backtick or tilde fences) are extracted into a temporary
+# directory and linted the same way, and the directory is removed. A fence the extractor
+# cannot read as one (an unknown tag, one inside a blockquote, one indented four spaces)
+# fails the target with the file and line. Not part of verify. CI runs this target in
+# verify.yml. Run from the repository root: the extractor reads docs/recipes, and
+# actionlint with no arguments reads .github/workflows.
 #
 # actionlint checks the shell in run: steps by calling shellcheck, and without shellcheck
 # on PATH it checks none and still exits 0 (a planted SC2086 gave 1 with it, 0 without).
@@ -243,6 +255,10 @@ lint-extra:
 actionlint:
 	@command -v shellcheck >/dev/null || { echo "actionlint needs shellcheck on PATH: without it the shell in the workflow steps and scripts/ is not checked"; exit 1; }
 	shellcheck --version
+	@tmp="$$(mktemp -d)" || exit 1; trap 'rm -rf "$$tmp"' EXIT INT TERM; \
+	$(GO) run scripts/recipes.go -dir "$$tmp" || exit 1; \
+	if [ -d "$$tmp/github/workflows" ]; then $(GO) run $(ACTIONLINT) "$$tmp"/github/workflows/*.yml || exit 1; fi; \
+	if [ -d "$$tmp/scripts" ]; then shellcheck "$$tmp"/scripts/*.sh || exit 1; fi
 	$(GO) run $(ACTIONLINT)
 	shellcheck scripts/*.sh
 

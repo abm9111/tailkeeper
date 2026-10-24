@@ -4,10 +4,14 @@ tailkeeper's `exec` credential provider re-runs tailkeeper under a wrapper comma
 
 - `1password.md`: with the 1Password CLI (`op run`).
 - `proton-pass.md`: with the Proton Pass CLI (`pass-cli run`).
+- `github-actions.md`: check a policy change on a pull request.
+- `cron.md`: check the live policy on a schedule.
 
 Any secret manager with an equivalent "run with secrets in the environment" command works the same way.
 
-## What every recipe follows
+## What every wrapper recipe follows
+
+This section is about `1password.md` and `proton-pass.md`. `github-actions.md` and `cron.md` run tailkeeper's policy commands and set no wrapper: they hold no `command`, and a test (`TestRecipesAreValid` in `cmd/tailkeeper`) checks the wrapper rules for the first two only. What the other two follow is in their own files: the Actions recipe reads the tailnet id and the OAuth client id from the environment secrets of its environment and never prints them, its live job alone holds `id-token: write`, and the scheduled check reads its ping URL from the environment.
 
 - The configuration's `command` holds the wrapper and its options, never a value. Arguments are visible to every process of your user, and the configuration file is a file.
 - The file the wrapper reads lists references to the secrets, never the secrets. Keep it mode 0600 anyway: it shows which vault and item hold them.

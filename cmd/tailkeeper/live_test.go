@@ -78,8 +78,11 @@ type liveOutcome struct {
 }
 
 // coverageCodes are the error codes that mean the credential's scopes or the
-// tailnet's plan do not cover a tool.
-var coverageCodes = map[string]bool{"scope_missing": true, "feature_unavailable": true, "payment_required": true}
+// tailnet's plan do not cover a tool. not_found is one only because the owner lists
+// the tool: Tailscale has answered 404 to documented list paths (user invites, OAuth
+// apps) on a tailnet whose plan has neither, and for a tool nobody listed a 404 is
+// still a failure, since it can also mean a wrong path.
+var coverageCodes = map[string]bool{"scope_missing": true, "feature_unavailable": true, "payment_required": true, "not_found": true}
 
 // outcomeOf names the outcome of a call of tool that ended in the error code code.
 // A coverage code makes a tool unavailable only when the owner listed it as not
@@ -755,7 +758,16 @@ func (l *liveRun) doctorReport(raw []byte, err error) {
 		l.problem("doctor", fmt.Sprintf("probe exited %d but reports %d failing checks", exit, n))
 		return
 	}
-	problems, notes := judgeDoctorRows(doc, n)
+	// A read probe is excused only for a tool whose own row came out unavailable: listed by
+	// the owner and answered with a coverage code. A listed tool that failed another way is
+	// not, so an api_error behind its probe's warning still fails the run.
+	unavailable := map[string]bool{}
+	for _, r := range l.results {
+		if r.outcome == outcomeUnavailable {
+			unavailable[r.tool] = true
+		}
+	}
+	problems, notes := judgeDoctorRows(doc, n, unavailable)
 	for _, p := range problems {
 		l.problem("doctor", p)
 	}
@@ -774,10 +786,14 @@ var rowNameRE = regexp.MustCompile(`^[A-Za-z][A-Za-z0-9 ,_-]{0,40}$`)
 // The canary test and each of the four policy probes must read ok, and the canary test may
 // read n/a when the live policy defines no tag, which is a note. A kind probe must read ok, or
 // n/a when the tailnet has no source for the kind, which is a note. A row named probe that warns is a
-// problem, and so is a probe row that is absent: a reading not established is never a pass. A
-// warning on any other row is the owner's to read in doctor, not the probe's. Every line
-// names a row and its status, never its detail.
-func judgeDoctorRows(doc map[string]any, failed int) (problems, notes []string) {
+// problem, and so is a probe row that is absent: a reading not established is never a pass. The
+// one exception is the read probe of a tool whose own row came out unavailable (listed by the
+// owner and answered with a coverage code): its warning is a note, since that row already says
+// the tool is not covered; the canary test,
+// the policy probes and the kind probes are never excused. A warning on any other row is the
+// owner's to read in doctor, not the probe's. Every line names a row and its status, never its
+// detail.
+func judgeDoctorRows(doc map[string]any, failed int, unavailable map[string]bool) (problems, notes []string) {
 	rows, _ := doc["checks"].([]any)
 	seen := map[string]bool{}
 	failing := 0
@@ -808,7 +824,11 @@ func judgeDoctorRows(doc map[string]any, failed int) (problems, notes []string) 
 				notes = append(notes, label+" not probed: the live policy defines no tag")
 			}
 		case "warn":
-			if strings.HasPrefix(name, "probe ") {
+			switch {
+			case !strings.HasPrefix(name, "probe "):
+			case !isPolicy && !isKind && !isCanary && unavailable[strings.TrimPrefix(name, "probe ")]:
+				notes = append(notes, reads()+": the tool is listed as unavailable")
+			default:
 				problems = append(problems, reads())
 			}
 		case "fail":

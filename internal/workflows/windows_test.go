@@ -14,6 +14,7 @@ import (
 	"regexp"
 	"runtime"
 	"sort"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -1015,5 +1016,408 @@ func TestLiveViaWrapper(t *testing.T) { liveWrapper(t) }
 	liveTests := map[string]bool{"internal/x.TestLiveDirect": true, "internal/x.TestLiveViaWrapper": true}
 	if got := skipListProblems(both, reasons, map[string]bool{}, anywhere, liveTests); len(got) != 0 {
 		t.Errorf("live tests with their every-platform lines are refused: %v", got)
+	}
+}
+
+// shellPrograms are the programs a test starts that Windows does not have in this build: a
+// POSIX shell, make, and jq (the recipe's lines for the cron baseline run it). A test that
+// starts one is skipped on Windows and listed in docs/windows.md.
+var shellPrograms = map[string]bool{"sh": true, "bash": true, "/bin/sh": true, "/bin/bash": true, "make": true, "jq": true}
+
+// shebangLine is the first line of a script a test writes for a shell to run.
+var shebangLine = regexp.MustCompile(`^#![ \t]*(/usr/bin/env[ \t]+)?/?(bin/)?(ba)?sh\b`)
+
+// stringOf returns the string a literal or an identifier stands for: a literal itself, or an
+// identifier bound to one in the function (locals) or in the package (consts).
+func stringOf(e ast.Expr, locals, consts map[string]string) (string, bool) {
+	switch e := e.(type) {
+	case *ast.BasicLit:
+		if e.Kind == token.STRING {
+			if s, err := strconv.Unquote(e.Value); err == nil {
+				return s, true
+			}
+		}
+	case *ast.Ident:
+		if s, ok := locals[e.Name]; ok {
+			return s, true
+		}
+		if s, ok := consts[e.Name]; ok {
+			return s, true
+		}
+	}
+	return "", false
+}
+
+// execNamesOf returns the names the files bind os/exec to: "exec" for a plain import, and the
+// alias for an aliased one (import osexec "os/exec"). A blank or dot import binds none.
+func execNamesOf(files []*ast.File) map[string]bool {
+	names := map[string]bool{}
+	for _, f := range files {
+		for _, imp := range f.Imports {
+			if path, err := strconv.Unquote(imp.Path.Value); err != nil || path != "os/exec" {
+				continue
+			}
+			switch {
+			case imp.Name == nil:
+				names["exec"] = true
+			case imp.Name.Name != "_" && imp.Name.Name != ".":
+				names[imp.Name.Name] = true
+			}
+		}
+	}
+	return names
+}
+
+// execArg returns the program named by a call of exec.Command, exec.CommandContext or
+// exec.LookPath: the first argument, or the second of CommandContext. The package is named
+// by any of execNames, the names the package's files give os/exec.
+func execArg(call *ast.CallExpr, execNames map[string]bool) (ast.Expr, bool) {
+	sel, ok := call.Fun.(*ast.SelectorExpr)
+	if !ok {
+		return nil, false
+	}
+	if pkg, ok := sel.X.(*ast.Ident); !ok || !execNames[pkg.Name] {
+		return nil, false
+	}
+	switch sel.Sel.Name {
+	case "Command", "LookPath":
+		if len(call.Args) > 0 {
+			return call.Args[0], true
+		}
+	case "CommandContext":
+		if len(call.Args) > 1 {
+			return call.Args[1], true
+		}
+	}
+	return nil, false
+}
+
+// shellRunningTests finds, without running them, the tests under root's cmd and internal
+// that start a shell, make or jq: a call of exec.Command, exec.CommandContext or
+// exec.LookPath whose program is one of shellPrograms, written as a literal, as a constant of
+// the package, as a variable of the function that holds a literal, or as the result of a
+// LookPath of one (sh, err := exec.LookPath("sh"), then exec.Command(sh, ...)), through
+// os/exec under any name the package's files import it by (import osexec "os/exec"); a script
+// written with a shebang line for a shell to an executable file (a stand-in program); and
+// every test that calls such a function of its
+// package, however many calls deep. Only files that Windows compiles are read: a test in
+// another file never runs there. The key is the package directory, a dot and the test name.
+//
+// It is not complete, and does not claim to be. It misses a program reached through a method
+// helper (a call on a receiver), a struct field, a package-level slice or a parameter; a
+// shell other than sh, bash, make and jq (zsh, /usr/bin/env sh); and a shebang script whose
+// mode is held in a variable or whose first line is built by concatenation or held in a
+// package-level constant. The backstop for those is scripts/windows-skips.sh in the Windows
+// CI job: a new test of one of those forms fails there, on its first Windows run, and is
+// then listed.
+func shellRunningTests(t *testing.T, root string) map[string]bool {
+	t.Helper()
+	out := map[string]bool{}
+	fset := token.NewFileSet()
+	for _, top := range []string{"cmd", "internal"} {
+		err := filepath.WalkDir(filepath.Join(root, top), func(dir string, d fs.DirEntry, err error) error {
+			if err != nil || !d.IsDir() {
+				return err
+			}
+			entries, err := os.ReadDir(dir)
+			if err != nil {
+				return err
+			}
+			var files []*ast.File
+			for _, e := range entries {
+				if e.IsDir() || !strings.HasSuffix(e.Name(), "_test.go") || !compiledOnWindows(dir, e.Name()) {
+					continue
+				}
+				f, err := parser.ParseFile(fset, filepath.Join(dir, e.Name()), nil, parser.SkipObjectResolution)
+				if err != nil {
+					return err
+				}
+				files = append(files, f)
+			}
+			execNames := execNamesOf(files)
+			consts := map[string]string{}
+			for _, f := range files {
+				for _, decl := range f.Decls {
+					gen, ok := decl.(*ast.GenDecl)
+					if !ok || (gen.Tok != token.CONST && gen.Tok != token.VAR) {
+						continue
+					}
+					for _, spec := range gen.Specs {
+						vs := spec.(*ast.ValueSpec)
+						for i, name := range vs.Names {
+							if i < len(vs.Values) {
+								if s, ok := stringOf(vs.Values[i], nil, nil); ok {
+									consts[name.Name] = s
+								}
+							}
+						}
+					}
+				}
+			}
+			direct := map[string]bool{}
+			calls := map[string][]string{}
+			var tests []string
+			for _, f := range files {
+				for _, decl := range f.Decls {
+					fn, ok := decl.(*ast.FuncDecl)
+					if !ok || fn.Recv != nil || fn.Body == nil {
+						continue
+					}
+					name := fn.Name.Name
+					if strings.HasPrefix(name, "Test") || strings.HasPrefix(name, "Fuzz") {
+						tests = append(tests, name)
+					}
+					// The names the function binds to a literal, or to the path found for one,
+					// in the order the source gives them.
+					locals := map[string]string{}
+					ast.Inspect(fn.Body, func(n ast.Node) bool {
+						switch n := n.(type) {
+						case *ast.AssignStmt:
+							if len(n.Rhs) == 1 && len(n.Lhs) >= 1 {
+								if id, ok := n.Lhs[0].(*ast.Ident); ok {
+									if s, ok := stringOf(n.Rhs[0], locals, consts); ok && len(n.Lhs) == 1 {
+										locals[id.Name] = s
+									} else if call, ok := n.Rhs[0].(*ast.CallExpr); ok {
+										if sel, ok := call.Fun.(*ast.SelectorExpr); ok && sel.Sel.Name == "LookPath" {
+											if arg, ok := execArg(call, execNames); ok {
+												if s, ok := stringOf(arg, locals, consts); ok {
+													locals[id.Name] = s
+												}
+											}
+										}
+									}
+								}
+							}
+						case *ast.ValueSpec:
+							for i, id := range n.Names {
+								if i < len(n.Values) {
+									if s, ok := stringOf(n.Values[i], locals, consts); ok {
+										locals[id.Name] = s
+									}
+								}
+							}
+						}
+						return true
+					})
+					// A script is a stand-in for a shell when the function writes it as an
+					// executable file; a shebang line in a fixture that is only compared is not.
+					shebang, executable := false, false
+					ast.Inspect(fn.Body, func(n ast.Node) bool {
+						switch n := n.(type) {
+						case *ast.CallExpr:
+							if id, ok := n.Fun.(*ast.Ident); ok {
+								calls[name] = append(calls[name], id.Name)
+							}
+							if arg, ok := execArg(n, execNames); ok {
+								if s, ok := stringOf(arg, locals, consts); ok && shellPrograms[s] {
+									direct[name] = true
+								}
+							}
+							if sel, ok := n.Fun.(*ast.SelectorExpr); ok && sel.Sel.Name == "WriteFile" && len(n.Args) == 3 {
+								if lit, ok := n.Args[2].(*ast.BasicLit); ok && lit.Kind == token.INT {
+									if mode, err := strconv.ParseUint(lit.Value, 0, 32); err == nil && mode&0o111 != 0 {
+										executable = true
+									}
+								}
+							}
+						case *ast.BasicLit:
+							if n.Kind == token.STRING {
+								if s, err := strconv.Unquote(n.Value); err == nil && shebangLine.MatchString(s) {
+									shebang = true
+								}
+							}
+						}
+						return true
+					})
+					if shebang && executable {
+						direct[name] = true
+					}
+				}
+			}
+			// A function runs a shell when it does, or when it calls one that does.
+			runs := map[string]bool{}
+			for k := range direct {
+				runs[k] = true
+			}
+			for changed := true; changed; {
+				changed = false
+				for fn, callees := range calls {
+					for _, c := range callees {
+						if runs[c] && !runs[fn] {
+							runs[fn], changed = true, true
+						}
+					}
+				}
+			}
+			rel, err := filepath.Rel(root, dir)
+			if err != nil {
+				return err
+			}
+			for _, name := range tests {
+				if runs[name] {
+					out[filepath.ToSlash(rel)+"."+name] = true
+				}
+			}
+			return nil
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+	}
+	return out
+}
+
+// shellListProblems compares the tests that start a shell with the tests that skip on
+// Windows and with docs/windows.md: each must skip there (directly or through a helper) and
+// be listed for its own package as a Windows skip.
+func shellListProblems(shells map[string]bool, onWindows map[string]bool, skipped, reasons map[string]string) []string {
+	var out []string
+	for key := range shells {
+		dot := strings.LastIndex(key, ".")
+		pkg, name := key[:dot], key[dot+1:]
+		if !onWindows[key] {
+			out = append(out, fmt.Sprintf("%s starts a shell, make or jq and does not skip on Windows: skip it under runtime.GOOS == \"windows\" and list it in docs/windows.md", key))
+		}
+		if skipped[name] != pkg || strings.Contains(reasons[name], "skipped on every platform") {
+			out = append(out, fmt.Sprintf("%s starts a shell, make or jq and docs/windows.md does not list it for %s as skipped on Windows", key, pkg))
+		}
+	}
+	sort.Strings(out)
+	return out
+}
+
+// A shell is not run on Windows: every test under cmd and internal that starts sh, bash,
+// make or jq, itself or through a helper, is skipped there and listed in docs/windows.md, or
+// the Windows job fails on it. The test reads the test files of every package, so a new test
+// that runs a shell in one of the forms the reader knows is caught here and not by the next
+// Windows run; one of the forms it does not know (see shellRunningTests) is caught by that
+// run, through scripts/windows-skips.sh in the Windows CI job.
+func TestEveryTestThatRunsAShellIsSkippedAndListedForWindows(t *testing.T) {
+	data, err := os.ReadFile(windowsDoc)
+	if err != nil {
+		t.Fatal(err)
+	}
+	doc := string(data)
+	shells := shellRunningTests(t, "../..")
+	onWindows, _, _ := skippingTests(t, "../..")
+	pkgs := map[string]bool{}
+	for key := range shells {
+		pkgs[key[:strings.LastIndex(key, ".")]] = true
+	}
+	// The three packages that start a shell today: a reader that finds none of one has lost it.
+	for _, pkg := range []string{"internal/workflows", "internal/cli", "cmd/tailkeeper"} {
+		if !pkgs[pkg] {
+			t.Errorf("no test of %s was found to start a shell: the reader is not seeing the package (found %v)", pkg, pkgs)
+		}
+	}
+	if len(shells) < 40 {
+		t.Errorf("only %d tests were found to start a shell; the reader is not seeing the packages", len(shells))
+	}
+	for _, problem := range shellListProblems(shells, onWindows, windowsList(t, doc, "windows-skipped"), windowsReasons(doc)) {
+		t.Error(problem)
+	}
+}
+
+// The reader is held to the ways a test reaches a shell: a literal, a constant, a variable, a
+// LookPath result, jq, a script with a shebang, and a helper that does one of them; and it
+// leaves alone a program that is not a shell and a file that Windows does not compile.
+func TestTheShellReaderSeesEachWayATestReachesAShell(t *testing.T) {
+	root := t.TempDir()
+	dir := filepath.Join(root, "internal", "x")
+	if err := os.MkdirAll(dir, 0o750); err != nil || os.Mkdir(filepath.Join(root, "cmd"), 0o750) != nil {
+		t.Fatal(err)
+	}
+	src := `package x
+
+import ("context"; "os"; "os/exec"; "testing")
+
+const shellName = "bash"
+
+func runIt(t *testing.T) { _ = exec.Command("sh", "-c", "true").Run() }
+func writeScript(t *testing.T) { _ = os.WriteFile("s", []byte("#!/bin/sh\necho hi\n"), 0o700) }
+
+func TestLiteral(t *testing.T) { _ = exec.Command("/bin/bash", "x").Run() }
+func TestContext(t *testing.T) { _ = exec.CommandContext(context.Background(), "sh", "x").Run() }
+func TestConstant(t *testing.T) { _ = exec.Command(shellName, "x").Run() }
+func TestVariable(t *testing.T) {
+	sh := "sh"
+	_ = exec.Command(sh, "x").Run()
+}
+func TestLookPath(t *testing.T) {
+	sh, err := exec.LookPath("sh")
+	if err != nil {
+		t.Skip("no sh")
+	}
+	_ = exec.Command(sh, "-c", "true").Run()
+}
+func TestJQ(t *testing.T) {
+	if _, err := exec.LookPath("jq"); err != nil {
+		t.Skip("no jq")
+	}
+}
+func TestMake(t *testing.T) { _ = exec.Command("make", "x").Run() }
+func TestShebang(t *testing.T) { writeScript(t) }
+func TestShebangOnlyCompared(t *testing.T) {
+	want := "#!/bin/sh\nmake x\n"
+	_ = os.WriteFile("s", []byte(want), 0o600)
+}
+func TestViaHelper(t *testing.T) { runIt(t) }
+func helperTwo(t *testing.T) { runIt(t) }
+func TestTwoDeep(t *testing.T) { helperTwo(t) }
+func TestGo(t *testing.T) { _ = exec.Command("go", "build").Run() }
+func TestSelf(t *testing.T) {
+	prog := "go"
+	_ = exec.Command(prog, "build").Run()
+}
+func TestUnresolved(t *testing.T, name string) { _ = exec.Command(name, "x").Run() }
+func TestNoExec(t *testing.T) {}
+`
+	if err := os.WriteFile(filepath.Join(dir, "x_test.go"), []byte(src), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	// An aliased import of os/exec is the same package: the alias is read from the file's import.
+	aliased := "package x\n\nimport (osexec \"os/exec\"; \"testing\")\n\nfunc TestAliased(t *testing.T) { _ = osexec.Command(\"sh\", \"-c\", \"true\").Run() }\n"
+	if err := os.WriteFile(filepath.Join(dir, "alias_test.go"), []byte(aliased), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	for _, f := range []struct{ file, head, test string }{
+		{"y_test.go", "//go:build !windows\n\n", "TestNotCompiledA"},
+		{"z_linux_test.go", "", "TestNotCompiledB"},
+	} {
+		other := f.head + "package x\n\nimport (\"os/exec\"; \"testing\")\n\nfunc " + f.test + "(t *testing.T) { _ = exec.Command(\"sh\").Run() }\n"
+		if err := os.WriteFile(filepath.Join(dir, f.file), []byte(other), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	got := shellRunningTests(t, root)
+	for _, name := range []string{"TestLiteral", "TestContext", "TestConstant", "TestVariable", "TestLookPath", "TestJQ", "TestMake", "TestShebang", "TestViaHelper", "TestTwoDeep", "TestAliased"} {
+		if !got["internal/x."+name] {
+			t.Errorf("%s starts a shell and was not found: %v", name, got)
+		}
+	}
+	for _, name := range []string{"TestGo", "TestSelf", "TestUnresolved", "TestNoExec", "TestShebangOnlyCompared", "TestNotCompiledA", "TestNotCompiledB"} {
+		if got["internal/x."+name] {
+			t.Errorf("%s does not start a shell on Windows and was found: %v", name, got)
+		}
+	}
+	// And the comparison: a shell test that does not skip, one that is not listed, one listed for
+	// another package, and one listed as skipped on every platform, are each refused.
+	shells := map[string]bool{"internal/x.TestA": true, "internal/x.TestB": true, "internal/x.TestC": true, "internal/x.TestD": true, "internal/x.TestE": true}
+	onWindows := map[string]bool{"internal/x.TestB": true, "internal/x.TestC": true, "internal/x.TestD": true, "internal/x.TestE": true}
+	skipped := map[string]string{"TestA": "internal/x", "TestC": "internal/y", "TestD": "internal/x", "TestE": "internal/x"}
+	reasons := map[string]string{"TestD": "skipped on every platform unless asked"}
+	problems := strings.Join(shellListProblems(shells, onWindows, skipped, reasons), "\n")
+	for _, want := range []string{
+		"internal/x.TestA starts a shell, make or jq and does not skip on Windows",
+		"internal/x.TestB starts a shell, make or jq and docs/windows.md does not list it for internal/x",
+		"internal/x.TestC starts a shell, make or jq and docs/windows.md does not list it for internal/x",
+		"internal/x.TestD starts a shell, make or jq and docs/windows.md does not list it for internal/x",
+	} {
+		if !strings.Contains(problems, want) {
+			t.Errorf("problems lack %q:\n%s", want, problems)
+		}
+	}
+	if strings.Contains(problems, "TestE") {
+		t.Errorf("a listed, skipping shell test is refused:\n%s", problems)
 	}
 }

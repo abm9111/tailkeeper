@@ -1,0 +1,414 @@
+{
+  "input": {
+    "additionalProperties": false,
+    "properties": {
+      "patch": {
+        "description": "RFC 6902 operations, as JSON text, applied to the live policy; over MCP a user is named by pseudonym, in a file by login",
+        "type": "string"
+      },
+      "policy": {
+        "description": "the proposed policy as HuJSON text, a top-level object; leave it and patch out to validate the live policy",
+        "type": "string"
+      }
+    },
+    "type": "object"
+  },
+  "output": {
+    "additionalProperties": false,
+    "properties": {
+      "changes": {
+        "additionalProperties": false,
+        "description": "differences from the live policy, by class",
+        "properties": {
+          "commentOnly": {
+            "type": "integer"
+          },
+          "defaults": {
+            "type": "integer"
+          },
+          "formatOnly": {
+            "type": "integer"
+          },
+          "semantic": {
+            "type": "integer"
+          },
+          "tailscaleWritten": {
+            "type": "integer"
+          },
+          "testsReduced": {
+            "type": "integer"
+          },
+          "widening": {
+            "type": "integer"
+          }
+        },
+        "required": [
+          "defaults",
+          "testsReduced",
+          "widening",
+          "tailscaleWritten",
+          "semantic",
+          "commentOnly",
+          "formatOnly"
+        ],
+        "type": [
+          "null",
+          "object"
+        ]
+      },
+      "checkedAt": {
+        "type": "string"
+      },
+      "dependsOnLiveState": {
+        "description": "the answer depends on the live policy",
+        "type": "boolean"
+      },
+      "errors": {
+        "description": "what made the status what it is, placed in the text where possible",
+        "items": {
+          "additionalProperties": false,
+          "properties": {
+            "column": {
+              "description": "in bytes, from 1",
+              "type": "integer"
+            },
+            "fromTailscale": {
+              "description": "Tailscale's own text",
+              "type": "boolean"
+            },
+            "kind": {
+              "description": "the kind of finding, as the tool's description lists",
+              "type": "string"
+            },
+            "line": {
+              "description": "from 1, counting line feeds as Tailscale does; absent when unknown",
+              "type": "integer"
+            },
+            "message": {
+              "type": "string",
+              "x-tailkeeper-untrusted": true
+            },
+            "moreCandidates": {
+              "description": "more places match, past the cap",
+              "type": "integer"
+            },
+            "pointer": {
+              "description": "JSON pointer, when the line is not known",
+              "type": "string",
+              "x-tailkeeper-untrusted": true
+            },
+            "severity": {
+              "description": "error, warning or notice",
+              "type": "string"
+            },
+            "source": {
+              "description": "where the position is: from, against, patch (the patch, or the policy it makes: a pointer), invariants, live or version; empty for a message about the text as a whole",
+              "type": "string"
+            }
+          },
+          "required": [
+            "kind",
+            "severity",
+            "source",
+            "message",
+            "fromTailscale"
+          ],
+          "type": "object"
+        },
+        "type": [
+          "null",
+          "array"
+        ]
+      },
+      "existingWarnings": {
+        "description": "warnings the live policy already has",
+        "items": {
+          "additionalProperties": false,
+          "properties": {
+            "column": {
+              "description": "in bytes, from 1",
+              "type": "integer"
+            },
+            "fromTailscale": {
+              "description": "Tailscale's own text",
+              "type": "boolean"
+            },
+            "kind": {
+              "description": "the kind of finding, as the tool's description lists",
+              "type": "string"
+            },
+            "line": {
+              "description": "from 1, counting line feeds as Tailscale does; absent when unknown",
+              "type": "integer"
+            },
+            "message": {
+              "type": "string",
+              "x-tailkeeper-untrusted": true
+            },
+            "moreCandidates": {
+              "description": "more places match, past the cap",
+              "type": "integer"
+            },
+            "pointer": {
+              "description": "JSON pointer, when the line is not known",
+              "type": "string",
+              "x-tailkeeper-untrusted": true
+            },
+            "severity": {
+              "description": "error, warning or notice",
+              "type": "string"
+            },
+            "source": {
+              "description": "where the position is: from, against, patch (the patch, or the policy it makes: a pointer), invariants, live or version; empty for a message about the text as a whole",
+              "type": "string"
+            }
+          },
+          "required": [
+            "kind",
+            "severity",
+            "source",
+            "message",
+            "fromTailscale"
+          ],
+          "type": "object"
+        },
+        "type": [
+          "null",
+          "array"
+        ]
+      },
+      "externalLink": {
+        "type": "string",
+        "x-tailkeeper-untrusted": true
+      },
+      "externallyManaged": {
+        "description": "true, false or unknown: managed outside the admin console",
+        "type": "string"
+      },
+      "externallyManagedNote": {
+        "description": "why it is unknown",
+        "type": "string"
+      },
+      "identicalToLive": {
+        "description": "the text is byte for byte the live policy",
+        "type": "boolean"
+      },
+      "invariantsApplied": {
+        "description": "invariant tests that ran; 0 means none",
+        "type": "integer"
+      },
+      "invariantsSignature": {
+        "description": "always none: unsigned",
+        "type": "string"
+      },
+      "liveChanged": {
+        "description": "the live policy changed during the check; never a pass",
+        "type": "boolean"
+      },
+      "newWarnings": {
+        "description": "warnings the live policy does not already have: one is existing only if it matches a warning stored with the live policy word for word, so a reworded one reads as new",
+        "items": {
+          "additionalProperties": false,
+          "properties": {
+            "column": {
+              "description": "in bytes, from 1",
+              "type": "integer"
+            },
+            "fromTailscale": {
+              "description": "Tailscale's own text",
+              "type": "boolean"
+            },
+            "kind": {
+              "description": "the kind of finding, as the tool's description lists",
+              "type": "string"
+            },
+            "line": {
+              "description": "from 1, counting line feeds as Tailscale does; absent when unknown",
+              "type": "integer"
+            },
+            "message": {
+              "type": "string",
+              "x-tailkeeper-untrusted": true
+            },
+            "moreCandidates": {
+              "description": "more places match, past the cap",
+              "type": "integer"
+            },
+            "pointer": {
+              "description": "JSON pointer, when the line is not known",
+              "type": "string",
+              "x-tailkeeper-untrusted": true
+            },
+            "severity": {
+              "description": "error, warning or notice",
+              "type": "string"
+            },
+            "source": {
+              "description": "where the position is: from, against, patch (the patch, or the policy it makes: a pointer), invariants, live or version; empty for a message about the text as a whole",
+              "type": "string"
+            }
+          },
+          "required": [
+            "kind",
+            "severity",
+            "source",
+            "message",
+            "fromTailscale"
+          ],
+          "type": "object"
+        },
+        "type": [
+          "null",
+          "array"
+        ]
+      },
+      "newWarningsOmitted": {
+        "description": "new warnings not listed in newWarnings, past the caps; still new warnings, and part of omitted",
+        "type": "integer"
+      },
+      "notChecked": {
+        "description": "what this does not establish",
+        "items": {
+          "type": "string"
+        },
+        "type": [
+          "null",
+          "array"
+        ]
+      },
+      "notices": {
+        "description": "remarks that change no status",
+        "items": {
+          "additionalProperties": false,
+          "properties": {
+            "column": {
+              "description": "in bytes, from 1",
+              "type": "integer"
+            },
+            "fromTailscale": {
+              "description": "Tailscale's own text",
+              "type": "boolean"
+            },
+            "kind": {
+              "description": "the kind of finding, as the tool's description lists",
+              "type": "string"
+            },
+            "line": {
+              "description": "from 1, counting line feeds as Tailscale does; absent when unknown",
+              "type": "integer"
+            },
+            "message": {
+              "type": "string",
+              "x-tailkeeper-untrusted": true
+            },
+            "moreCandidates": {
+              "description": "more places match, past the cap",
+              "type": "integer"
+            },
+            "pointer": {
+              "description": "JSON pointer, when the line is not known",
+              "type": "string",
+              "x-tailkeeper-untrusted": true
+            },
+            "severity": {
+              "description": "error, warning or notice",
+              "type": "string"
+            },
+            "source": {
+              "description": "where the position is: from, against, patch (the patch, or the policy it makes: a pointer), invariants, live or version; empty for a message about the text as a whole",
+              "type": "string"
+            }
+          },
+          "required": [
+            "kind",
+            "severity",
+            "source",
+            "message",
+            "fromTailscale"
+          ],
+          "type": "object"
+        },
+        "type": [
+          "null",
+          "array"
+        ]
+      },
+      "omitted": {
+        "description": "problems left out past the caps",
+        "type": "integer"
+      },
+      "patchedBytes": {
+        "description": "for a patch: its size once applied, as acl_get shows a policy (while personal data is masked, the masked text)",
+        "type": "integer"
+      },
+      "patchedDigest": {
+        "description": "for a patch, with a privacy key: acl_get's summary semanticDigest equals it once the live policy means this",
+        "type": "string"
+      },
+      "policySha256": {
+        "description": "SHA-256 of the live policy as acl_get shows it",
+        "type": "string"
+      },
+      "policyVersion": {
+        "description": "live policy version: a keyed digest of its ETag, or the ETag with personalData show; absent otherwise",
+        "type": "string"
+      },
+      "serverChecked": {
+        "description": "false: the text was not sent to Tailscale, so a pass is a local one",
+        "type": "boolean"
+      },
+      "serverErrors": {
+        "description": "errors stored with the live policy",
+        "items": {
+          "type": "string",
+          "x-tailkeeper-untrusted": true
+        },
+        "type": [
+          "null",
+          "array"
+        ],
+        "x-tailkeeper-untrusted": true
+      },
+      "sshTestsAfter": {
+        "type": "integer"
+      },
+      "sshTestsBefore": {
+        "type": "integer"
+      },
+      "status": {
+        "description": "pass, fail (a test failed), invalid (not a policy), rejected (by Tailscale), unresolved (a test names what Tailscale cannot resolve) or unknown (an answer not recognised, or the live policy changed): unknown is not a pass",
+        "type": "string"
+      },
+      "testsAfter": {
+        "description": "in the validated text",
+        "type": "integer"
+      },
+      "testsBefore": {
+        "description": "in the live policy; 0 when not read",
+        "type": "integer"
+      },
+      "validatedLive": {
+        "description": "true: no policy and no patch was given, so what was validated is the live policy itself (an empty policy is no policy)",
+        "type": "boolean"
+      }
+    },
+    "required": [
+      "status",
+      "serverChecked",
+      "testsBefore",
+      "testsAfter",
+      "sshTestsBefore",
+      "sshTestsAfter",
+      "invariantsApplied",
+      "invariantsSignature",
+      "notChecked",
+      "dependsOnLiveState",
+      "liveChanged",
+      "identicalToLive",
+      "checkedAt",
+      "externallyManaged"
+    ],
+    "type": "object"
+  },
+  "tool": "acl_validate"
+}

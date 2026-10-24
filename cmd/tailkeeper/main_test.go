@@ -531,6 +531,8 @@ func TestREADMERebuildsWithThePinnedGoReleaser(t *testing.T) {
 // TestRecipesAreValid keeps the credential recipes usable: each has a provider
 // block that parses, runs an absolute wrapper and ends the wrapper's arguments
 // with "--", and each environment file lists references, never values.
+// Only 1password.md and proton-pass.md are those recipes. A later recipe in this
+// directory can hold a complete configuration, which this check would refuse.
 func TestRecipesAreValid(t *testing.T) {
 	files, err := filepath.Glob("../../docs/recipes/*.md")
 	if err != nil {
@@ -540,10 +542,14 @@ func TestRecipesAreValid(t *testing.T) {
 	assignment := regexp.MustCompile(`(?m)^\s*(TAILKEEPER_[A-Z_]+)=(.*)$`)
 	recipes := 0
 	for _, f := range files {
-		if filepath.Base(f) == "README.md" {
+		base := filepath.Base(f)
+		if base == "README.md" {
 			continue
 		}
 		recipes++
+		if base != "1password.md" && base != "proton-pass.md" {
+			continue
+		}
 		doc := readDoc(t, f)
 		blocks := hujsonBlocks(t, doc)
 		if len(blocks) == 0 {
