@@ -3,4 +3,5 @@
 #   go test ./internal/tools -run TestSchemasKeepTheReleasedContract -update
 # which writes their baselines.
 acl_diff
+acl_history
 acl_validate

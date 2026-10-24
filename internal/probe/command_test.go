@@ -252,6 +252,7 @@ func TestCommandSaysWhichProbesHaveNoFile(t *testing.T) {
 
 // The exported Command keeps the 2 s pacing: no gap below DefaultGap reaches the API.
 func TestCommandRefusesAGapBelowTheFloor(t *testing.T) {
+	t.Setenv("TAILKEEPER_LIVE", "1")
 	w := newWorld(t)
 	var out, errb bytes.Buffer
 	for _, gap := range []string{"1s", "0s", "1999ms"} {

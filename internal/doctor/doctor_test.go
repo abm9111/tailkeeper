@@ -360,7 +360,9 @@ func TestChecksThatCannotRunAreListed(t *testing.T) {
 	_, a := newApp(t, allReadScopes(t))
 	a.Env.APIErr = tkerr.New(tkerr.CredentialUnavailable, "no read credential is configured", "")
 	r := Run(context.Background(), Input{App: a, Now: now, Probe: true})
-	for _, name := range []string{"key record", "scopes", "security contact", "gitops lock", "probe dns_get"} {
+	for _, name := range []string{"key record", "scopes", "security contact", "gitops lock", "probe dns_get",
+		"probe policy rejection", "probe details keys", "probe invariants canary", "probe ssh tests",
+		"probe tag", "probe host alias", "probe IPv4 address", "probe IPv6 address", "probe ICMP, port 0", "probe kinds refused"} {
 		if got := status(r, name); len(got) != 1 || got[0] != NA {
 			t.Errorf("%s = %v", name, got)
 		}
@@ -443,8 +445,9 @@ func TestACLTestCanary(t *testing.T) {
 		}
 		var sent string
 		for _, req := range f.Requests() {
-			if req.Method == "POST" {
-				sent = string(req.Body)
+			body := string(req.Body)
+			if req.Method == "POST" && strings.Contains(body, `"accept":["tag:ci:1"]`) {
+				sent = body
 			}
 		}
 		if !strings.Contains(sent, `"src":"tag:ci"`) || !strings.Contains(sent, `"accept":["tag:ci:1"],"deny":["tag:ci:1"]`) {
@@ -471,8 +474,9 @@ func TestTheCanaryNeedsATagTheLivePolicyDefines(t *testing.T) {
 			t.Errorf("%s: probe acl_test = %v, want %s", name, got, NA)
 		}
 		for _, req := range f.Requests() {
-			if req.Method == "POST" {
-				t.Errorf("%s: a canary was sent: %s", name, req.Body)
+			// A test is a JSON array; the policy-mode probes send documents, which are objects.
+			if req.Method == "POST" && strings.HasPrefix(strings.TrimSpace(string(req.Body)), "[") {
+				t.Errorf("%s: a test was sent: %s", name, req.Body)
 			}
 		}
 	}

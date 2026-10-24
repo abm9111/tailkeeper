@@ -20,6 +20,8 @@ import (
 var aclResultTypes = []reflect.Type{
 	reflect.TypeFor[tools.ACLGetOutput](), reflect.TypeFor[tools.ACLValidateOutput](), reflect.TypeFor[tools.ACLDiffOutput](),
 	reflect.TypeFor[tools.ACLTestOutput](),
+	reflect.TypeFor[tools.DNSOutput](),
+	reflect.TypeFor[tools.ACLHistoryOutput](),
 }
 
 // aclConstantStrings are the string fields of the policy tools' results that hold
@@ -55,7 +57,8 @@ var aclConstantStrings = map[string]string{
 	"ACLDiffOutput.ExternallyManaged":         "true, false or unknown",
 	"ACLDiffOutput.ExternallyManagedNote":     "tailkeeper's words and an error code",
 	"ACLDiffOutput.CheckedAt":                 "a time",
-	"ACLDiffSide.Source":                      "live, text, file or patch",
+	"ACLDiffSide.Source":                      "live, text, file, patch or version",
+	"ACLDiffSide.Version":                     "a version id",
 	"ACLDiffSide.PolicyVersion":               "a keyed digest, or the ETag with personalData show",
 	"ACLDiffSide.PolicySHA256":                "a digest",
 	"ACLChange.Class":                         "one of the five classes of a change",
@@ -76,7 +79,30 @@ var aclConstantStrings = map[string]string{
 	"ACLSSHVerdict.Expect":                    "accept, check or deny",
 	"ACLSSHVerdict.Verdict":                   "allowed, denied, unresolved or unknown",
 	"ACLSSHVerdict.Why":                       "one of the SSH verdict reader's fixed sentences, or empty",
+	"DNSOutput.PolicyNote":                    "why the policy was not analysed, from a fixed list",
+	"DNSOutput.ExtraRecordsEffectiveIf":       "overrideLocalDNS and alphaEnabled",
+	"DNSOutput.ResolverNote":                  "precedence unknown, or that targets are selectors",
+	"DNSOutput.AttrTableAsOf":                 "the date of the DNS node-attribute table",
+	"DNSNodeAttr.Attr":                        "one of the seven names in the table",
+	"ACLVersion.Version":                      "a version id",
+	"ACLVersion.Previous":                     "a version id",
+	"ACLVersion.EventTime":                    "a time",
+	"ACLVersion.Digest":                       "a digest",
+	"ACLVersion.PolicyVersion":                "a keyed digest, or the SHA-256 of the text with personalData show",
+	"ACLVersion.PolicySHA256":                 "a digest",
+	"ACLHistoryOutput.WindowStart":            "a time",
+	"ACLHistoryOutput.WindowEnd":              "a time",
+	"ACLHistoryOutput.NextCursor":             "a cursor",
+	"ACLHistoryOutput.Note":                   "tailkeeper's words",
+	"AuditActor.ID":                           "an actor id",
+	"AuditActor.Type":                         "an actor type",
 }
+
+const (
+	historyNoteBase = "Policy versions come from the configuration audit log, oldest first. An entry can be deferred, with no documented maximum delay, and the log keeps a finite history. This result has no policy text: a version id is how a later comparison reads one, and the text is masked as acl_get shows a policy."
+	historyNoteCut  = " This page ended before its size because of the size of the versions it holds: continue with nextCursor."
+	historyNoteTags = " An actor lists only the first of its tags when it has many: the last entry of its tags counts the rest."
+)
 
 // aclClosedLists are, for the constant fields that hold words and not a digest, a time or a
 // version token, every value the field can take. A field is constant because tailkeeper wrote
@@ -84,21 +110,52 @@ var aclConstantStrings = map[string]string{
 // field is not masked, escaped or capped. The list of a field is not a promise the author
 // makes: TestTheFixedSentencesOfAResultComeFromTheirClosedLists holds real results to it.
 var aclClosedLists = map[string][]string{
-	"ACLChange.Class":                       {"defaults", "testsReduced", "widening", "tailscaleWritten", "semantic"},
-	"ACLChange.Op":                          {"added", "removed", "changed"},
-	"ACLChange.Note":                        acl.ChangeNotes(),
-	"ACLDiffOutput.Status":                  {"equal", "changed", "invalid"},
-	"ACLDiffOutput.NotChecked":              acl.NotChecked,
-	"ACLDiffOutput.NormalFormLimits":        {"A rule re-split along both its sources and its ports at once is not reduced to the same atoms, so it can read as changed when the access is the same. That is the safe direction."},
-	"ACLDiffOutput.Section":                 append(sectionNames(), "unknown"),
-	"ACLDiffSide.Source":                    {"live", "text", "file", "patch"},
-	"ACLProblem.Kind":                       {"syntax", "encoding", "structure", "duplicate_key", "case_collision", "unknown_section", "assertion_failed", "test_unevaluable", "invariant", "server_message", "warning", "note"},
-	"ACLProblem.Severity":                   {"error", "warning", "notice"},
-	"ACLProblem.Source":                     {"from", "against", "invariants", "live", "patch"},
+	"ACLChange.Class":                {"defaults", "testsReduced", "widening", "tailscaleWritten", "semantic"},
+	"ACLChange.Op":                   {"added", "removed", "changed"},
+	"ACLChange.Note":                 acl.ChangeNotes(),
+	"ACLDiffOutput.Status":           {"equal", "changed", "invalid"},
+	"ACLDiffOutput.NotChecked":       acl.NotChecked,
+	"ACLDiffOutput.NormalFormLimits": {"A rule re-split along both its sources and its ports at once is not reduced to the same atoms, so it can read as changed when the access is the same. That is the safe direction."},
+	"ACLDiffOutput.Section":          append(sectionNames(), "unknown"),
+	"ACLDiffSide.Source":             {"live", "text", "file", "patch", "version"},
+	"ACLProblem.Kind":                {"syntax", "encoding", "structure", "duplicate_key", "case_collision", "unknown_section", "assertion_failed", "test_unevaluable", "invariant", "server_message", "warning", "note"},
+	"ACLProblem.Severity":            {"error", "warning", "notice"},
+	"ACLProblem.Source":              {"from", "against", "invariants", "live", "patch", "version"},
+	"ACLHistoryOutput.Note": {
+		historyNoteBase,
+		historyNoteBase + historyNoteCut,
+		historyNoteBase + historyNoteTags,
+		historyNoteBase + historyNoteCut + historyNoteTags,
+	},
 	"ACLValidateOutput.Status":              {"pass", "fail", "invalid", "rejected", "unresolved", "unknown"},
 	"ACLValidateOutput.NotChecked":          append(append([]string{}, acl.NotChecked...), "server_validation", "tests", "invariants", "invariants_file", "invariants_signature"),
 	"ACLValidateOutput.InvariantsSignature": {"none"},
-	"ACLTestOutput.Status":                  {"pass", "fail", "unresolved", "unknown"},
+	"DNSOutput.PolicyNote": {
+		"the policy was not read",
+		"the policy was not read: the read credential lacks policy_file:read",
+		"the policy was not analysed: the text is not a policy",
+		"the policy was not analysed: extraDNSRecords or nodeAttrs is not a list",
+		"the policy was not analysed: the text nests too deeply",
+		"the policy was not analysed: the text is over the size cap",
+		"the policy was not analysed: the text is past a work budget",
+		"the result was cut to its size limit: what is listed is the start of what the tailnet holds",
+	},
+	"DNSOutput.ExtraRecordsEffectiveIf": {"overrideLocalDNS", "alphaEnabled"},
+	"DNSOutput.ResolverNote": {
+		"precedence unknown",
+		"targets are selectors, not devices",
+		"precedence unknown; targets are selectors, not devices",
+	},
+	"DNSNodeAttr.Attr": {
+		"magicdns-aaaa",
+		"dns-subdomain-resolve",
+		"dns-forwarder-disable-tcp-retries",
+		"disable-split-dns-when-no-custom-resolvers",
+		"disable-local-dns-override-via-nrpt",
+		"disable-hosts-file-updates",
+		"force-register-magicdns-ipv4-only",
+	},
+	"ACLTestOutput.Status": {"pass", "fail", "unresolved", "unknown"},
 	"ACLTestOutput.Note": {
 		"Evaluated against the live policy. SSH rules are tested only when the call gives ssh. Posture-gated rules match only when srcPostureAttrs names their attributes.",
 		"Evaluated against the live policy. SSH tests are a copy of the live policy with its own tests removed, plus an SSH canary, sent to Tailscale, which changes nothing. srcPostureAttrs are refused together with ssh.",
@@ -310,8 +367,13 @@ func TestEveryFixedSentenceOfAResultHasAClosedList(t *testing.T) {
 		"ACLGetOutput.CheckedAt": true, "ACLSummary.NamesDigest": true, "ACLSummary.SemanticDigest": true,
 		"ACLValidateOutput.PolicyVersion": true, "ACLValidateOutput.PolicySHA256": true, "ACLValidateOutput.CheckedAt": true,
 		"ACLValidateOutput.PatchedDigest": true, "ACLDiffOutput.NextChange": true, "ACLDiffOutput.TailscaleWrittenAsOf": true,
-		"ACLDiffOutput.CheckedAt": true, "ACLDiffSide.PolicyVersion": true, "ACLDiffSide.PolicySHA256": true,
+		"ACLDiffOutput.CheckedAt": true, "ACLDiffSide.PolicyVersion": true, "ACLDiffSide.PolicySHA256": true, "ACLDiffSide.Version": true,
 		"ACLTestOutput.EvaluatedAt": true,
+		"DNSOutput.AttrTableAsOf":   true,
+		"ACLVersion.Version":        true, "ACLVersion.Previous": true, "ACLVersion.EventTime": true,
+		"ACLVersion.Digest": true, "ACLVersion.PolicyVersion": true, "ACLVersion.PolicySHA256": true,
+		"ACLHistoryOutput.WindowStart": true, "ACLHistoryOutput.WindowEnd": true, "ACLHistoryOutput.NextCursor": true,
+		"AuditActor.ID": true, "AuditActor.Type": true,
 		// An error code and tailkeeper's words around it: the code is from tkerr's list.
 		"ACLGetOutput.ExternallyManagedNote": true, "ACLValidateOutput.ExternallyManagedNote": true, "ACLDiffOutput.ExternallyManagedNote": true,
 		// true, false or unknown, and an enumeration of three states.

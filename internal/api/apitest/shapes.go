@@ -73,10 +73,11 @@ const runOf20Oct = "2026-10-20"
 // Endpoint is the call a shape answers.
 type Endpoint string
 
-// The two endpoints the ledger covers.
+// The endpoints the ledger covers.
 const (
 	EndpointValidate Endpoint = "validate" // POST .../acl/validate, either mode
 	EndpointPolicy   Endpoint = "policy"   // GET .../acl, with or without details=true
+	EndpointAudit    Endpoint = "audit"    // GET .../logging/configuration
 )
 
 // Shape is one answer of the API: a status, headers and a body, with its provenance.
@@ -331,6 +332,60 @@ func PolicyText(policy, etag string) Shape {
 		Header: map[string]string{"Content-Type": "application/hujson", "ETag": etag}, Body: policy}
 }
 
+// auditUpdate is one configuration-audit entry whose old and new are JSON strings,
+// the form probe H-1 saw for an ACL update.
+type auditUpdate struct {
+	EventTime    string `json:"eventTime"`
+	EventGroupID string `json:"eventGroupID"`
+	Origin       string `json:"origin"`
+	Action       string `json:"action"`
+	Type         string `json:"type"`
+	Actor        struct {
+		ID          string `json:"id"`
+		Type        string `json:"type"`
+		LoginName   string `json:"loginName"`
+		DisplayName string `json:"displayName"`
+	} `json:"actor"`
+	Target struct {
+		ID       string `json:"id"`
+		Name     string `json:"name"`
+		Type     string `json:"type"`
+		Property string `json:"property"`
+	} `json:"target"`
+	Old string `json:"old"`
+	New string `json:"new"`
+}
+
+func oneAuditUpdate(when, group, origin, old, new string) auditUpdate {
+	var e auditUpdate
+	e.EventTime, e.EventGroupID, e.Origin = when, group, origin
+	e.Action, e.Type = "UPDATE", "TAILNET.UPDATE.ACL"
+	e.Actor.ID, e.Actor.Type = "u1", "user"
+	e.Actor.LoginName, e.Actor.DisplayName = "amy@example.com", "Amy"
+	e.Target.ID, e.Target.Name, e.Target.Type, e.Target.Property = "acl", "policy", "TAILNET", "acl"
+	e.Old, e.New = old, new
+	return e
+}
+
+// AuditACLUpdates is GET .../logging/configuration for ACL updates: old and new are
+// JSON strings holding a policy object with a known section. Probe H-1 saw that
+// shape on 20 Oct 2026; the texts here are examples, not a tailnet's policy.
+func AuditACLUpdates() Shape {
+	body, err := json.Marshal(struct {
+		Logs []auditUpdate `json:"logs"`
+	}{[]auditUpdate{
+		oneAuditUpdate("2026-10-01T00:00:00Z", "g1", "ADMIN_CONSOLE",
+			`{"tagOwners":{}}`, `{"tagOwners":{"tag:a":["amy@example.com"]}}`),
+		oneAuditUpdate("2026-10-08T00:00:00Z", "g2", "CONFIG_API",
+			`{"tagOwners":{"tag:a":["amy@example.com"]}}`, `{"tagOwners":{"tag:a":["amy@example.com"],"tag:b":[]}}`),
+	}})
+	if err != nil {
+		panic(err)
+	}
+	return Shape{Name: "AuditACLUpdates", Endpoint: EndpointAudit, Prov: observed(runOf20Oct, "H-1"), Status: 200,
+		Header: jsonHeader, Body: string(body)}
+}
+
 // AllShapes returns one instance of every builder, for the tests that walk the ledger.
 func AllShapes() []Shape {
 	return []Shape{
@@ -347,6 +402,7 @@ func AllShapes() []Shape {
 		SSHTestFailed("tag:p", "100.64.0.1", "tag:p", "100.64.0.2", "root"),
 		SSHCheckFailed("tag:p", "100.64.0.1", "tag:p", "100.64.0.2", "root"), TestUnevaluable("tag:p"),
 		DetailsOK("{}\n", `"e1"`, []string{`host alias "p" unused`}, nil), PolicyText("{}\n", `"e1"`),
+		AuditACLUpdates(),
 	}
 }
 
@@ -381,7 +437,7 @@ func checkLedger(shapes []Shape, hasCapture func(source string) bool) []string {
 		default:
 			problems = append(problems, s.Name+" has the kind "+strconv.Quote(string(s.Prov.Kind)))
 		}
-		if s.Endpoint != EndpointValidate && s.Endpoint != EndpointPolicy {
+		if s.Endpoint != EndpointValidate && s.Endpoint != EndpointPolicy && s.Endpoint != EndpointAudit {
 			problems = append(problems, s.Name+" answers no known endpoint")
 		}
 	}

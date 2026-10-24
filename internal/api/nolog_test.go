@@ -13,7 +13,8 @@ import (
 // A policy and a details body are the owner's text, and the POST body of a validation is
 // the proposal itself. Nothing may write them to a log, and the way to make sure of that
 // is that the packages which handle them cannot log at all: internal/api sends and reads
-// them, internal/tools holds the tools that do, and internal/registry runs the tools and
+// them, internal/tools holds the tools that do, internal/doctor sends the live policy
+// and one synthetic document for its probes, and internal/registry runs the tools and
 // is where an audit line is made (its allowlist of fields is the other half of this).
 
 // loggerImports returns the imports of the Go source src that are the standard loggers.
@@ -42,7 +43,7 @@ func importersOfALogger(t *testing.T, root string) []string {
 			t.Fatal(err)
 		}
 		rel = filepath.ToSlash(rel)
-		if !strings.HasPrefix(rel, "internal/api/") && !strings.HasPrefix(rel, "internal/tools/") && !strings.HasPrefix(rel, "internal/registry/") {
+		if !strings.HasPrefix(rel, "internal/api/") && !strings.HasPrefix(rel, "internal/tools/") && !strings.HasPrefix(rel, "internal/registry/") && !strings.HasPrefix(rel, "internal/doctor/") {
 			continue
 		}
 		src, err := os.ReadFile(path)
@@ -77,11 +78,12 @@ func TestNoPackageThatSendsAPolicyImportsALogger(t *testing.T) {
 	write("internal/api/a.go", "package a\nimport \"log\"\nvar _ = log.Println\n")
 	write("internal/tools/b.go", "package b\nimport l \"log/slog\"\nvar _ = l.Info\n")
 	write("internal/registry/c.go", "package c\nimport (\n\t\"fmt\"\n\t\"log\"\n)\nvar _, _ = fmt.Sprint, log.Println\n")
+	write("internal/doctor/f.go", "package f\nimport \"log\"\nvar _ = log.Println\n")
 	write("internal/cli/d.go", "package d\nimport \"log\"\nvar _ = log.Println\n")
 	write("internal/tools/e_test.go", "package e\nimport \"log\"\nvar _ = log.Println\n")
 	write("internal/api/ok.go", "package a\nimport \"fmt\"\nvar _ = fmt.Sprint\n")
-	if got := importersOfALogger(t, root); len(got) != 3 {
-		t.Fatalf("on a planted tree: %v, want the three imports in the guarded packages", got)
+	if got := importersOfALogger(t, root); len(got) != 4 {
+		t.Fatalf("on a planted tree: %v, want the four imports in the guarded packages", got)
 	}
 	if _, err := loggerImports("p.go", []byte("package p\nimport (")); err == nil {
 		t.Error("a file that does not parse was accepted")

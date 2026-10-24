@@ -17,12 +17,12 @@ tailkeeper needs one OAuth client with read scopes only. Grant every scope below
 | `feature_settings:read` | `posture_integration_get`, `posture_integrations_list` | `settings_get` |  | Tailscale plans: posture_integration_get: Standard, Premium, Enterprise; posture_integrations_list: Standard, Premium, Enterprise |
 | `federated_keys:read` |  | `key_get`, `keys_list` |  |  |
 | `log_streaming:read` | `log_streaming_get` |  |  | Tailscale plans: log_streaming_get: Premium, Enterprise |
-| `logs:configuration:read` | `audit_log` |  |  |  |
+| `logs:configuration:read` | `acl_history`, `audit_log` |  | `acl_diff` (read a policy version from the audit log) |  |
 | `logs:network:read` | `network_flow_logs` | `settings_get` |  | Tailscale plans: network_flow_logs: Premium, Enterprise |
 | `networking_settings:read` |  | `settings_get` |  |  |
 | `oauth_apps:read` | `oauth_app_get`, `oauth_apps_list` |  |  | alpha tools only (MCP lists them with `--enable-alpha`) |
 | `oauth_keys:read` |  | `key_get`, `keys_list` |  |  |
-| `policy_file:read` | `acl_diff`, `acl_get`, `acl_test`, `acl_validate` | `settings_get` |  |  |
+| `policy_file:read` | `acl_diff`, `acl_get`, `acl_test`, `acl_validate` | `settings_get` | `dns_get` (analyse extraDNSRecords and DNS node attributes in the policy) |  |
 | `services:read` | `service_get`, `services_list` |  |  |  |
 | `users:read` | `user_get`, `user_invite_get`, `user_invites_list`, `users_list` |  | `acl_diff` (resolve a pseudonym in a text or patch), `acl_test` (resolve a pseudonym in src or a destination), `acl_validate` (resolve a pseudonym in a proposal or patch) |  |
 | `webhooks:read` | `webhook_get`, `webhooks_list` |  |  |  |

@@ -276,6 +276,21 @@ func (l *Live) source() string {
 	return ""
 }
 
+// The kinds of destination A-9 builds from the live policy: a step exists only when the
+// policy holds a name of that kind.
+const (
+	a9KindTag     = "a tag"
+	a9KindHost    = "a host alias"
+	a9KindUser    = "a user"
+	a9KindService = "a service"
+)
+
+// a10Fallback is the label of A-10's step built from the live policy's first ssh rule.
+const a10Fallback = "the live text plus a failing sshTests entry built from its first ssh rule"
+
+// a9Label is the label of the step that sends a test for one destination kind.
+func a9Label(kind string) string { return kind + ", accepted and denied together" }
+
 // a9Tests sends one tests-mode request per destination kind, from the source src.
 func a9Tests(ctx context.Context, x *Exec, live *Live, src string) error {
 	first := func(list []string) string {
@@ -291,13 +306,13 @@ func a9Tests(ctx context.Context, x *Exec, live *Live, src string) error {
 		return name + ":22"
 	}
 	kinds := []destination{
-		{label: "a tag", dst: withPort(first(live.Tags)), absent: "the live policy defines no tag"},
-		{label: "a host alias", dst: withPort(first(live.Hosts)), absent: "the live policy defines no host alias"},
+		{label: a9KindTag, dst: withPort(first(live.Tags)), absent: "the live policy defines no tag"},
+		{label: a9KindHost, dst: withPort(first(live.Hosts)), absent: "the live policy defines no host alias"},
 		{label: "an IPv4 address, no proto", dst: "192.0.2.1:22"},
 		{label: "an IPv4 address, proto tcp", dst: "192.0.2.1:22", proto: "tcp"},
 		{label: "a bracketed IPv6 address", dst: "[2001:db8::1]:22"},
-		{label: "a user", dst: withPort(first(live.Logins)), absent: "the live policy has no group member written as an address"},
-		{label: "a service", dst: withPort(first(live.Services)), absent: "the live policy names no svc: service"},
+		{label: a9KindUser, dst: withPort(first(live.Logins)), absent: "the live policy has no group member written as an address"},
+		{label: a9KindService, dst: withPort(first(live.Services)), absent: "the live policy names no svc: service"},
 		{label: "ICMP, port 0, proto icmp", dst: "192.0.2.1:0", proto: "icmp"},
 		{label: "ICMP, port 0, no proto", dst: "192.0.2.1:0"},
 		{label: "a CIDR (a kind tests refuse)", dst: "192.0.2.0/24:22", refuse: true},
@@ -320,7 +335,7 @@ func a9Tests(ctx context.Context, x *Exec, live *Live, src string) error {
 		if k.refuse {
 			want = "unevaluable: an error that is not in the verdict grammar"
 		}
-		s, err := x.PostLive(ctx, step(k.label+", accepted and denied together", want), "application/json", body)
+		s, err := x.PostLive(ctx, step(a9Label(k.label), want), "application/json", body)
 		if err != nil {
 			return err
 		}
@@ -390,7 +405,7 @@ func a10(ctx context.Context, x *Exec) error {
 		x.Skip("the live policy has no ssh rule a test can be built from")
 		return nil
 	}
-	fb, err := x.PostLive(ctx, step("the live text plus a failing sshTests entry built from its first ssh rule", "the failure has the SSH form"), "application/hujson", doc)
+	fb, err := x.PostLive(ctx, step(a10Fallback, "the failure has the SSH form"), "application/hujson", doc)
 	if err != nil {
 		return err
 	}

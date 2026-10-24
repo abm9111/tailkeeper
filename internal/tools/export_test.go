@@ -47,3 +47,6 @@ func (r *SubjectResolver) SetPseudonymFunc(f func(login string) string) { r.name
 // ZeroSubjectResolver returns a resolver built as a composite literal, not by
 // NewSubjectResolver, so that a test can check what a resolver with no state does.
 func ZeroSubjectResolver(env *registry.Env) *SubjectResolver { return &SubjectResolver{env: env} }
+
+// PolicyEngineNote is the fixed sentence dns_get gives for a refusal of the policy engine.
+func PolicyEngineNote(err error) string { return policyEngineNote(err) }

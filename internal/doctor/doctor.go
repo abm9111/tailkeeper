@@ -70,9 +70,13 @@ func selfHint(h string) string {
 	return strings.ReplaceAll(h, "run `tailkeeper doctor --probe`", "report this with `tailkeeper version`")
 }
 
+func maskRow(s string) string {
+	return sanitize.String(sanitize.MaskText(s), sanitize.DefaultMax)
+}
+
 func (r *Report) addErr(name string, s Status, err error) {
 	e := tkerr.From(err)
-	r.add(name, s, string(e.Code)+": "+e.Message, e.Hint)
+	r.add(name, s, string(e.Code)+": "+maskRow(e.Message), maskRow(e.Hint))
 }
 
 // addReadErr reports a check whose read failed: n/a only where the plan or the
@@ -87,7 +91,7 @@ func (r *Report) addReadErr(name string, err error) {
 	case tkerr.TokenRejected:
 		s = Fail
 	}
-	r.add(name, s, string(e.Code)+": "+e.Message, e.Hint)
+	r.add(name, s, string(e.Code)+": "+maskRow(e.Message), maskRow(e.Hint))
 }
 
 // skipped lists checks that could not run, so a missing check never reads as a
@@ -198,8 +202,45 @@ func credentialCheckNames(in Input) []string {
 			names = append(names, "probe "+p.tool)
 		}
 		names = append(names, "probe acl_test")
+		names = append(names, policyProbeNames...)
 	}
 	return names
+}
+
+// noteRead records one of doctor's own reads with the fields a tool call records.
+// After the first failure it stops: each attempt could wait out a held lock again.
+func noteRead(ctx context.Context, a *app.App, f map[string]any) {
+	rl, _ := ctx.Value(readLogKey{}).(*readLog)
+	if rl == nil {
+		_ = a.Record(f)
+		return
+	}
+	if rl.err == nil {
+		rl.err = a.Record(f)
+	}
+}
+
+// noteDirect records a client call doctor makes itself. The status is the error's
+// code, or ok when the call returned none. The text that was sent is not recorded.
+func noteDirect(ctx context.Context, a *app.App, tool string, err error) {
+	var code tkerr.Code
+	if err != nil {
+		code = "error"
+		if e := tkerr.From(err); e != nil {
+			code = e.Code
+		}
+	}
+	noteDirectCode(ctx, a, tool, code)
+}
+
+// noteDirectCode records a client call by the code of its error; an empty code is ok.
+func noteDirectCode(ctx context.Context, a *app.App, tool string, code tkerr.Code) {
+	status := "ok"
+	if code != "" {
+		status = string(code)
+	}
+	noteRead(ctx, a, map[string]any{"tool": tool, "tier": "read", "requester": map[string]any{"kind": "doctor"},
+		"ms": int64(0), "status": status, "bytes": 0})
 }
 
 // readLog keeps the first failure to record one of doctor's own reads, for the
@@ -226,11 +267,7 @@ func call(ctx context.Context, a *app.App, name, args string, out any) error {
 	if err != nil {
 		f["status"], f["code"] = "error", string(tkerr.From(err).Code)
 	}
-	if rl, _ := ctx.Value(readLogKey{}).(*readLog); rl == nil {
-		_ = a.Record(f)
-	} else if rl.err == nil {
-		rl.err = a.Record(f)
-	}
+	noteRead(ctx, a, f)
 	if err != nil {
 		return err
 	}
@@ -258,12 +295,7 @@ func credentialChecks(ctx context.Context, r *Report, a *app.App, in Input) {
 	if a.KeyID == "" {
 		r.add("key record", NA, "the credential's key ID is unknown", "")
 	} else if err := call(ctx, a, "key_get", string(keyArgs), &key); err != nil {
-		e := tkerr.From(err)
-		hint := e.Hint
-		if e.Code == tkerr.NotFound || e.Code == tkerr.ScopeMissing {
-			hint = "check that tailnetId " + sanitize.MaskID(a.Tailnet) + " is the tailnet this credential belongs to"
-		}
-		r.add("key record", Fail, string(e.Code)+": "+e.Message, hint)
+		r.addKeyReadErr(a.Tailnet, err)
 	} else {
 		keyRecord(r, key, in.Now)
 	}
@@ -292,6 +324,17 @@ func credentialChecks(ctx context.Context, r *Report, a *app.App, in Input) {
 	if in.Probe {
 		probes(ctx, r, a)
 	}
+}
+
+// addKeyReadErr reports a failed read of the credential's own key record. A record that
+// is not found, or a scope that is missing, usually means the wrong tailnet.
+func (r *Report) addKeyReadErr(tailnet string, err error) {
+	e := tkerr.From(err)
+	hint := e.Hint
+	if e.Code == tkerr.NotFound || e.Code == tkerr.ScopeMissing {
+		hint = "check that tailnetId " + sanitize.MaskID(tailnet) + " is the tailnet this credential belongs to"
+	}
+	r.add("key record", Fail, string(e.Code)+": "+maskRow(e.Message), maskRow(hint))
 }
 
 func keyRecord(r *Report, k tools.Key, now time.Time) {
@@ -435,9 +478,10 @@ var probeList = []struct{ tool, args string }{
 	{"acl_get", `{"maxBytes":` + strconv.Itoa(guard.MaxPolicyBytes) + `}`}, // the largest page: a minified policy is one long line
 }
 
-// canaryTagRE is a tag the canary may use as its source and its destination: letters, digits
-// and hyphens, as tags are written, with nothing that could be a name of a person.
-var canaryTagRE = regexp.MustCompile(`^tag:[A-Za-z0-9][A-Za-z0-9-]*$`)
+// canaryTagRE is a tag the canary and the kind probes may use as a source and a destination:
+// letters, digits and hyphens, as tags are written, with nothing that could be a name of a
+// person, and short enough to reach Tailscale whole.
+var canaryTagRE = regexp.MustCompile(`^tag:[A-Za-z0-9][A-Za-z0-9-]{0,99}$`)
 
 // aclCanary is a test no policy can pass: the same destination both accepted and denied, for
 // a source and a destination that the live policy defines (a tag that tagOwners names), so
@@ -483,15 +527,24 @@ func probes(ctx context.Context, r *Report, a *app.App) {
 	tag := canaryTag(ctx, a)
 	if tag == "" {
 		r.add("probe acl_test", NA, "the live policy defines no tag, or could not be read, so a test that cannot pass was not sent", "")
-		return
-	}
-	var t tools.ACLTestOutput
-	err := call(ctx, a, "acl_test", aclCanary(tag), &t)
-	if st, detail, fix, ok := canaryVerdict(t, err); ok {
-		r.add("probe acl_test", st, detail, fix)
 	} else {
-		r.addReadErr("probe acl_test", err)
+		var t tools.ACLTestOutput
+		err := call(ctx, a, "acl_test", aclCanary(tag), &t)
+		if st, detail, fix, ok := canaryVerdict(t, err); ok {
+			r.add("probe acl_test", st, detail, fix)
+		} else {
+			r.addReadErr("probe acl_test", err)
+		}
 	}
+	if a.Env != nil && a.Env.API != nil {
+		for _, p := range tools.ProbePolicyMode(ctx, a.Env) {
+			if p.Called {
+				noteDirectCode(ctx, a, "doctor."+p.Name, p.Code)
+			}
+			r.add(p.Name, Status(p.Status), p.Detail, p.Fix)
+		}
+	}
+	kindProbes(ctx, r, a)
 }
 
 // canaryVerdict reads acl_test's answer to aclCanary. A fail whose verdict is allowed or
@@ -532,7 +585,7 @@ func canaryVerdict(t tools.ACLTestOutput, err error) (st Status, detail, fix str
 	}
 	switch e := tkerr.From(err); {
 	case e.Code == tkerr.ValidationFailed && e.Status == 0:
-		return Fail, "tailkeeper refused its own canary test before sending it: " + e.Message, "report this with `tailkeeper version`", true
+		return Fail, "tailkeeper refused its own canary test before sending it: " + maskRow(e.Message), "report this with `tailkeeper version`", true
 	case e.Code == tkerr.ValidationFailed:
 		return Warn, "the validate endpoint refused the canary test, so how a failure is read was not exercised", known, true
 	}
@@ -583,7 +636,7 @@ func auditChecks(r *Report, a *app.App, recordErr error) {
 	}
 	if recordErr != nil {
 		e := tkerr.From(recordErr)
-		r.add("audit log", Warn, fmt.Sprintf("%s: %d lines, chain intact, but doctor's own reads were not recorded: %s", a.Audit.Path(), n, e.Message), e.Hint)
+		r.add("audit log", Warn, fmt.Sprintf("%s: %d lines, chain intact, but doctor's own reads were not recorded: %s", a.Audit.Path(), n, maskRow(e.Message)), maskRow(e.Hint))
 	} else {
 		r.add("audit log", OK, fmt.Sprintf("%s: %d lines, chain intact; reads recorded as %s", a.Audit.Path(), n, a.AuditReads), "")
 	}

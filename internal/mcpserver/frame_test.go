@@ -9,6 +9,7 @@ import (
 	"strings"
 	"sync/atomic"
 	"testing"
+	"time"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
@@ -106,6 +107,67 @@ func unknownKeys(n int) string {
 	}
 	b.WriteString("}\n")
 	return b.String()
+}
+
+// auditLine is one entry of the configuration log: an ACL update by an actor with the given
+// tags and strings.
+type auditLine struct {
+	EventTime    string `json:"eventTime"`
+	DeferredAt   string `json:"deferredAt,omitempty"`
+	EventGroupID string `json:"eventGroupID"`
+	Origin       string `json:"origin"`
+	Action       string `json:"action"`
+	Actor        struct {
+		ID          string   `json:"id"`
+		Type        string   `json:"type"`
+		LoginName   string   `json:"loginName"`
+		DisplayName string   `json:"displayName"`
+		Tags        []string `json:"tags,omitempty"`
+	} `json:"actor"`
+	Target struct {
+		ID       string `json:"id"`
+		Name     string `json:"name"`
+		Type     string `json:"type"`
+		Property string `json:"property"`
+	} `json:"target"`
+	ActionDetails string `json:"actionDetails,omitempty"`
+	Error         string `json:"error,omitempty"`
+	Old           string `json:"old"`
+	New           string `json:"new"`
+}
+
+// auditBody is a configuration log of n ACL updates a minute apart, the newest a minute old.
+// fill sets the strings of entry i.
+func auditBody(n int, fill func(i int, l *auditLine)) string {
+	now := time.Now().UTC()
+	logs := make([]auditLine, n)
+	for i := range logs {
+		l := &logs[i]
+		l.EventTime = now.Add(-time.Duration(n-i) * time.Minute).Format(time.RFC3339)
+		l.EventGroupID, l.Origin, l.Action = fmt.Sprintf("g%d", i), "ADMIN_CONSOLE", "UPDATE"
+		l.Actor.ID, l.Actor.Type, l.Actor.LoginName, l.Actor.DisplayName = "u1", "user", "amy@example.com", "Amy"
+		l.Old, l.New = `{"tagOwners":{}}`, fmt.Sprintf(`{"tagOwners":{"tag:t%d":[]}}`, i)
+		fill(i, l)
+	}
+	return rawJSON(struct {
+		Logs []auditLine `json:"logs"`
+	}{logs})
+}
+
+// rawJSON encodes v with an angle bracket as one byte, as the API sends it: the default
+// encoder writes six.
+func rawJSON(v any) string {
+	var b strings.Builder
+	enc := json.NewEncoder(&b)
+	enc.SetEscapeHTML(false)
+	if err := enc.Encode(v); err != nil {
+		panic(err)
+	}
+	return b.String()
+}
+
+func serveAuditLog(f *apitest.Fake, body string) {
+	f.JSON("GET", "/api/v2/tailnet/T1234CNTRL/logging/configuration", 200, body)
 }
 
 // frameCase is one call whose frame is measured.
@@ -235,6 +297,103 @@ func frameCases() []frameCase {
 			tool:  "acl_test", args: map[string]any{"src": "tag:ci", "accept": []string{"tag:web:22"}}, floor: 16 << 10, cap: 256 << 10,
 		})
 	}
+	// An actor with 3,500 tags of 1,000 quotes: an API body of 7.0 MB, under the 8 MiB the client
+	// reads, in the character that costs the most when the result is encoded twice. The log is
+	// read by audit_log and by acl_history, which show an actor the same way.
+	manyTags := make([]string, 3500)
+	for i := range manyTags {
+		manyTags[i] = strings.Repeat(`"`, 1000)
+	}
+	tagged := auditBody(1, func(_ int, l *auditLine) { l.Actor.Tags = manyTags })
+	for _, tool := range []string{"audit_log", "acl_history"} {
+		cases = append(cases, frameCase{
+			name:  tool + ", an actor of 3,500 tags",
+			setup: func(f *apitest.Fake) { serveAuditLog(f, tagged) },
+			tool:  tool, args: map[string]any{}, floor: 1 << 10, cap: 256 << 10,
+		})
+	}
+	// One entry of audit_log with one plain field of 1.5 MB, an API body under the 8 MiB the
+	// client reads, in the character that costs the most as JSON text. The tool cuts each of
+	// these fields: with one cut missing, the frame is the SDK's whole limit and the connection
+	// ends. One field at a time, because with all at once each would need only a part of this.
+	huge := strings.Repeat("<", 1500000)
+	for name, set := range map[string]func(l *auditLine){
+		"origin":      func(l *auditLine) { l.Origin = huge },
+		"action":      func(l *auditLine) { l.Action = huge },
+		"deferredAt":  func(l *auditLine) { l.DeferredAt = huge },
+		"event group": func(l *auditLine) { l.EventGroupID = huge },
+		"target id":   func(l *auditLine) { l.Target.ID = huge },
+		"target type": func(l *auditLine) { l.Target.Type = huge },
+		"actor id":    func(l *auditLine) { l.Actor.ID = huge },
+		"actor type":  func(l *auditLine) { l.Actor.Type = huge },
+	} {
+		cases = append(cases, frameCase{
+			name: "audit_log, an entry whose " + name + " is 1.5 MB",
+			setup: func(f *apitest.Fake) {
+				serveAuditLog(f, auditBody(1, func(_ int, l *auditLine) { set(l) }))
+			},
+			tool: "audit_log", args: map[string]any{}, floor: 1 << 10, cap: 64 << 10,
+		})
+	}
+	// The largest page of audit_log, 500 entries, whose every free-text field is as long as the
+	// log lets it be cut to.
+	lots := strings.Repeat("<", 1000)
+	cases = append(cases, frameCase{
+		name: "audit_log, 500 entries whose every string is long",
+		setup: func(f *apitest.Fake) {
+			serveAuditLog(f, auditBody(500, func(_ int, l *auditLine) {
+				l.Target.Name, l.Target.Property, l.ActionDetails, l.Error = lots, lots, lots, lots
+				l.Actor.Tags = []string{lots}
+			}))
+		},
+		tool: "audit_log", args: map[string]any{}, floor: 64 << 10, cap: 3 << 20,
+	})
+	// The largest page of acl_history, 200 versions, whose actors each hold 40 tags of 100 angle
+	// brackets (six bytes each as JSON text), and 200 versions whose every string is as long as
+	// the log lets it be.
+	cases = append(cases, frameCase{
+		name: "acl_history, 200 versions by actors of long tags",
+		setup: func(f *apitest.Fake) {
+			serveAuditLog(f, auditBody(200, func(_ int, l *auditLine) {
+				for range 40 {
+					l.Actor.Tags = append(l.Actor.Tags, strings.Repeat("<", 100))
+				}
+			}))
+		},
+		tool: "acl_history", args: map[string]any{"limit": 200}, floor: 64 << 10, cap: 1 << 20,
+	})
+	long := strings.Repeat("<", 4000)
+	cases = append(cases, frameCase{
+		name: "acl_history, 200 versions whose every string is long",
+		setup: func(f *apitest.Fake) {
+			serveAuditLog(f, auditBody(200, func(_ int, l *auditLine) {
+				l.EventGroupID, l.Origin, l.Actor.ID, l.Actor.Type = long, long, long, long
+				l.Actor.LoginName, l.Actor.DisplayName = long, long
+				l.Actor.Tags = []string{long, long}
+			}))
+		},
+		tool: "acl_history", args: map[string]any{"limit": 200}, floor: 16 << 10, cap: 1 << 20,
+	})
+	// dns_get with a policy of 3.9 MB, under the 4 MiB cap: 65 nodeAttrs entries, each with 100
+	// targets of 600 angle brackets (cut to 256 bytes, six bytes each as JSON text) and the
+	// attributes that repeat the targets in every list.
+	targets := make([]string, 100)
+	for i := range targets {
+		targets[i] = strings.Repeat("<", 600)
+	}
+	var attrEntries []map[string]any
+	for range 65 {
+		attrEntries = append(attrEntries, map[string]any{"target": targets, "attr": []string{"nextdns:abc", "controld:def", "magicdns-aaaa"}})
+	}
+	dnsPolicy := rawJSON(map[string]any{"nodeAttrs": attrEntries})
+	cases = append(cases, frameCase{
+		name: "dns_get, 65 attribute entries of 100 long targets",
+		setup: func(f *apitest.Fake) {
+			serveACL(f, dnsPolicy, nil, nil)
+			f.JSON("GET", "/api/v2/tailnet/T1234CNTRL/dns/configuration", 200, `{"nameservers":[{"address":"192.0.2.53"}],"preferences":{}}`)
+		},
+		tool: "dns_get", args: map[string]any{}, floor: 8 << 10, cap: 1 << 20,
+	})
 	return cases
 }
 
@@ -255,6 +414,7 @@ func TestTheLargestACLResultsStayUnderTheFrameLimit(t *testing.T) {
 				t.Fatalf("%s: %s", c.tool, text(res, 0))
 			}
 			frame := int(meter.longest.Load())
+			t.Logf("the longest frame is %d bytes", frame)
 			if frame < c.floor {
 				t.Errorf("the frame is %d bytes, under %d: the call no longer reaches the largest result", frame, c.floor)
 			}

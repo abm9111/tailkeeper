@@ -500,6 +500,31 @@ func TestAnInvariantsFileThatIsNotOneIsInvalidAndNothingIsSent(t *testing.T) {
 	}
 }
 
+func TestAnUnknownInvariantsKeyIsMaskedBeforeItIsCut(t *testing.T) {
+	got := map[int]string{}
+	for _, n := range []int{150, 180} {
+		login := "a" + strings.Repeat("x", n) + "@example.com"
+		if n == 180 {
+			login = "a" + strings.Repeat("y", n) + "@example.com"
+		}
+		f, _, env := apiEnv(t)
+		serveLive(f, peoplePolicy, nil, nil)
+		serveInvariants(f, func(tag string) apitest.Shape { return apitest.TestsFailed(canaryEntry(tag)) })
+		out, err := validateWith(t, env, `{"`+login+`":[]}`)
+		raw := fmt.Sprintf("%#v", out)
+		if err != nil || strings.Contains(raw, login) || !strings.Contains(raw, "a…@example.com") {
+			t.Fatalf("n=%d: %v %s", n, err, raw)
+		}
+		got[n] = raw
+		if len(f.Requests()) != 0 {
+			t.Fatalf("n=%d sent %d requests", n, len(f.Requests()))
+		}
+	}
+	if got[150] != got[180] {
+		t.Fatalf("the pointer tells the length of the login")
+	}
+}
+
 // Where no text is sent the invariants cannot run, and the result says so: a proposal that is
 // not valid, and a live policy that Tailscale stored with errors.
 func TestWhereNoTextIsSentTheInvariantsAreNamedAsNotChecked(t *testing.T) {

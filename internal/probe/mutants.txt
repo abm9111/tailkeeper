@@ -1,0 +1,284 @@
+# Mutants of internal/probe: a change, and the test that must fail with it.
+# scripts/mutate.go says what the format is and what the three outcomes mean.
+
+mutant: a dropped rule is still the same policy
+file: selfcheck.go
+old: return SelfCheck{Name: "reformat", Held: same, Count: n}
+new: return SelfCheck{Name: "reformat", Held: same || true, Count: n}
+kill: TestEachSelfCheckHoldsOnAWellFormedPolicyAndFailsOnARewriteThatMeansSomethingElse
+
+mutant: a path whose type changed is the same shape
+file: probe.go
+old: if !cok || !nok || ct != nt {
+new: if !cok || !nok || ct == nt {
+kill: TestAShapeDriftIsReportedByPathAndCountOnly
+
+mutant: the self-check prints the policy text
+file: selfcheck.go
+old: return SelfCheck{Name: "etag", Held: true, Count: 1}
+new: return SelfCheck{Name: string(text), Held: true, Count: 1}
+kill: TestTheSelfCheckPrintsNothingThatIsNotABooleanACountOrAProbeName
+
+mutant: the self-check runs without the opt-in switch
+file: command.go
+old: if os.Getenv("TAILKEEPER_LIVE") != "1" {
+new: if os.Getenv("TAILKEEPER_LIVE") == "never" {
+kill: TestTheSelfCheckRefusesToRunWithoutTailkeeperLive
+
+mutant: a section count that is not the array length still matches
+file: selfcheck.go
+old: if !ok || want != sec.Count {
+new: if !ok || want == sec.Count {
+kill: TestEachSelfCheckHoldsOnAWellFormedPolicyAndFailsOnARewriteThatMeansSomethingElse
+
+mutant: the live policy is not read before the shape probes
+file: selfcheck.go
+old: _, _ = x.Live(ctx) // an error stays in x.liveErr, where the probes that need the policy see it
+new: _ = ctx
+kill: TestTheShapeCheckHoldsOnAnUnchangedWorldAgainstCapturesOfAFullRun
+
+mutant: the tests-mode request for a login is compared though the tailnet may hold none
+file: selfcheck.go
+old: {Word: a9KindUser, Omit: []string{a9Label(a9KindUser)}},
+new: {Word: a9KindUser},
+kill: TestTheShapeCheckDoesNotDependOnWhatTheTailnetHolds
+
+mutant: the tests-mode request for a service is compared though the tailnet may hold none
+file: selfcheck.go
+old: {Word: a9KindService, Omit: []string{a9Label(a9KindService)}},
+new: {Word: a9KindService},
+kill: TestTheShapeCheckDoesNotDependOnWhatTheTailnetHolds
+
+mutant: the warnings and errors of a details answer are compared
+file: selfcheck.go
+old: {Word: "warnings and errors", Paths: []string{"warnings", "errors"}},
+new: {Word: "warnings and errors"},
+kill: TestTheShapeCheckDoesNotDependOnWhatTheTailnetHolds
+
+mutant: the form of the policy text is compared
+file: selfcheck.go
+old: if label == l && path != "status" {
+new: if label == l && path == "status" {
+kill: TestTheShapeCheckDoesNotDependOnWhatTheTailnetHolds|TestAStatusThatChangedIsADriftEvenWhereThePolicyTextIsNotCompared
+
+mutant: a status that changed is ignored where the policy text is not compared
+file: selfcheck.go
+old: if label == l && path != "status" {
+new: if label == l {
+kill: TestAStatusThatChangedIsADriftEvenWhereThePolicyTextIsNotCompared
+
+mutant: the line does not say what was not compared
+file: selfcheck.go
+old: skipped = " (not compared: " + strings.Join(c.Skipped, ", ") + ")"
+new: skipped = ""
+kill: TestTheShapeCheckDoesNotDependOnWhatTheTailnetHolds
+
+mutant: autoApprovers counts its members, not its routes
+file: selfcheck.go
+old: return structEntries(members), nil
+new: return len(members), nil
+kill: TestTheSummaryCheckCountsEachSectionByTheRuleOfTheSummary
+
+mutant: an empty autoApprovers field counts as nothing
+file: selfcheck.go
+old: len(sub) > 0 {
+new: len(sub) >= 0 {
+kill: TestTheSummaryCheckCountsEachSectionByTheRuleOfTheSummary
+
+mutant: an array section holding an object is counted by its members
+file: selfcheck.go
+old: case first != '{', kind == kindArray:
+new: case first != '{':
+kill: TestTheSummaryCheckCountsEachSectionByTheRuleOfTheSummary
+
+mutant: unknown sections are not counted as not compared
+file: selfcheck.go
+old: out.unknown++
+new: out.unknown += 0
+kill: TestTheSummaryCheckCountsEachSectionByTheRuleOfTheSummary|TestTheSummaryCheckHoldsOnManyLongUnknownSectionNames
+
+mutant: a section spelled twice in different case is compared
+file: selfcheck.go
+old: case spellings[key] > 1:
+new: case spellings[key] > 9:
+kill: TestTheSummaryCheckCountsEachSectionByTheRuleOfTheSummary
+
+mutant: the summary rows of unknown sections are compared
+file: selfcheck.go
+old: if !sec.Known {
+new: if sec.Known && false {
+kill: TestTheSummaryCheckCountsEachSectionByTheRuleOfTheSummary|TestTheSummaryCheckHoldsOnEveryFixturePolicyInTheRepository
+
+mutant: a missing capture reads as a drift
+file: selfcheck.go
+old: checks = append(checks, SelfCheck{Name: id, Note: noteNoCapture})
+new: checks = append(checks, SelfCheck{Name: id, Count: 1})
+kill: TestAShapeThatCannotBeComparedSaysSoInsteadOfDiffers
+
+mutant: a probe that failed reads as a missing capture
+file: selfcheck.go
+old: checks = append(checks, SelfCheck{Name: id, Note: noteProbeFailed})
+new: checks = append(checks, SelfCheck{Name: id, Note: noteNoCapture})
+kill: TestAShapeProbeThatDidNotRunSaysNotRun
+
+mutant: a probe that did not run reads as a failed one
+file: selfcheck.go
+old: checks = append(checks, SelfCheck{Name: id, Note: noteNotRun})\n\t\t\tresults
+new: checks = append(checks, SelfCheck{Name: id, Note: noteProbeFailed})\n\t\t\tresults
+kill: TestAShapeProbeThatDidNotRunSaysNotRun
+
+mutant: a shape that could not be compared prints as a drift
+file: selfcheck.go
+old: _, _ = fmt.Fprintf(w, "shape: %s %s\\n", c.Name, c.Note)
+new: _, _ = fmt.Fprintf(w, "shape: %s differs: %d paths\\n", c.Name, 1)
+kill: TestAShapeThatCannotBeComparedSaysSoInsteadOfDiffers
+
+mutant: a policy check that could not read prints as one that failed
+file: selfcheck.go
+old: _, _ = fmt.Fprintf(w, "self-check: %s %s\\n", c.Name, c.Note)
+new: _, _ = fmt.Fprintf(w, "self-check: %s not held %d\\n", c.Name, 0)
+kill: TestAShapeThatCannotBeComparedSaysSoInsteadOfDiffers
+
+mutant: an unreadable policy leaves its checks unnoted
+file: selfcheck.go
+old: out = append(out, SelfCheck{Name: name, Note: noteNotRead})
+new: out = append(out, SelfCheck{Name: name})
+kill: TestAPolicyThatCouldNotBeReadSaysNotReadForEachPolicyCheck
+
+mutant: a missing ETag reads as a different one
+file: selfcheck.go
+old: return SelfCheck{Name: "etag", Note: noteNotRead}
+new: return SelfCheck{Name: "etag"}
+kill: TestAChecksThatCannotBeMadeCarryTheNotReadNote
+
+mutant: a failed reformat reads as one that ran
+file: selfcheck.go
+old: return SelfCheck{Name: "reformat", Note: noteNotRead}\n\t}\n\tsame
+new: return SelfCheck{Name: "reformat"}\n\t}\n\tsame
+kill: TestAChecksThatCannotBeMadeCarryTheNotReadNote
+
+mutant: --against without --self-check is accepted
+file: command.go
+old: if opts.against != "" && !opts.selfCheck {
+new: if opts.against != "" && opts.selfCheck {
+kill: TestAgainstWithoutSelfCheckIsAUsageError
+
+mutant: a full self-check counts only its policy checks
+file: selfcheck.go
+old: func SelfCheckCount() int { return len(policyCheckNames) + len(shapeProbeIDs) }
+new: func SelfCheckCount() int { return len(policyCheckNames) }
+kill: TestAFullSelfCheckMakesAsManyChecksAsItCountsWhetherOrNotThePolicyWasRead
+
+mutant: the closing line's count of checks is read as zero
+file: selfcheck.go
+old: checks, _ = strconv.Atoi(m[1])
+new: checks = 0
+kill: TestEveryLineTheSelfCheckPrintsIsOfAKindClassifyLineKnows
+
+mutant: a shape that did not run is not a line the self-check prints
+file: selfcheck.go
+old: |capture missing|not run|probe failed)
+new: |capture missing|probe failed)
+kill: TestEveryLineTheSelfCheckPrintsIsOfAKindClassifyLineKnows
+
+mutant: a check that was not read is not a line the self-check prints
+file: selfcheck.go
+old: (held [0-9]+|not held [0-9]+|not read)
+new: (held [0-9]+|not held [0-9]+)
+kill: TestEveryLineTheSelfCheckPrintsIsOfAKindClassifyLineKnows
+
+mutant: what a line left out may hold any text
+file: selfcheck.go
+old: (not compared: [A-Za-z0-9 ,]+
+new: (not compared: .+
+kill: TestEveryLineTheSelfCheckPrintsIsOfAKindClassifyLineKnows
+
+mutant: the shape check of the audit log compares its entries
+file: selfcheck.go
+old: {Word: "the audit log entries", Paths: []string{"logs"}}
+new: {Word: "the audit log entries", Paths: []string{"logz"}}
+kill: TestTheShapeCheckDoesNotDependOnTheAuditLogsEntries
+
+mutant: the shape check of the audit log never compares the shape of an entry
+file: selfcheck.go
+old: if id == "H-1" && holdsEntries(committed) && holdsEntries(now) {
+new: if false {
+kill: TestTheShapeCheckComparesTheEntriesThatVersionsDependOn
+
+mutant: the shape check of the audit log compares the entries of a run against a capture that holds none
+file: selfcheck.go
+old: if id == "H-1" && holdsEntries(committed) && holdsEntries(now) {
+new: if id == "H-1" && holdsEntries(now) {
+kill: TestTheShapeCheckComparesTheEntriesThatVersionsDependOn
+
+mutant: the shape check of the audit log compares the entries of a capture against a run that holds none
+file: selfcheck.go
+old: if id == "H-1" && holdsEntries(committed) && holdsEntries(now) {
+new: if id == "H-1" && holdsEntries(committed) {
+kill: TestTheShapeCheckComparesTheEntriesThatVersionsDependOn
+
+mutant: an audit log with an empty list holds entries
+file: selfcheck.go
+old: if _, ok := pathTypes(o.Result)["logs[]"]; ok {
+new: if _, ok := pathTypes(o.Result)["logs"]; ok {
+kill: TestTheShapeCheckComparesTheEntriesThatVersionsDependOn
+
+mutant: the shape check of the audit log does not compare the type of old
+file: selfcheck.go
+old: "logs[].old", "logs[].new"},
+new: "logs[].new"},
+kill: TestTheShapeCheckComparesTheEntriesThatVersionsDependOn
+
+mutant: the shape check of the audit log does not compare the type of new
+file: selfcheck.go
+old: "logs[].old", "logs[].new"},
+new: "logs[].old"},
+kill: TestTheShapeCheckComparesTheEntriesThatVersionsDependOn
+
+mutant: the shape check of the audit log does not compare the type of the time of an entry
+file: selfcheck.go
+old: "logs[].eventTime", "logs[].old"
+new: "logs[].old"
+kill: TestTheShapeCheckComparesTheEntriesThatVersionsDependOn
+
+mutant: the shape check of the audit log compares nothing it keeps
+file: selfcheck.go
+old: && !contains(d.Keep, path)
+new: && true
+kill: TestTheShapeCheckComparesTheEntriesThatVersionsDependOn
+
+mutant: the line of the shape check names the entries as left out when it compared them
+file: selfcheck.go
+old: return n, dependentWords(steps)
+new: return n, dependentWords(tailnetDependentSteps[id])
+kill: TestTheShapeCheckDoesNotDependOnTheAuditLogsEntries|TestADriftInTheAuditLogEnvelopeIsStillReportedWhenItsEntriesAreNotCompared
+
+mutant: the line of the shape check names what it left out of an entry in a word its pattern refuses
+file: selfcheck.go
+old: Word:  "the actor and target of an entry, and the fields an entry may omit"
+new: Word:  "the actor's and the target's fields of an entry"
+kill: TestEveryWordAShapeComparisonLeavesOutIsAcceptedByTheLinePattern
+
+mutant: the shape check of the audit log leaves out its envelope too
+file: selfcheck.go
+old: Paths: []string{"logs"}}},
+new: Paths: []string{"logs", "$"}}},
+kill: TestADriftInTheAuditLogEnvelopeIsStillReportedWhenThereAreNoEntries
+
+mutant: the shape check of the audit log leaves out its envelope too when it compares the entries
+file: selfcheck.go
+old: Paths: []string{"logs"},\n\tKeep:
+new: Paths: []string{"logs", "$"},\n\tKeep:
+kill: TestADriftInTheAuditLogEnvelopeIsStillReportedWhenItsEntriesAreNotCompared
+
+mutant: the line names what the audit log check left out in a word its pattern refuses
+file: selfcheck.go
+old: Word: "the audit log entries"
+new: Word: "the audit log's entries"
+kill: TestEveryWordAShapeComparisonLeavesOutIsAcceptedByTheLinePattern
+
+mutant: the summary check holds whatever the counts are
+file: selfcheck.go
+old: held, n := countsMatch(s.Sections, indep)
+new: _, n := countsMatch(s.Sections, indep)\n\theld := true
+kill: TestTheSummaryCheckDoesNotHoldWhenTheSummaryCountsWrong

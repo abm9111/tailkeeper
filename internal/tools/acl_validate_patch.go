@@ -565,7 +565,8 @@ func (v *validation) callerPos(source string, line, col int) (int, int) {
 	switch source {
 	case sourceFrom:
 		return v.pos.back(line, col)
-	case sourceLive:
+	case sourceLive, sourceVersion:
+		// A column counted on the stored text would say how long a login in it is.
 		return line, 0
 	}
 	return line, col

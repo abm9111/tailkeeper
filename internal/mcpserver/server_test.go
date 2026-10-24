@@ -96,8 +96,8 @@ func TestListToolsWithoutCredential(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(res.Tools) != 43 {
-		t.Fatalf("reads profile advertises %d tools, want 43", len(res.Tools))
+	if len(res.Tools) != 44 {
+		t.Fatalf("reads profile advertises %d tools, want 44", len(res.Tools))
 	}
 	for _, tool := range res.Tools {
 		if tool.Annotations == nil || !tool.Annotations.ReadOnlyHint || tool.Annotations.DestructiveHint == nil || *tool.Annotations.DestructiveHint {

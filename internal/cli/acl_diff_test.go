@@ -3,6 +3,7 @@ package cli
 import (
 	"encoding/json"
 	"net/http"
+	"regexp"
 	"strings"
 	"testing"
 
@@ -148,6 +149,32 @@ func TestDiffAgainstLiveDirections(t *testing.T) {
 	}
 }
 
+// --from-version and --to-version name a stored policy. Either one together with the file
+// flag of the same side (--against live included) is refused before the credential is asked
+// for, and nothing is read from the API.
+func TestAVersionFlagClashesWithTheTextOfTheSameSide(t *testing.T) {
+	h, _ := execHarness(t)
+	if code := h.run("acl", "diff", "--help"); code != 0 || !strings.Contains(h.err.String()+h.out.String(), "-from-version") || !strings.Contains(h.err.String()+h.out.String(), "-to-version") {
+		t.Fatalf("help exit %d:\n%s\n%s", code, h.out, h.err)
+	}
+	older := writeFile(t, "old.hujson", diffOld)
+	newer := writeFile(t, "new.hujson", diffNew)
+	for _, args := range [][]string{
+		{"acl", "diff", "--from-version", "v1.x", "--against", older},
+		{"acl", "diff", "--to-version", "v1.x", "--from", newer},
+		{"acl", "diff", "--to-version", "v1.x", "--patch", newer},
+		{"acl", "diff", "--from-version", "v1.x", "--against", "live"},
+	} {
+		h, builds := execHarness(t)
+		if code := h.run(args...); code != 2 || !strings.HasPrefix(h.err.String(), "tailkeeper: usage: ") {
+			t.Errorf("%v: exit %d, stderr %q", args, code, h.err)
+		}
+		if h.reexecProvider != nil || *builds != 0 {
+			t.Errorf("%v: the wrapper started or the configuration loaded", args)
+		}
+	}
+}
+
 // --offline needs no credential and refuses a live side before it reads anything.
 func TestOfflineRefusesALiveSideOnTheCommandLine(t *testing.T) {
 	h, builds := execHarness(t)
@@ -256,5 +283,44 @@ func TestADiffPagesOnTheCommandLine(t *testing.T) {
 	h, _ = execHarness(t)
 	if code := h.run("acl", "diff", "--section", "hosts", older, newer); code != 0 || strings.Contains(h.out.String(), "group:") {
 		t.Errorf("--section hosts: exit %d\n%s", code, h.out)
+	}
+}
+
+// The text layout of `acl history` prints the id of each version and the id before it, so that
+// a person can give them to `acl diff --from-version` and `--to-version` without --json.
+func TestTheVersionIdsOfTheTextHistoryFeedTheDiffFlags(t *testing.T) {
+	f := apitest.New(t)
+	f.JSON("GET", "/api/v2/tailnet/T1234CNTRL/logging/configuration", 200, apitest.AuditACLUpdates().Body)
+	h := newHarness(t, f)
+	if code := h.run("acl", "history"); code != 0 {
+		t.Fatalf("exit %d: %s", code, h.err)
+	}
+	lines := strings.Split(strings.TrimSpace(h.out.String()), "\n")
+	for _, word := range []string{"VERSION", "PREVIOUS", "EVENT-TIME"} {
+		if !strings.Contains(lines[0], word) {
+			t.Errorf("the header has no %s:\n%s", word, h.out)
+		}
+	}
+	idRE := regexp.MustCompile(`v1\.[A-Za-z0-9_-]+`)
+	var ids [][]string
+	for _, line := range lines[1:] {
+		if found := idRE.FindAllString(line, -1); len(found) == 2 {
+			ids = append(ids, found)
+		}
+	}
+	if len(ids) != 2 {
+		t.Fatalf("%d rows hold a version and a previous id, want 2:\n%s", len(ids), h.out)
+	}
+	// The ids of a row are those of the entry on its line: the version, then the previous.
+	h = newHarness(t, f)
+	if code := h.run("--json", "acl", "diff", "--from-version", ids[0][1], "--to-version", ids[0][0]); code != 0 {
+		t.Fatalf("diff exit %d: %s", code, h.err)
+	}
+	out := diffJSON(t, h.out.String())
+	if out.Status != "changed" || out.Old.Version != ids[0][1] || out.New.Version != ids[0][0] || out.Old.Source != "version" {
+		t.Errorf("the diff of the ids the text printed: %+v", out)
+	}
+	if ids[0][0] == ids[1][0] || ids[0][1] == ids[0][0] {
+		t.Errorf("the ids repeat: %v", ids)
 	}
 }

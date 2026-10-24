@@ -536,8 +536,8 @@ func TestMCPCommandUsesConfiguredProfile(t *testing.T) {
 	if code := h.run("mcp"); code != 0 {
 		t.Fatalf("exit %d: %s", code, h.err)
 	}
-	if listed != 45 || h.out.Len() != 0 {
-		t.Errorf("listed %d tools (want 45 with alpha); stdout must stay empty, got %q", listed, h.out)
+	if listed != 46 || h.out.Len() != 0 {
+		t.Errorf("listed %d tools (want 46 with alpha); stdout must stay empty, got %q", listed, h.out)
 	}
 }
 

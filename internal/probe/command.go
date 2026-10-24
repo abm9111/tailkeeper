@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"os"
 	"strings"
 	"time"
 
@@ -24,6 +25,12 @@ const DefaultGap = 2 * time.Second
 // written, and 2 for a usage error. A check that differs from the probe table
 // (docs/design.md §22) is a finding, not a failure.
 func Command(ctx context.Context, c *api.Client, args []string, stdout, stderr io.Writer) int {
+	// The same opt-in as the command that calls this: a tagged binary still does not
+	// read the tailnet unless the switch is set, which only the owner-run targets do.
+	if os.Getenv("TAILKEEPER_LIVE") != "1" {
+		usageError(stderr, "probe-acl reads the configured tailnet, so it is opt-in: run it with `make probe-acl`, which sets TAILKEEPER_LIVE=1")
+		return 2
+	}
 	// The requests are spaced 2 s apart; only the tests, through command, may go faster.
 	if a, err := parseArgs(args); err == nil && a.gap < DefaultGap {
 		usageError(stderr, "--gap below "+DefaultGap.String()+" is refused: the live run sends one request every "+DefaultGap.String()+" at most")
@@ -36,9 +43,11 @@ func Command(ctx context.Context, c *api.Client, args []string, stdout, stderr i
 var runProbes = Run
 
 type commandArgs struct {
-	out  string
-	only []string
-	gap  time.Duration
+	out       string
+	against   string
+	only      []string
+	gap       time.Duration
+	selfCheck bool
 }
 
 func parseArgs(args []string) (commandArgs, error) {
@@ -90,6 +99,17 @@ func parseArgs(args []string) (commandArgs, error) {
 				return a, fmt.Errorf("--gap takes a duration between 0 and 1m, such as 2s")
 			}
 			a.gap = d
+		case "--self-check":
+			a.selfCheck = true
+		case "--against":
+			v, err := take()
+			if err != nil {
+				return a, err
+			}
+			if v == "" {
+				return a, fmt.Errorf("--against needs a directory")
+			}
+			a.against = v
 		default:
 			return a, fmt.Errorf("unknown argument %q", name)
 		}
@@ -98,13 +118,17 @@ func parseArgs(args []string) (commandArgs, error) {
 }
 
 func usageError(stderr io.Writer, msg string) {
-	_, _ = fmt.Fprintf(stderr, "tailkeeper: probe-acl: %s\nusage: probe-acl [--out DIR] [--only A-1,A-3] [--gap 2s] (--gap is at least 2s)\n", sanitize.String(msg, sanitize.DefaultMax))
+	_, _ = fmt.Fprintf(stderr, "tailkeeper: probe-acl: %s\nusage: probe-acl [--out DIR] [--only A-1,A-3] [--gap 2s] [--self-check --against DIR] (--gap is at least 2s)\n", sanitize.String(msg, sanitize.DefaultMax))
 }
 
 func command(ctx context.Context, a API, args []string, stdout, stderr io.Writer, now func() time.Time) int {
 	opts, err := parseArgs(args)
 	if err != nil {
 		usageError(stderr, err.Error())
+		return 2
+	}
+	if opts.against != "" && !opts.selfCheck {
+		usageError(stderr, "--against belongs to --self-check, which compares a fresh run with the committed captures")
 		return 2
 	}
 	probes := All()
@@ -116,6 +140,13 @@ func command(ctx context.Context, a API, args []string, stdout, stderr io.Writer
 				selected++
 			}
 		}
+	}
+	if opts.selfCheck {
+		if opts.against == "" {
+			usageError(stderr, "--self-check needs --against DIR, the committed captures")
+			return 2
+		}
+		return selfCheckCommand(ctx, a, opts, stdout, stderr, now)
 	}
 	_, _ = fmt.Fprintf(stdout, "probe-acl: %d %s, read-only (GET, and POST .../acl/validate, which changes nothing), one request every %s; "+
 		"nothing from the tailnet is printed: statuses, key paths, error texts reduced to templates, counts and booleans\n", selected, plural(selected, "probe", "probes"), opts.gap)

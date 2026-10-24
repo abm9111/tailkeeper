@@ -15,6 +15,7 @@ import (
 	"github.com/abm9111/tailkeeper/internal/acl"
 	"github.com/abm9111/tailkeeper/internal/guard"
 	"github.com/abm9111/tailkeeper/internal/registry"
+	"github.com/abm9111/tailkeeper/internal/sanitize"
 	"github.com/abm9111/tailkeeper/internal/tkerr"
 )
 
@@ -518,12 +519,13 @@ func (v *validation) structureProblems(d *acl.Doc, source string, live bool) ([]
 		// The names are cut after the Doc shows them (UnknownSectionsShown), and again here
 		// only to fit a sentence and a pointer.
 		for _, name := range d.UnknownSectionsShown() {
-			msg := "Tailscale will probably reject the section " + quoteName(name) + ": it is not one it knows (json: unknown field)"
+			shown := v.hide(name)
+			msg := "Tailscale will probably reject the section " + quoteName(shown) + ": it is not one it knows (json: unknown field)"
 			if live {
-				msg = "Tailscale accepted the section " + quoteName(name) + ", which this version of tailkeeper does not know"
+				msg = "Tailscale accepted the section " + quoteName(shown) + ", which this version of tailkeeper does not know"
 			}
 			p := v.problem(kindUnknownSection, severityNotice, source, msg)
-			p.Pointer = v.hide("/" + pointerEscape.Replace(cutRunes(name, 128)))
+			p.Pointer = v.hide("/" + pointerEscape.Replace(cutRunes(shown, 128)))
 			out = append(out, p)
 		}
 	}
@@ -626,7 +628,7 @@ func parseInvariants(ctx context.Context, text string) (*invariantSet, []ACLProb
 		line, col := d.Position(m.Name.StartOffset)
 		sec, known := acl.SectionByName(name)
 		if !known || (sec.Name != "tests" && sec.Name != "sshTests") {
-			problems = append(problems, problem(kindStructure, line, col, "/"+pointerEscape.Replace(cutRunes(name, 128)),
+			problems = append(problems, problem(kindStructure, line, col, "/"+pointerEscape.Replace(cutRunes(sanitize.MaskText(name), 128)),
 				"an invariants file holds tests and sshTests and nothing else"))
 			continue
 		}

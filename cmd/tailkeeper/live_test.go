@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"reflect"
 	"regexp"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -18,6 +19,7 @@ import (
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
+	"github.com/abm9111/tailkeeper/internal/privacy"
 	"github.com/abm9111/tailkeeper/internal/registry"
 	"github.com/abm9111/tailkeeper/internal/sanitize"
 	"github.com/abm9111/tailkeeper/internal/tools"
@@ -296,6 +298,9 @@ func wantedExit(tool registry.Tool, raw []byte) (want int, ok bool) {
 
 // exitText names how a command that ended in err ended, without its output.
 func exitText(err error) string {
+	if err == nil {
+		return "exit 0"
+	}
 	var ee *exec.ExitError
 	if errors.As(err, &ee) {
 		return "exit " + strconv.Itoa(ee.ExitCode())
@@ -321,9 +326,21 @@ type liveRun struct {
 	uncovered map[string]bool
 	results   []liveOutcome
 	problems  []string // "<tool>: <kind of problem>", fit to print
-	calls     int      // processes started: each appends one line to the audit log
-	ran       map[string]bool
+	notes     []string // counts and fixed sentences, fit to print
+	calls     int      // tool processes started: each appends one line to the audit log
+	probeRuns int      // doctor --probe processes started: each appends at least one line
+	// probeLines is the lines the doctor probe added to the audit log, as the log counted them
+	// before and after it. They count toward the audit lower bound with calls.
+	probeLines int
+	ran        map[string]bool
 }
+
+// auditLowerBound is the audit lines the run is known to have written: one for each tool
+// call, and the lines the doctor probe wrote.
+func (l *liveRun) auditLowerBound() int { return l.calls + l.probeLines }
+
+// maxProcesses is how many processes the run has started.
+func (l *liveRun) maxProcesses() int { return l.calls + l.probeRuns }
 
 func liveRegistry() *registry.Registry {
 	reg := registry.New()
@@ -337,8 +354,33 @@ func newLiveRun(binary string, env []string, uncovered map[string]bool) *liveRun
 
 func (l *liveRun) problem(tool, kind string) { l.problems = append(l.problems, tool+": "+kind) }
 
+func (l *liveRun) note(s string) { l.notes = append(l.notes, s) }
+
+// answered reports whether the tool's own row was an answer. A further call is made
+// only then: a credential that no tool accepts must not grow the call count past the rows.
+func (l *liveRun) answered(name string) bool {
+	for i := len(l.results) - 1; i >= 0; i-- {
+		if l.results[i].tool == name {
+			return l.results[i].outcome == outcomeOK
+		}
+	}
+	return false
+}
+
 // callWithFile runs the tool's CLI command with a flag that names a file holding content.
 func (l *liveRun) callWithFile(name, content, flag string) map[string]any {
+	return l.invokeFile(name, content, flag, true)
+}
+
+// extraCallWithFile is callWithFile for a tool that already has its row.
+func (l *liveRun) extraCallWithFile(name, content, flag string) map[string]any {
+	if !l.answered(name) {
+		return nil
+	}
+	return l.invokeFile(name, content, flag, false)
+}
+
+func (l *liveRun) invokeFile(name, content, flag string, record bool) map[string]any {
 	dir, err := os.MkdirTemp("", "tailkeeper-live-")
 	if err != nil {
 		l.problem(name, "cannot make a directory for its input file")
@@ -350,12 +392,25 @@ func (l *liveRun) callWithFile(name, content, flag string) map[string]any {
 		l.problem(name, "cannot write its input file")
 		return nil
 	}
-	return l.call(name, flag, path)
+	return l.invoke(name, record, flag, path)
 }
 
 // call runs the tool's CLI command with extra arguments. It returns the result
 // document when the tool answered, and nil otherwise.
 func (l *liveRun) call(name string, extra ...string) map[string]any {
+	return l.invoke(name, true, extra...)
+}
+
+// extraCall is a further call of a tool that already has its row. It counts toward
+// the audit lower bound and adds no result row. It runs only when that row answered.
+func (l *liveRun) extraCall(name string, extra ...string) map[string]any {
+	if !l.answered(name) {
+		return nil
+	}
+	return l.invoke(name, false, extra...)
+}
+
+func (l *liveRun) invoke(name string, record bool, extra ...string) map[string]any {
 	tool, ok := l.reg.Get(name)
 	if !ok {
 		l.problem(name, "is not a registered tool")
@@ -372,7 +427,11 @@ func (l *liveRun) call(name string, extra ...string) map[string]any {
 	err := cmd.Run()
 	raw := []byte(stdout.String())
 	res := liveOutcome{tool: name, bytes: len(raw), outcome: outcomeFail}
-	defer func() { l.results = append(l.results, res) }()
+	defer func() {
+		if record {
+			l.results = append(l.results, res)
+		}
+	}()
 
 	if ctx.Err() != nil {
 		res.code = "timeout"
@@ -447,6 +506,16 @@ func (l *liveRun) get(name string, d discovery) map[string]any {
 	return nil
 }
 
+// The copies sent to acl_validate besides the live policy. An empty patch is a no-op.
+// The baseline patch adds one documentation host so the text is not the live policy byte
+// for byte: a byte-identical text treats every warning as existing without reading the
+// baseline.
+const (
+	emptyPatch       = "[]\n"
+	baselinePatch    = "[{\"op\":\"add\",\"path\":\"/hosts/tk-live-check\",\"value\":\"192.0.2.1\"}]\n"
+	baselineNewHosts = "[{\"op\":\"add\",\"path\":\"/hosts\",\"value\":{\"tk-live-check\":\"192.0.2.1\"}}]\n"
+)
+
 // all runs every tool once and checks that none was left out.
 func (l *liveRun) all() {
 	devices := l.call("devices_list")
@@ -457,7 +526,12 @@ func (l *liveRun) all() {
 	posture := l.call("posture_integrations_list")
 	userInvites := l.call("user_invites_list")
 	apps := l.call("oauth_apps_list")
-	for _, name := range []string{"acl_get", "acl_validate", "contacts_get", "dns_get", "settings_get", "audit_log", "network_flow_logs",
+	aclGet := l.call("acl_get")
+	history := l.call("acl_history")
+	l.call("acl_validate")
+	dns := l.call("dns_get")
+	settings := l.call("settings_get")
+	for _, name := range []string{"contacts_get", "audit_log", "network_flow_logs",
 		"local_dns_status", "local_funnel_status", "local_lock_status", "local_metrics", "local_netcheck", "local_prefs",
 		"local_serve_status", "local_syspolicy", "local_version", "local_whoami"} {
 		l.call(name)
@@ -468,7 +542,7 @@ func (l *liveRun) all() {
 	// Documentation addresses: the source exists nowhere. Tailscale may answer that
 	// the test passes or that it fails (it cannot resolve the source); both are
 	// its answer, read by the tool, and either exits as the tool says.
-	l.call("acl_test", "203.0.113.5", "--deny", "198.51.100.7:1")
+	tested := l.call("acl_test", "203.0.113.5", "--deny", "198.51.100.7:1")
 	l.call("log_streaming_get", "configuration")
 	ip := l.call("local_ip")
 	status := l.call("local_status", "--peers")
@@ -492,7 +566,395 @@ func (l *liveRun) all() {
 	// lets local_dns_query resolve it.
 	l.get("local_dns_query", selfDNSName(status))
 
+	if l.answered("dns_get") && !l.uncovered["dns_get"] {
+		l.field("dns_get", dns, "policyOverridesAnalysed", "true")
+	}
+	l.note(fmt.Sprintf("acl_get: stored warnings %d", countAt(aclGet, "warnings")))
+	l.note(verdictNote(tested))
+	l.policyCopies(countAt(aclGet, "warnings"))
+	l.versionPair(history)
+	l.pseudonymTest(users)
+	l.gitopsOracle(settings)
+	l.doctorProbe()
+
 	l.verifyCoverage()
+}
+
+// policyCopies validates the live policy two further ways, neither of them a new row: an
+// empty patch, and a copy that is not the live policy byte for byte so the warnings
+// baseline is actually read. A copy whose own tests fail on the tailnet is a note: the
+// tailnet's tests are the owner's, and the copy check was not made. The invariants path is
+// not exercised: an empty file applies nothing, and no test is known to hold on the live
+// policy, so the run says it was not run.
+func (l *liveRun) policyCopies(stored int) {
+	if !l.answered("acl_validate") {
+		return
+	}
+	patched := l.extraCallWithFile("acl_validate", emptyPatch, "--patch")
+	l.copyPassed(patched, "patch")
+	l.note(fmt.Sprintf("acl_validate: patch new warnings %d", countAt(patched, "newWarnings")))
+
+	l.note("acl_validate: invariants not run: no test is known to hold on the live policy, and an empty file proves nothing")
+
+	baseline := l.extraCallWithFile("acl_validate", baselinePatch, "--patch")
+	if got, _ := scalarAt(baseline, "status"); got == "invalid" {
+		baseline = l.extraCallWithFile("acl_validate", baselineNewHosts, "--patch")
+	}
+	if l.copyPassed(baseline, "baseline") {
+		l.field("acl_validate", baseline, "identicalToLive", "false")
+		l.note(baselineNote(stored, baseline))
+	}
+}
+
+// copyPassed reports whether a validated copy passed. A copy the tailnet's own tests fail
+// (status fail) is a note naming the check that was not made: neither a failure of the
+// harness nor a pass of the check. Any other status but pass is a problem.
+func (l *liveRun) copyPassed(doc map[string]any, what string) bool {
+	got, ok := scalarAt(doc, "status")
+	if ok && got == "fail" {
+		l.note("acl_validate: " + what + " copy check not made: the tailnet's own tests answered fail")
+		return false
+	}
+	l.field("acl_validate", doc, "status", "pass")
+	return ok && got == "pass"
+}
+
+// versionPair compares the last row of the first page acl_history returned with itself.
+// The history is oldest first, so with more than one page that row is not the newest; a
+// comparison of a version with itself is equal whichever row it is, so the check proves
+// that a stored version can be read and diffed, not which one. An empty history names
+// nothing, which is none, not a failure.
+func (l *liveRun) versionPair(history map[string]any) {
+	if !l.answered("acl_history") {
+		return
+	}
+	version := lastVersion(history)
+	if version == "" {
+		l.note("acl_diff: version pair none")
+		return
+	}
+	diff := l.extraCall("acl_diff", "--from-version", version, "--to-version", version)
+	l.field("acl_diff", diff, "status", "equal")
+}
+
+// pseudonymTest asks acl_test about one user by the pseudonym users_list showed.
+// With no pseudonym in the list there is nothing to ask, which is none, not a failure.
+func (l *liveRun) pseudonymTest(users map[string]any) {
+	if !l.answered("users_list") {
+		l.note("acl_test: pseudonym none")
+		return
+	}
+	ref := pseudonymOf(users)
+	if ref == "" {
+		l.note("acl_test: pseudonym none")
+		return
+	}
+	doc := l.extraCall("acl_test", ref, "--deny", "192.0.2.1:1")
+	got, ok := scalarAt(doc, "status")
+	switch {
+	case ok && (got == "pass" || got == "fail" || got == "unresolved" || got == "unknown"):
+	default:
+		l.problem("acl_test", "field status is not a typed status")
+	}
+}
+
+// gitopsOracle compares the owner's policy file with the live policy when the owner
+// asked and the settings say the policy is managed outside the admin console. The
+// path is never printed. Without the variable the run says it was not requested.
+func (l *liveRun) gitopsOracle(settings map[string]any) {
+	src := envValue(l.env, "TAILKEEPER_LIVE_POLICY_SOURCE")
+	if src == "" {
+		l.note("GitOps oracle: not requested")
+		return
+	}
+	managed, _ := scalarAt(settings, "externallyManaged")
+	if !l.answered("settings_get") || managed != "true" {
+		l.note("GitOps oracle: not run")
+		return
+	}
+	diff := l.extraCall("acl_diff", "--against", src)
+	l.field("acl_diff", diff, "status", "equal")
+}
+
+// doctorProbe runs doctor --probe. Exit 0, or 8 with a count of failing checks, is the
+// probe's answer, and the rows are judged (judgeDoctorRows): the checks themselves are not
+// printed, because a detail can quote the tailnet. An error document, any other exit, an
+// output that is not one JSON document or holds no count is a failure, and so is output the
+// other live checks would refuse. The probe writes audit lines of its own; they count toward
+// the audit lower bound, and a probe that wrote none is a failure.
+func (l *liveRun) doctorProbe() {
+	before, measured := l.auditNow()
+	l.probeRuns++
+	ctx, cancel := context.WithTimeout(context.Background(), callTimeout)
+	defer cancel()
+	cmd := exec.CommandContext(ctx, l.bin, "doctor", "--probe", "--json")
+	cmd.Env = l.env
+	var stdout strings.Builder
+	cmd.Stdout = &stdout
+	err := cmd.Run()
+	timedOut := ctx.Err() != nil
+	after, measuredAfter := l.auditNow()
+	switch {
+	case !measured || !measuredAfter:
+		l.note("doctor: audit lines not measured")
+	case after-before < 1:
+		l.problem("doctor", "the probe wrote no audit line")
+	default:
+		l.probeLines += after - before
+	}
+	if timedOut {
+		l.problem("doctor", "probe did not finish in time")
+		return
+	}
+	l.doctorReport([]byte(stdout.String()), err)
+}
+
+// The rows of the doctor's report the live run reads by name. The four policy probes must
+// read ok; a kind probe may read n/a, because a tailnet with no source for a kind (no tag, no
+// host alias) has nothing to ask. The names are fixed words.
+var (
+	policyProbeRows = []string{"probe policy rejection", "probe details keys", "probe invariants canary", "probe ssh tests"}
+	kindProbeRows   = []string{"probe tag", "probe host alias", "probe IPv4 address", "probe IPv6 address", "probe ICMP, port 0"}
+)
+
+// canaryTestRow is the row of the canary test, a test no policy can pass. It must be there, and
+// it reads n/a only when the live policy defines no tag to build the test with.
+const canaryTestRow = "probe acl_test"
+
+// doctorReport judges the output of doctor --probe --json and the way the process ended.
+func (l *liveRun) doctorReport(raw []byte, err error) {
+	var doc map[string]any
+	if json.Unmarshal(raw, &doc) != nil {
+		doc = nil
+	}
+	problems, _ := checks(raw, doc, nil)
+	for _, p := range problems {
+		l.problem("doctor", p)
+	}
+	if doc == nil {
+		l.problem("doctor", fmt.Sprintf("probe printed no JSON document (%d bytes, %s)", len(raw), exitText(err)))
+		return
+	}
+	if _, isErr := doc["error"].(map[string]any); isErr {
+		code, _ := scalarAt(doc, "error.code")
+		l.problem("doctor", fmt.Sprintf("probe printed an error document, code %q (%s)", safeCode(code), exitText(err)))
+		return
+	}
+	exit := exitCode(err)
+	if exit != 0 && exit != 8 {
+		l.problem("doctor", fmt.Sprintf("probe exit %d", exit))
+		return
+	}
+	failed, ok := scalarAt(doc, "failed")
+	n, convErr := strconv.Atoi(failed)
+	if !ok || convErr != nil || n < 0 {
+		l.problem("doctor", "probe printed no count of failing checks")
+		return
+	}
+	if (exit == 0) != (n == 0) {
+		l.problem("doctor", fmt.Sprintf("probe exited %d but reports %d failing checks", exit, n))
+		return
+	}
+	problems, notes := judgeDoctorRows(doc, n)
+	for _, p := range problems {
+		l.problem("doctor", p)
+	}
+	for _, note := range notes {
+		l.note("doctor: " + note)
+	}
+	l.note("doctor: " + failed + " failing checks")
+}
+
+// rowNameRE is a row name fit to print: the fixed words the doctor names its rows with. Any
+// other name, which could carry a value from the tailnet, is printed as "a row".
+var rowNameRE = regexp.MustCompile(`^[A-Za-z][A-Za-z0-9 ,_-]{0,40}$`)
+
+// judgeDoctorRows reads the rows of a doctor report. failed is the count the report states.
+// A row that fails is a problem, and so is a count that is not the number of rows that fail.
+// The canary test and each of the four policy probes must read ok, and the canary test may
+// read n/a when the live policy defines no tag, which is a note. A kind probe must read ok, or
+// n/a when the tailnet has no source for the kind, which is a note. A row named probe that warns is a
+// problem, and so is a probe row that is absent: a reading not established is never a pass. A
+// warning on any other row is the owner's to read in doctor, not the probe's. Every line
+// names a row and its status, never its detail.
+func judgeDoctorRows(doc map[string]any, failed int) (problems, notes []string) {
+	rows, _ := doc["checks"].([]any)
+	seen := map[string]bool{}
+	failing := 0
+	for _, raw := range rows {
+		row, _ := raw.(map[string]any)
+		name, _ := row["name"].(string)
+		status, _ := row["status"].(string)
+		seen[name] = true
+		label := "a row"
+		if rowNameRE.MatchString(name) {
+			label = name
+		}
+		isPolicy, isKind, isCanary := slices.Contains(policyProbeRows, name), slices.Contains(kindProbeRows, name), name == canaryTestRow
+		reads := func() string { return label + " reads " + status }
+		switch status {
+		case "ok":
+		case "info":
+			if isPolicy || isKind || isCanary {
+				problems = append(problems, reads())
+			}
+		case "n/a":
+			switch {
+			case isPolicy:
+				problems = append(problems, reads())
+			case isKind:
+				notes = append(notes, label+" not probed: no source in the tailnet")
+			case isCanary:
+				notes = append(notes, label+" not probed: the live policy defines no tag")
+			}
+		case "warn":
+			if strings.HasPrefix(name, "probe ") {
+				problems = append(problems, reads())
+			}
+		case "fail":
+			failing++
+			problems = append(problems, reads())
+		default:
+			problems = append(problems, label+" reads an unknown status")
+		}
+	}
+	for _, name := range append(append([]string{canaryTestRow}, policyProbeRows...), kindProbeRows...) {
+		if !seen[name] {
+			problems = append(problems, name+" is absent")
+		}
+	}
+	if failing != failed {
+		problems = append(problems, fmt.Sprintf("the count of failing checks is %d and %d rows fail", failed, failing))
+	}
+	return problems, notes
+}
+
+// auditNow counts the lines of the audit log of the run's environment. ok is false when the
+// count could not be read.
+func (l *liveRun) auditNow() (n int, ok bool) {
+	n, err := auditCountOf(l.bin, l.env)
+	return n, err == nil
+}
+
+// field checks one scalar in a result. The problem names the path and the wanted
+// value, never the value that was there.
+func (l *liveRun) field(tool string, doc map[string]any, path, want string) {
+	got, ok := scalarAt(doc, path)
+	if !ok || got != want {
+		l.problem(tool, "field "+path+" is not "+want)
+	}
+}
+
+// scalarAt reads a dotted path of object keys. A missing path is not a value.
+func scalarAt(doc map[string]any, path string) (string, bool) {
+	var cur any = doc
+	for _, part := range strings.Split(path, ".") {
+		switch node := cur.(type) {
+		case map[string]any:
+			next, ok := node[part]
+			if !ok {
+				return "", false
+			}
+			cur = next
+		default:
+			return "", false
+		}
+	}
+	switch v := cur.(type) {
+	case string:
+		return v, true
+	case bool:
+		return strconv.FormatBool(v), true
+	case float64:
+		return strconv.FormatInt(int64(v), 10), true
+	default:
+		return "", false
+	}
+}
+
+// countAt is the length of the array at path, or 0 when the path is absent.
+func countAt(doc map[string]any, path string) int {
+	var cur any = doc
+	for _, part := range strings.Split(path, ".") {
+		m, ok := cur.(map[string]any)
+		if !ok {
+			return 0
+		}
+		cur = m[part]
+	}
+	rows, _ := cur.([]any)
+	return len(rows)
+}
+
+// lastVersion is the version of the last row of the page: the newest only when the history
+// fits on one page.
+func lastVersion(doc map[string]any) string {
+	rows, _ := doc["versions"].([]any)
+	if len(rows) == 0 {
+		return ""
+	}
+	last, _ := rows[len(rows)-1].(map[string]any)
+	s, _ := last["version"].(string)
+	return s
+}
+
+func pseudonymOf(doc map[string]any) string {
+	rows, _ := doc["users"].([]any)
+	for _, row := range rows {
+		m, _ := row.(map[string]any)
+		s, _ := m["loginName"].(string)
+		if ref, ok := privacy.Ref(s); ok {
+			return ref
+		}
+	}
+	return ""
+}
+
+func verdictNote(doc map[string]any) string {
+	var allowed, denied, unresolved, unknown int
+	rows, _ := doc["verdicts"].([]any)
+	for _, row := range rows {
+		m, _ := row.(map[string]any)
+		switch m["verdict"] {
+		case "allowed":
+			allowed++
+		case "denied":
+			denied++
+		case "unresolved":
+			unresolved++
+		case "unknown":
+			unknown++
+		}
+	}
+	return fmt.Sprintf("acl_test: verdicts allowed %d, denied %d, unresolved %d, unknown %d, unmatched %d",
+		allowed, denied, unresolved, unknown, countAt(doc, "unmatched"))
+}
+
+// baselineNote records how the word-for-word warning rule classified the copy.
+// The warning text is not part of the line.
+func baselineNote(stored int, doc map[string]any) string {
+	existing := countAt(doc, "existingWarnings")
+	newer := countAt(doc, "newWarnings")
+	var spelling string
+	switch {
+	case stored == 0:
+		spelling = "none"
+	case existing > 0:
+		spelling = "matched"
+	default:
+		spelling = "differed"
+	}
+	return fmt.Sprintf("acl_validate: baseline stored %d, existing %d, new %d, spelling %s", stored, existing, newer, spelling)
+}
+
+func envValue(env []string, key string) string {
+	prefix := key + "="
+	for _, kv := range env {
+		if strings.HasPrefix(kv, prefix) {
+			return kv[len(prefix):]
+		}
+	}
+	return ""
 }
 
 // verifyCoverage adds a problem for every registered tool the run did not exercise,
@@ -555,24 +1017,35 @@ func dash(s string) string {
 // then the archives it continues, each on a line of its own.
 var auditRE = regexp.MustCompile(`^[^\n]*: (\d+) lines, chain intact\n`)
 
-// auditLinesOf returns how many lines the audit log of the environment env holds,
-// from the first line `tailkeeper audit verify` (run as binary) prints, and fails
-// the test if the chain is not intact or the log cannot be read.
-func auditLinesOf(t *testing.T, binary string, env []string) int {
-	t.Helper()
-	cmd := exec.Command(binary, "audit", "verify")
+// auditCountOf returns how many lines the audit log of the environment env holds, from the
+// first line `tailkeeper audit verify` (run as binary) prints. It is an error when the chain
+// is not intact or the log cannot be read.
+func auditCountOf(binary string, env []string) (int, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), callTimeout)
+	defer cancel()
+	cmd := exec.CommandContext(ctx, binary, "audit", "verify")
 	cmd.Env = env
 	out, err := cmd.Output()
 	if err != nil {
-		t.Fatalf("tailkeeper audit verify failed (%s)", exitText(err))
+		return 0, fmt.Errorf("tailkeeper audit verify failed (%s)", exitText(err))
 	}
 	m := auditRE.FindSubmatch(out)
 	if m == nil {
-		t.Fatal("tailkeeper audit verify did not report an intact chain on its first line")
+		return 0, errors.New("tailkeeper audit verify did not report an intact chain on its first line")
 	}
 	n, err := strconv.Atoi(string(m[1]))
 	if err != nil {
-		t.Fatal("tailkeeper audit verify printed a line count that is not a number")
+		return 0, errors.New("tailkeeper audit verify printed a line count that is not a number")
+	}
+	return n, nil
+}
+
+// auditLinesOf is auditCountOf that fails the test when the count cannot be read.
+func auditLinesOf(t *testing.T, binary string, env []string) int {
+	t.Helper()
+	n, err := auditCountOf(binary, env)
+	if err != nil {
+		t.Fatal(err)
 	}
 	return n
 }
@@ -600,6 +1073,9 @@ func TestLiveReads(t *testing.T) {
 	l := newLiveRun(bin, liveEnv(), uncovered)
 	before := auditLines(t)
 	l.all()
+	for _, n := range l.notes {
+		t.Log(n)
+	}
 	for _, p := range l.problems {
 		t.Errorf("%s", p)
 	}
@@ -629,7 +1105,7 @@ func TestLiveReads(t *testing.T) {
 		t.Logf("listed as unavailable, yet answered: %s", strings.Join(answered, ", "))
 	}
 	// The audit check is a lower bound (see auditGrowthProblem).
-	if p := auditGrowthProblem(before, auditLines(t), l.calls); p != "" {
+	if p := auditGrowthProblem(before, auditLines(t), l.auditLowerBound()); p != "" {
 		t.Errorf("%s", p)
 	}
 }

@@ -67,7 +67,12 @@ func TestTheCountsInTheReadmeAndTheMakefileAreTheRegistrys(t *testing.T) {
 		return string(b)
 	}
 	readme, makefile := read("../../README.md"), read("../../Makefile")
-	for _, p := range countProblems(readme, makefile, api, local, api+local) {
+	// The live run starts one process per tool, and seven more at most: an empty
+	// patch, a copy of the policy that is not byte-identical, its second spelling, a
+	// stored version compared with itself, one acl_test by pseudonym, the GitOps
+	// oracle's diff and doctor --probe.
+	const further = 7
+	for _, p := range countProblems(readme, makefile, api, local, api+local+further) {
 		t.Error(p)
 	}
 	// The check can fail, in each of its ways. The samples are written here, so that a
@@ -76,8 +81,8 @@ func TestTheCountsInTheReadmeAndTheMakefileAreTheRegistrys(t *testing.T) {
 		return fmt.Sprintf("tailkeeper reads the Tailscale API (%d tools, two of them for alpha features, which MCP lists only with `--enable-alpha`) and this node's Tailscale state (%d tools).", api, local),
 			fmt.Sprintf("# The go test timeout is 1500s. Each of the %d calls may take up to 90s (live_test.go),", calls)
 	}
-	goodReadme, goodMakefile := sample(api, local, api+local)
-	if p := countProblems(goodReadme, goodMakefile, api, local, api+local); len(p) != 0 {
+	goodReadme, goodMakefile := sample(api, local, api+local+further)
+	if p := countProblems(goodReadme, goodMakefile, api, local, api+local+further); len(p) != 0 {
 		t.Errorf("samples with the registry's counts: %v", p)
 	}
 	for name, c := range map[string]struct {
