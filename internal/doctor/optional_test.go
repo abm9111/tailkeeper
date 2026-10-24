@@ -2,6 +2,7 @@ package doctor
 
 import (
 	"context"
+	"strings"
 	"testing"
 
 	"github.com/abm9111/tailkeeper/internal/registry"
@@ -48,6 +49,36 @@ func TestOptionalScopesAreInfoNotFailures(t *testing.T) {
 		return
 	}
 	t.Fatalf("no optional scopes check: %+v", r.Checks)
+}
+
+func TestAMissingOptionalPolicyScopeIsInformationInDoctorNamingDNSGet(t *testing.T) {
+	scopes := strings.Join(strings.Fields(strings.ReplaceAll(allReadScopes(t), "policy_file:read", "")), " ")
+	f, a := newApp(t, scopes)
+	f.JSON("GET", keyPath, 200, `{"id":"test-client-id","keyType":"client","expires":"2027-01-01T00:00:00Z"}`)
+	r := Run(context.Background(), Input{App: a, Now: now})
+	var optional, failed string
+	for _, c := range r.Checks {
+		switch {
+		case c.Name == "optional scopes":
+			optional = c.Detail
+			if c.Status != Info {
+				t.Errorf("optional scopes status = %s, want Info", c.Status)
+			}
+		case c.Name == "scopes" && c.Status == Warn:
+			failed = c.Detail
+		case c.Status == Fail && strings.Contains(c.Detail, "dns_get"):
+			t.Errorf("a failure is attributed to dns_get: %+v", c)
+		}
+	}
+	if !strings.Contains(optional, "policy_file:read") || !strings.Contains(optional, "dns_get (analyse extraDNSRecords and DNS node attributes in the policy)") {
+		t.Errorf("optional scopes = %q", optional)
+	}
+	if strings.Contains(optional, "acl_get") || strings.Contains(optional, "acl_test") || strings.Contains(optional, "acl_validate") || strings.Contains(optional, "acl_diff") {
+		t.Errorf("another tool's feature is attributed to the policy scope of dns_get: %q", optional)
+	}
+	if !strings.Contains(failed, "acl_get") || strings.Contains(failed, "dns_get") {
+		t.Errorf("the tools that will fail = %q, and dns_get must not be among them", failed)
+	}
 }
 
 func TestAGrantedOptionalScopeIsNotReported(t *testing.T) {

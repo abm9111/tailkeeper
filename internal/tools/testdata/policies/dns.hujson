@@ -1,0 +1,25 @@
+{
+  // extraDNSRecords and the DNS node attributes dns_get reads.
+  "extraDNSRecords": [
+    {"Name": "a.example.com", "Type": "A", "Value": "192.0.2.10"},
+    {"Name": "aaaa.example.com", "Value": "2001:db8::10"},
+  ],
+  "nodeAttrs": [
+    {
+      "target": ["tag:dns", "*"],
+      "attr": [
+        "nextdns:abc123",
+        "nextdns:no-device-info",
+        "controld:def456?priority=7",
+        "magicdns-aaaa",
+        "dns-subdomain-resolve",
+        "dns-forwarder-disable-tcp-retries",
+        "disable-split-dns-when-no-custom-resolvers",
+        "disable-local-dns-override-via-nrpt",
+        "disable-hosts-file-updates",
+        "force-register-magicdns-ipv4-only",
+        "dns-lookalike",
+      ],
+    },
+  ],
+}

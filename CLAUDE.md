@@ -15,7 +15,7 @@ tailkeeper is a read-only Tailscale CLI and stdio MCP server in Go. The design a
 - Never copy a tailnet ID, OAuth client IDs, device addresses or internal hostnames into chat, commits, docs or tests. `tailkeeper doctor` shows only the first four characters of the tailnet and OAuth client IDs, and `tailkeeper audit tail` those of the tailnet ID unless the configuration sets `"personalData": "show"`; the log file itself holds the whole ID, so read it through `audit tail`.
 - Never read, print or copy the privacy key (TAILKEEPER_PRIVACY_KEY); tests build keys with strings.Repeat.
 - Tests use the fake API in `internal/api/apitest`; never point a test at the real API.
-- tailkeeper only reads. Apart from the credential's token request, its only API request other than GET is `POST .../acl/validate`: `acl_test` and `acl_validate` send a test, the live policy or a proposed policy to Tailscale for validation, which changes nothing, and send nothing else; the API client refuses any other, and the fake API fails any test in which one gets past that guard. Policy and settings changes are the owner's, made in the admin console. Write tools arrive in M2, behind an approval gate.
+- tailkeeper only reads. Apart from the credential's token request, its only API request other than GET is `POST .../acl/validate`: `acl_test`, `acl_validate` and `doctor --probe` send a test, the live policy, a proposed policy or a synthetic document to Tailscale for validation, which changes nothing, and send nothing else; the API client refuses any other, and the fake API fails any test in which one gets past that guard. Policy and settings changes are the owner's, made in the admin console. Write tools arrive in M2, behind an approval gate.
 
 ## The installed binary
 

@@ -170,3 +170,21 @@ file: format_markdown.go
 old: \tif len(rep.Facts) > 0 {
 new: \tif false {
 kill: TestEveryLayoutOfACLTestMatchesItsGolden
+
+mutant: --from-version is accepted beside --against live
+file: flags.go
+old: if f.val.set {\n\t\t\tfiles[f.flag] = true
+new: if f.val.set && !(f.live && f.val.v == "live") {\n\t\t\tfiles[f.flag] = true
+kill: TestAVersionFlagClashesWithTheTextOfTheSameSide
+
+mutant: doctor --policy asks for the credential before it checks the starter input
+file: cli.go
+old: \tif *policy {\n\t\tif err := doctor.CheckStarterInput(in); err != nil {\n\t\t\treturn r.fail(err, asJSON())\n\t\t}\n\t}\n
+new: 
+kill: TestAStarterTheCommandCannotWriteIsRefusedBeforeTheCredentialIsAsked
+
+mutant: the doctor --probe help says one synthetic document
+file: cli.go
+old: two synthetic documents
+new: one synthetic document
+kill: TestTheProbeHelpSaysWhatTheProbeSends

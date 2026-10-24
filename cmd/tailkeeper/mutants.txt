@@ -1,0 +1,392 @@
+# Mutants of cmd/tailkeeper: each is a change to the code that a test must notice.
+# scripts/mutate.go says what the format is. Run with MUTATE_PKG=cmd/tailkeeper.
+
+mutant: an extra call of a tool adds a second result row
+file: live_test.go
+old: return l.invoke(name, false, extra...)
+new: return l.invoke(name, true, extra...)
+kill: TestAnExtraCallCountsTowardTheAuditLowerBoundButAddsNoRow
+
+mutant: a field check repeats the value it found
+file: live_test.go
+old: l.problem(tool, "field "+path+" is not "+want)
+new: l.problem(tool, "field "+path+" is not "+want+": "+got)
+kill: TestAFieldCheckNamesThePathAndNeverTheValue
+
+mutant: the self-check closes with a count that is not the number of checks the run must make
+file: live_policy_test.go
+old: case closing != want:
+new: case closing == want:
+kill: TestTheSelfCheckIsJudgedOnEveryLineItPrintsAndTheNumberOfChecksItMakes
+
+mutant: the closing count is not compared with the lines printed
+file: live_policy_test.go
+old: case checkLines != closing:
+new: case checkLines == closing:
+kill: TestTheSelfCheckIsJudgedOnEveryLineItPrintsAndTheNumberOfChecksItMakes
+
+mutant: a self-check that exits non-zero is not a problem
+file: live_policy_test.go
+old: problems = append(problems, fmt.Sprintf("self-check exit %d", code))
+new: _ = problems
+kill: TestTheSelfCheckIsJudgedOnEveryLineItPrintsAndTheNumberOfChecksItMakes
+
+mutant: a failing self-check hides its lines
+file: live_policy_test.go
+old: lines = append(lines, line)
+new: if code == 0 {\n\t\t\tlines = append(lines, line)\n\t\t}
+kill: TestTheSelfCheckIsJudgedOnEveryLineItPrintsAndTheNumberOfChecksItMakes
+
+mutant: a check that did not hold is not a problem
+file: live_policy_test.go
+old: if notHeld > 0 {
+new: if notHeld > 99 {
+kill: TestTheSelfCheckIsJudgedOnEveryLineItPrintsAndTheNumberOfChecksItMakes
+
+mutant: a line that is not of the forms the self-check prints is logged
+file: live_policy_test.go
+old: a boolean or a probe name")\n\t\t\tcontinue
+new: a boolean or a probe name")\n\t\t\t_ = line
+kill: TestTheSelfCheckIsJudgedOnEveryLineItPrintsAndTheNumberOfChecksItMakes
+
+mutant: the doctor probe accepts an exit of 1
+file: live_test.go
+old: if exit != 0 && exit != 8 {
+new: if exit != 0 && exit != 8 && exit != 1 {
+kill: TestTheDoctorProbeJudgesItsOutputAndItsExit
+
+mutant: the doctor probe takes an error document for a report
+file: live_test.go
+old: if _, isErr := doc["error"].(map[string]any); isErr {
+new: if _, isErr := doc["error"].(map[string]any); isErr && false {
+kill: TestTheDoctorProbeJudgesItsOutputAndItsExit
+
+mutant: the output of the doctor probe is not scanned
+file: live_test.go
+old: problems, _ := checks(raw, doc, nil)\n\tfor _, p := range problems {\n\t\tl.problem("doctor", p)
+new: problems, _ := checks(raw, doc, nil)\n\tfor _, p := range problems {\n\t\t_ = p
+kill: TestTheDoctorProbeJudgesItsOutputAndItsExit
+
+mutant: empty output of the doctor probe is a count of nothing
+file: live_test.go
+old: if doc == nil {\n\t\tl.problem(
+new: if doc == nil && false {\n\t\tl.problem(
+kill: TestTheDoctorProbeJudgesItsOutputAndItsExit
+
+mutant: a negative count of failing checks is a count
+file: live_test.go
+old: if !ok || convErr != nil || n < 0 {
+new: if !ok || convErr != nil {
+kill: TestTheDoctorProbeJudgesItsOutputAndItsExit
+
+mutant: the doctor probe's exit need not agree with its count
+file: live_test.go
+old: if (exit == 0) != (n == 0) {
+new: if false {
+kill: TestTheDoctorProbeJudgesItsOutputAndItsExit
+
+mutant: an exit that did not come from a process reads as did not run
+file: live_test.go
+old: return "exit 0"
+new: return "did not run"
+kill: TestTheDoctorProbeJudgesItsOutputAndItsExit
+
+mutant: a probe that wrote no audit line passes
+file: live_test.go
+old: case after-before < 1:
+new: case after-before < 0:
+kill: TestTheDoctorProbeCountsItsAuditLinesAndFailsWhenItWroteNone
+
+mutant: the audit lines of the doctor probe are not kept
+file: live_test.go
+old: l.probeLines += after - before
+new: l.probeLines += 0
+kill: TestTheDoctorProbeCountsItsAuditLinesAndFailsWhenItWroteNone
+
+mutant: the audit lower bound leaves out the doctor probe's lines
+file: live_test.go
+old: return l.calls + l.probeLines
+new: return l.calls
+kill: TestTheDoctorProbeCountsItsAuditLinesAndFailsWhenItWroteNone
+
+mutant: the doctor probe is not counted among the processes
+file: live_test.go
+old: return l.calls + l.probeRuns
+new: return l.calls
+kill: TestTheDoctorProbeCountsItsAuditLinesAndFailsWhenItWroteNone|TestTheCallCountInTheMakefileCommentIsTheMostProcessesARunCanStart
+
+mutant: a copy the tailnet's own tests fail is a failure of the harness
+file: live_test.go
+old: if ok && got == "fail" {
+new: if ok && got == "never" {
+kill: TestATailnetWhoseOwnTestsFailIsANoteAndTheCopyCheckIsNotMade
+
+mutant: a copy that did not pass is classified as a baseline
+file: live_test.go
+old: return ok && got == "pass"
+new: return true
+kill: TestATailnetWhoseOwnTestsFailIsANoteAndTheCopyCheckIsNotMade
+
+mutant: a copy's status is not required to be pass
+file: live_test.go
+old: \tl.field("acl_validate", doc, "status", "pass")\n\treturn
+new: \treturn
+kill: TestATailnetWhoseOwnTestsFailIsANoteAndTheCopyCheckIsNotMade
+
+mutant: the invariants check is not recorded as not run
+file: live_test.go
+old: l.note("acl_validate: invariants not run: no test is known to hold on the live policy, and an empty file proves nothing")
+new: _ = stored
+kill: TestTheInvariantsCheckIsRecordedAsNotRunAndSendsNoEmptyFile
+
+mutant: an empty invariants file is sent again
+file: live_test.go
+old: l.note("acl_validate: invariants not run: no test is known to hold on the live policy, and an empty file proves nothing")
+new: l.extraCallWithFile("acl_validate", "{}\\n", "--invariants")
+kill: TestTheInvariantsCheckIsRecordedAsNotRunAndSendsNoEmptyFile
+
+mutant: the oracle does not require equal
+file: live_test.go
+old: diff := l.extraCall("acl_diff", "--against", src)\n\tl.field("acl_diff", diff, "status", "equal")
+new: diff := l.extraCall("acl_diff", "--against", src)\n\t_ = diff
+kill: TestTheGitOpsOracleFailsWhenTheOwnersFileIsNotTheLivePolicy
+
+mutant: the oracle diffs a different file
+file: live_test.go
+old: l.extraCall("acl_diff", "--against", src)
+new: l.extraCall("acl_diff", "--against", "other.hujson")
+kill: TestTheGitOpsOracleDiffsTheOwnersFileAgainstTheLivePolicyAndHoldsWhenEqual
+
+mutant: the baseline copy may be the live policy byte for byte
+file: live_test.go
+old: l.field("acl_validate", baseline, "identicalToLive", "false")
+new: _ = baseline
+kill: TestACopyThatIsTheLivePolicyByteForByteFailsTheBaselineCheck
+
+mutant: the oracle runs though the policy is not managed outside the console
+file: live_test.go
+old: if !l.answered("settings_get") || managed != "true" {
+new: if !l.answered("settings_get") || (managed != "true" && false) {
+kill: TestTheGitOpsOracleIsNotRunWhenThePolicyIsNotExternallyManagedAndItPrintsNoPath
+
+mutant: the version pair takes the first row
+file: live_test.go
+old: last, _ := rows[len(rows)-1].(map[string]any)
+new: last, _ := rows[0].(map[string]any)
+kill: TestVersionPairDiffsTheLastRowOfThePageWithItself
+
+mutant: the version pair compares two different versions
+file: live_test.go
+old: l.extraCall("acl_diff", "--from-version", version, "--to-version", version)
+new: l.extraCall("acl_diff", "--from-version", version, "--to-version", "other")
+kill: TestVersionPairDiffsTheLastRowOfThePageWithItself
+
+mutant: dns_get need not say the policy overrides were analysed
+file: live_test.go
+old: l.field("dns_get", dns, "policyOverridesAnalysed", "true")
+new: _ = dns
+kill: TestTheDNSAndPseudonymChecksAreMadeOnTheAnswer
+
+mutant: any status of the pseudonym test is typed
+file: live_test.go
+old: case ok && (got == "pass" || got == "fail" || got == "unresolved" || got == "unknown"):
+new: case ok && got != "":
+kill: TestTheDNSAndPseudonymChecksAreMadeOnTheAnswer
+
+mutant: acl_test is asked about a name that is not the pseudonym
+file: live_test.go
+old: l.extraCall("acl_test", ref, "--deny", "192.0.2.1:1")
+new: l.extraCall("acl_test", "203.0.113.5", "--deny", "192.0.2.1:1")
+kill: TestTheDNSAndPseudonymChecksAreMadeOnTheAnswer
+
+mutant: the doctor probe's rows are not judged
+file: live_test.go
+old: problems, notes := judgeDoctorRows(doc, n)
+new: problems, notes := []string{}, []string{}
+kill: TestTheDoctorProbeJudgesTheRowsAndNotOnlyTheCount
+
+mutant: a note on a row of the doctor probe is dropped
+file: live_test.go
+old: l.note("doctor: " + note)
+new: _ = note
+kill: TestTheDoctorProbeJudgesTheRowsAndNotOnlyTheCount
+
+mutant: a warning on a probe row is not a problem
+file: live_test.go
+old: if strings.HasPrefix(name, "probe ") {
+new: if strings.HasPrefix(name, "probe-") {
+kill: TestTheDoctorProbeJudgesTheRowsAndNotOnlyTheCount
+
+mutant: a failing row is not a problem
+file: live_test.go
+old: failing++\n\t\t\tproblems = append(problems, reads())
+new: failing++
+kill: TestTheDoctorProbeJudgesTheRowsAndNotOnlyTheCount
+
+mutant: a policy probe that reads n/a is not a problem
+file: live_test.go
+old: case isPolicy:\n\t\t\t\tproblems = append(problems, reads())\n\t\t\tcase isKind:
+new: case isPolicy:\n\t\t\tcase isKind:
+kill: TestTheDoctorProbeJudgesTheRowsAndNotOnlyTheCount
+
+mutant: a kind with no source in the tailnet is a problem
+file: live_test.go
+old: case isKind:\n\t\t\t\tnotes = append(
+new: case isKind:\n\t\t\t\tproblems = append(problems, reads())\n\t\t\t\tnotes = append(
+kill: TestTheDoctorProbeJudgesTheRowsAndNotOnlyTheCount
+
+mutant: a kind with no source in the tailnet is not noted
+file: live_test.go
+old: notes = append(notes, label+" not probed: no source in the tailnet")
+new: _ = label
+kill: TestTheDoctorProbeJudgesTheRowsAndNotOnlyTheCount
+
+mutant: a policy probe that reads info is a pass
+file: live_test.go
+old: case "info":\n\t\t\tif isPolicy || isKind || isCanary {
+new: case "info":\n\t\t\tif false {
+kill: TestTheDoctorProbeJudgesTheRowsAndNotOnlyTheCount
+
+mutant: an absent probe row is not a problem
+file: live_test.go
+old: problems = append(problems, name+" is absent")
+new: _ = name
+kill: TestTheDoctorProbeJudgesTheRowsAndNotOnlyTheCount
+
+mutant: only the policy probes must be present
+file: live_test.go
+old: for _, name := range append(append([]string{canaryTestRow}, policyProbeRows...), kindProbeRows...) {
+new: for _, name := range policyProbeRows {
+kill: TestTheDoctorProbeJudgesTheRowsAndNotOnlyTheCount
+
+mutant: the canary test row may be absent
+file: live_test.go
+old: for _, name := range append(append([]string{canaryTestRow}, policyProbeRows...), kindProbeRows...) {
+new: for _, name := range append(append([]string{}, policyProbeRows...), kindProbeRows...) {
+kill: TestTheDoctorProbeJudgesTheRowsAndNotOnlyTheCount
+
+mutant: the canary test that reads info is a pass
+file: live_test.go
+old: if isPolicy || isKind || isCanary {
+new: if isPolicy || isKind {
+kill: TestTheDoctorProbeJudgesTheRowsAndNotOnlyTheCount
+
+mutant: the canary test with no tag to use is not noted
+file: live_test.go
+old: notes = append(notes, label+" not probed: the live policy defines no tag")
+new: _ = label
+kill: TestTheDoctorProbeJudgesTheRowsAndNotOnlyTheCount
+
+mutant: the canary test with no tag to use is a problem
+file: live_test.go
+old: case isCanary:\n\t\t\t\tnotes = append(
+new: case isCanary:\n\t\t\t\tproblems = append(problems, reads())\n\t\t\t\tnotes = append(
+kill: TestTheDoctorProbeJudgesTheRowsAndNotOnlyTheCount
+
+mutant: a row name with an underscore is not printed
+file: live_test.go
+old: [A-Za-z0-9 ,_-]{0,40}
+new: [A-Za-z0-9 ,-]{0,40}
+kill: TestTheDoctorProbeJudgesTheRowsAndNotOnlyTheCount
+
+mutant: the live run reads a canary test row the doctor does not write
+file: live_test.go
+old: const canaryTestRow = "probe acl_test"
+new: const canaryTestRow = "probe acl_tests"
+kill: TestTheRowsTheLiveRunReadsAreTheOnesTheDoctorWrites
+
+mutant: a status the report does not use is a pass
+file: live_test.go
+old: problems = append(problems, label+" reads an unknown status")
+new: _ = label
+kill: TestTheDoctorProbeJudgesTheRowsAndNotOnlyTheCount
+
+mutant: an unknown status is repeated in the problem
+file: live_test.go
+old: problems = append(problems, label+" reads an unknown status")
+new: problems = append(problems, label+" reads an unknown status: "+status)
+kill: TestTheDoctorProbeJudgesTheRowsAndNotOnlyTheCount
+
+mutant: the count of failing checks is not compared with the rows that fail
+file: live_test.go
+old: if failing != failed {
+new: if false {
+kill: TestTheDoctorProbeJudgesTheRowsAndNotOnlyTheCount
+
+mutant: any row name is printed
+file: live_test.go
+old: if rowNameRE.MatchString(name) {
+new: if true {
+kill: TestTheDoctorProbeJudgesTheRowsAndNotOnlyTheCount
+
+mutant: the live run does not read a row the doctor writes
+file: live_test.go
+old: "probe invariants canary", "probe ssh tests"}
+new: "probe invariants canary"}
+kill: TestTheRowsTheLiveRunReadsAreTheOnesTheDoctorWrites
+
+mutant: the live policy run does not judge the self-check
+file: live_policy_test.go
+old: lines, problems := judgeSelfCheck(out, code, probe.SelfCheckCount())
+new: lines, problems := []string(nil), []string(nil)\n\t_, _ = out, code
+kill: TestTheLivePolicyRunStartsTheSelfCheckAndJudgesIt
+
+mutant: the live policy run expects fewer checks than the probe makes
+file: live_policy_test.go
+old: judgeSelfCheck(out, code, probe.SelfCheckCount())
+new: judgeSelfCheck(out, code, 4)
+kill: TestTheLivePolicyRunStartsTheSelfCheckAndJudgesIt
+
+mutant: the live policy run does not log the lines of the self-check
+file: live_policy_test.go
+old: r.Log(line)
+new: _ = line
+kill: TestTheLivePolicyRunStartsTheSelfCheckAndJudgesIt
+
+mutant: the live policy run does not fail on a problem
+file: live_policy_test.go
+old: r.Error(p)
+new: _ = p
+kill: TestTheLivePolicyRunStartsTheSelfCheckAndJudgesIt
+
+mutant: the live policy run does not compare the shapes with the captures
+file: live_policy_test.go
+old: "--self-check", "--against", against)
+new: "--self-check")
+kill: TestTheLivePolicyRunStartsTheSelfCheckAndJudgesIt
+
+mutant: the live policy run does not run the self-check in the environment it was given
+file: live_policy_test.go
+old: cmd.Env = env
+new: _ = env
+kill: TestTheLivePolicyRunStartsTheSelfCheckAndJudgesIt
+
+mutant: a self-check that ran out of time is not a problem
+file: live_policy_test.go
+old: problems = append(problems, "the self-check did not finish in time")
+new: _ = problems
+kill: TestTheLivePolicyRunStartsTheSelfCheckAndJudgesIt
+
+mutant: a self-check that cannot be started is not fatal
+file: live_policy_test.go
+old: r.Fatal(err)
+new: _ = err
+kill: TestTheLivePolicyRunStartsTheSelfCheckAndJudgesIt
+
+mutant: TestLivePolicy does not run the self-check of the tagged binary
+file: live_policy_test.go
+old: checkLivePolicy(t, probeBin, liveEnv(), against, selfCheckTimeout)
+new: _, _, _ = probeBin, liveEnv(), against
+kill: TestTheLivePolicyTestRunsTheSelfCheckOnTheCommittedCaptures
+
+mutant: TestLivePolicy looks for the captures somewhere else
+file: live_policy_test.go
+old: "internal", "api", "apitest", "testdata", "observed"
+new: "internal", "api", "apitest", "testdata", "observe"
+kill: TestTheLivePolicyTestRunsTheSelfCheckOnTheCommittedCaptures
+
+mutant: a version compared with itself need not come back equal
+file: live_test.go
+old: "--to-version", version)\n\tl.field("acl_diff", diff, "status", "equal")
+new: "--to-version", version)\n\t_ = diff
+kill: TestAVersionPairThatIsNotEqualIsAProblem

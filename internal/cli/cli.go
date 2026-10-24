@@ -359,7 +359,7 @@ func (r *Runner) usage(w io.Writer) {
 Usage:
   tailkeeper [--context NAME] [--json] <area> <verb> [flags] [argument]
   tailkeeper mcp [--context NAME] [--profile reads|core|full] [--enable-alpha]
-  tailkeeper doctor [--context NAME] [--json] [--probe]
+  tailkeeper doctor [--context NAME] [--json] [--probe | --policy --out FILE [--tag TAG] [--admin-group GROUP] [--with-logins]]
   tailkeeper scopes [--json] [--alpha]
   tailkeeper audit verify [--json] | audit tail [-n N] [--json] | audit rotate [--json]
   tailkeeper docs [--scopes] [--check FILE]
@@ -770,20 +770,87 @@ func (r *Runner) warn(s string) { _, _ = fmt.Fprintln(r.Stderr, sanitize.String(
 
 func (r *Runner) doctor(ctx context.Context, g globals, args []string) int {
 	fs := newFlags("tailkeeper doctor")
-	probe := fs.Bool("probe", false, "also call read endpoints whose scope or availability is unverified, and send acl_test a canary test (POST .../acl/validate, which changes nothing)")
+	probe := fs.Bool("probe", false, "also call read endpoints whose scope or availability is unverified, and send to POST .../acl/validate, which changes nothing: the canary test, two synthetic documents, the live policy with an in-band canary, and one test for each destination kind the live policy can name")
+	policy := fs.Bool("policy", false, "write an invariants starter the owner reviews and edits (a new file, never standard output)")
+	out := fs.String("out", "", "file to create for --policy")
+	var tags, groups listValue
+	fs.Var(&tags, "tag", "tag whose port 22 the starter's tests accept (repeatable)")
+	fs.Var(&groups, "admin-group", "admin group the starter's tests take as a source (repeatable)")
+	withLogins := fs.Bool("with-logins", false, "also accept each owner and admin login on port 22 of each tag (needs users:read; do not commit that file to a public repository)")
 	jsonOut := fs.Bool("json", g.json, "print JSON")
 	ctxName := fs.String("context", g.context, "configuration context to use")
-	if code, done := r.parse("doctor", func() bool { return g.json || *jsonOut || jsonRequested(args) }, r.usageOf(fs), func() error { return fs.Parse(args) }); done {
+	asJSON := func() bool { return g.json || *jsonOut || jsonRequested(args) }
+	if code, done := r.parse("doctor", asJSON, r.usageOf(fs), func() error { return fs.Parse(args) }); done {
 		return code
 	}
-	a, err := r.Build(ctx, *ctxName)
-	if err == nil {
-		if code, done := r.reexecIfNeeded(a, *jsonOut); done {
-			return code
+	if tags.big > 0 {
+		return r.fail(tkerr.New(tkerr.Usage, longFlagValue("--tag", tags.big), "see `tailkeeper doctor --help`"), asJSON())
+	}
+	if groups.big > 0 {
+		return r.fail(tkerr.New(tkerr.Usage, longFlagValue("--admin-group", groups.big), "see `tailkeeper doctor --help`"), asJSON())
+	}
+	if *out != "" && len(*out) > maxFlagText {
+		return r.fail(tkerr.New(tkerr.Usage, longFlagValue("--out", len(*out)), "see `tailkeeper doctor --help`"), asJSON())
+	}
+	if err := doctorPolicyUsage(*policy, *out, len(tags.v) > 0, len(groups.v) > 0, *withLogins, *probe); err != nil {
+		return r.fail(err, asJSON())
+	}
+	in := doctor.StarterInput{Out: *out, Tags: append([]string(nil), tags.v...), AdminGroups: append([]string(nil), groups.v...), WithLogins: *withLogins}
+	if *policy {
+		if err := doctor.CheckStarterInput(in); err != nil {
+			return r.fail(err, asJSON())
 		}
 	}
-	rep := doctor.Run(ctx, doctor.Input{App: a, BuildErr: err, Probe: *probe, Now: r.now()})
-	return r.printReport(rep, *jsonOut)
+	a, err := r.Build(ctx, *ctxName)
+	if !*policy {
+		if err == nil {
+			if code, done := r.reexecIfNeeded(a, *jsonOut); done {
+				return code
+			}
+		}
+		rep := doctor.Run(ctx, doctor.Input{App: a, BuildErr: err, Probe: *probe, Now: r.now()})
+		return r.printReport(rep, *jsonOut)
+	}
+	if err != nil {
+		return r.fail(err, asJSON())
+	}
+	if code, done := r.reexecIfNeeded(a, asJSON()); done {
+		return code
+	}
+	res, err := doctor.WriteStarter(ctx, a, in)
+	if err != nil {
+		return r.fail(err, asJSON())
+	}
+	return r.print(asJSON(), res, func(w io.Writer) error { return render(w, res) })
+}
+
+// doctorPolicyUsage refuses the starter's flags when they do not belong together,
+// before the configuration is loaded.
+func doctorPolicyUsage(policy bool, out string, tag, group, withLogins, probe bool) error {
+	if !policy {
+		switch {
+		case out != "":
+			return tkerr.New(tkerr.Usage, "--out is only for doctor --policy", "add --policy, or drop --out")
+		case tag:
+			return tkerr.New(tkerr.Usage, "--tag is only for doctor --policy", "add --policy, or drop --tag")
+		case group:
+			return tkerr.New(tkerr.Usage, "--admin-group is only for doctor --policy", "add --policy, or drop --admin-group")
+		case withLogins:
+			return tkerr.New(tkerr.Usage, "--with-logins is only for doctor --policy", "add --policy, or drop --with-logins")
+		default:
+			return nil
+		}
+	}
+	if probe {
+		return tkerr.New(tkerr.Usage, "doctor --policy does not run --probe", "run one of them")
+	}
+	if out == "" {
+		return tkerr.New(tkerr.Usage, "--policy needs --out FILE", "name a new file; the starter is never written to standard output")
+	}
+	if out == "-" {
+		return tkerr.New(tkerr.Usage, "--out must name a file; the starter is never written to standard output", "name a new file")
+	}
+	return nil
 }
 
 // printReport writes the doctor report. When standard output cannot take it the

@@ -53,17 +53,27 @@ func aclTools() []registry.Tool {
 		"A pass means Tailscale accepts the text and its tests and the invariants pass, not that the change is safe: notChecked lists what is not established. " +
 		"A user is named by pseudonym, never by login. A patch may not hold a test operation, a text with a credential shape is refused, and one call adds or replaces at most 64 tests. Problem kinds: syntax, encoding, structure, duplicate_key, case_collision, unknown_section, assertion_failed, test_unevaluable, server_message, invariant, warning, note."
 	diff := withOps(readMeta("acl_diff", "acl", "diff",
-		"Compare two policies by what they mean, the live policy against a text, a text against a text, or the live policy against a patch, and list the changes by class.",
+		"Compare two policies by what they mean, the live policy against a text, a text against a text, the live policy against a patch, or a stored version from acl_history, and list the changes by class.",
 		aclScopes...),
-		"GET /tailnet/{tailnet}/acl", "GET /tailnet/{tailnet}/users", "GET /tailnet/{tailnet}/settings")
+		"GET /tailnet/{tailnet}/acl", "GET /tailnet/{tailnet}/users", "GET /tailnet/{tailnet}/settings", "GET /tailnet/{tailnet}/logging/configuration")
 	diff.Credential = registry.CredOptional
-	diff.OptionalScopes = []registry.OptionalScope{{Scope: "users:read", Reason: "resolve a pseudonym in a text or patch"}}
+	diff.OptionalScopes = []registry.OptionalScope{
+		{Scope: "users:read", Reason: "resolve a pseudonym in a text or patch"},
+		{Scope: "logs:configuration:read", Reason: "read a policy version from the audit log"},
+	}
 	diff.Title = "Compare two policies"
 	diff.MaxResultChars = 200000
-	diff.Notes = "Nothing is sent to Tailscale for validation: a diff reads the live policy, when a side is live, and changes nothing. The old side is against, or the live policy; the new side is policy, or patch applied to the live policy, or the live policy; the two are never both live. " +
+	diff.Notes = "Nothing is sent to Tailscale for validation: a diff reads the live policy, when a side is live, and changes nothing. The old side is against, or fromVersion, or the live policy; the new side is policy, or patch applied to the live policy, or toVersion, or the live policy; the two are never both live. " +
 		"A rewrite that means the same (comments, layout, key order, acls written as grants, a rule split or merged) is no change. Changes are listed by class, defaults, testsReduced and widening first, a page at a time: section narrows the list and fromChange continues it; counts and the CLI's --fail-on cover every change. " +
-		"notChecked lists what a diff does not establish: a small change to an alias, a group or a host can widen access. A user is named by pseudonym, never by login. Over MCP a text is screened as for acl_validate, though nothing is sent: a patch may not hold a test operation and a text with a credential shape is refused, and the cap on the tests a text adds does not apply."
-	return []registry.Tool{registry.Define(get, aclGet), registry.Define(test, aclTest), registry.Define(validate, aclValidate), registry.Define(diff, aclDiff)}
+		"notChecked lists what a diff does not establish: a small change to an alias, a group or a host can widen access. A user is named by pseudonym, never by login. Over MCP a text is screened as for acl_validate, though nothing is sent: a patch may not hold a test operation and a text with a credential shape is refused, and the cap on the tests a text adds does not apply. " +
+		"fromVersion and toVersion name a policy acl_history listed. A version is read from the audit log with the optional logs:configuration:read scope, and without that scope a diff that names no version works as before. A version is tailnet data, not a caller's text: the subject rule does not read it, and it is shown as the live policy is."
+	history := withOps(readMeta("acl_history", "acl", "history", "List the versions of the tailnet policy from the configuration audit log, to compare with acl_diff.", "logs:configuration:read"),
+		"GET /tailnet/{tailnet}/logging/configuration")
+	history.MaxResultChars = 200000
+	history.Notes = "One request per slice of at most 31 days, across a window of at most 90 days (the default is 30 days and 50 versions). Each version names the policy an ACL update wrote and the one it replaced. " +
+		"policyVersion is a keyed digest of the text as acl_get would show it when a privacy key is configured, the SHA-256 of the text itself with personalData show, and nothing otherwise. policySha256 and bytes describe that shown text, so two logins that mask to one form share them. " +
+		"An entry whose old or new value is not a string, or is over 4 MiB, is counted in skipped and not listed. A large policy over more than a few days can answer api_error: narrow start and end."
+	return []registry.Tool{registry.Define(get, aclGet), registry.Define(test, aclTest), registry.Define(validate, aclValidate), registry.Define(diff, aclDiff), registry.Define(history, aclHistory)}
 }
 
 // invalidf is validationf with formatting.

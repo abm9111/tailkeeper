@@ -218,6 +218,18 @@ func TestPlainConfigurationKeepsItsAddresses(t *testing.T) {
 	}
 }
 
+func TestDNSGetIdentifiersArePersonalFields(t *testing.T) {
+	tool, ok := newRegistry(t).Get("dns_get")
+	if !ok {
+		t.Fatal("dns_get is not registered")
+	}
+	for _, path := range []string{"nextdns[].id", "controlD[].id"} {
+		if !slices.Contains(tool.PersonalFields, path) {
+			t.Errorf("personal fields %v lack %s", tool.PersonalFields, path)
+		}
+	}
+}
+
 // The class, not the instances: an output field named like a person's
 // identifier must be tagged personal, or a new tool would return it whole.
 func TestEveryIdentifierFieldIsTaggedPersonal(t *testing.T) {

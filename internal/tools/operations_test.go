@@ -21,8 +21,9 @@ import (
 // devices again, and the log stream is read for both log types.
 var operationCalls = map[string][]string{
 	"acl_get":                   {`{}`, `{"view":"summary"}`},
+	"acl_history":               {`{}`},
 	"acl_test":                  {`{"src":"tag:a","accept":["tag:b:22"]}`, `{"src":"p:abcdefghij","accept":["tag:b:22"]}`, `{"src":"tag:a","ssh":[{"dst":["tag:b"],"accept":["root"]}]}`},
-	"acl_diff":                  {`{"against":"{}\n"}`, `{"patch":"[{\"op\":\"add\",\"path\":\"/groups/group:eng\",\"value\":[\"p:abcdefghij\"]}]"}`},
+	"acl_diff":                  {`{"against":"{}\n"}`, `{"patch":"[{\"op\":\"add\",\"path\":\"/groups/group:eng\",\"value\":[\"p:abcdefghij\"]}]"}`, `{"fromVersion":"` + diffVersionID("2026-10-08T00:00:00Z", "g", "new", 0) + `","toVersion":"` + diffVersionID("2026-10-08T00:00:00Z", "g", "old", 0) + `"}`},
 	"acl_validate":              {`{}`, `{"patch":"[{\"op\":\"add\",\"path\":\"/groups/group:eng\",\"value\":[\"p:abcdefghij\"]}]"}`},
 	"contacts_get":              {`{}`},
 	"device_get":                {`{"device":"nAAA1CNTRL"}`, `{"device":"host-a"}`},

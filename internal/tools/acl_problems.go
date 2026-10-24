@@ -37,6 +37,7 @@ const (
 	sourceInvariants = "invariants" // the invariants file
 	sourceLive       = "live"       // the live policy
 	sourcePatch      = "patch"      // the patch, or the live policy with the patch applied: a pointer into that policy, no line
+	sourceVersion    = "version"    // a stored policy named by a version id
 )
 
 // ACLProblem is one thing a validation found, placed in the text it is about. Line and
@@ -44,7 +45,7 @@ const (
 type ACLProblem struct {
 	Kind           string `json:"kind" jsonschema:"the kind of finding, as the tool's description lists"`
 	Severity       string `json:"severity" jsonschema:"error, warning or notice"`
-	Source         string `json:"source" jsonschema:"where the position is: from, against, patch (the patch, or the policy it makes: a pointer), invariants or live; empty for a message about the text as a whole"`
+	Source         string `json:"source" jsonschema:"where the position is: from, against, patch (the patch, or the policy it makes: a pointer), invariants, live or version; empty for a message about the text as a whole"`
 	Line           int    `json:"line,omitempty" jsonschema:"from 1, counting line feeds as Tailscale does; absent when unknown"`
 	Column         int    `json:"column,omitempty" jsonschema:"in bytes, from 1"`
 	Pointer        string `json:"pointer,omitempty" tk:"untrusted,emails" jsonschema:"JSON pointer, when the line is not known"`

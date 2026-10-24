@@ -32,10 +32,31 @@ The suite runs on Windows in CI (the `test-os` job). These tests do not run ther
 - `TestAnErrorDocumentThatExitsZeroIsAProblem` (`cmd/tailkeeper`): the stand-in binary is a POSIX shell script.
 - `TestACredentialShapeInAnErrorDocumentIsCaught` (`cmd/tailkeeper`): the stand-in binary is a POSIX shell script.
 - `TestAnExitMustBeTheOneTheResultSays` (`cmd/tailkeeper`): the stand-in binary is a POSIX shell script.
+- `TestAnExtraCallCountsTowardTheAuditLowerBoundButAddsNoRow` (`cmd/tailkeeper`): the stand-in binary is a POSIX shell script.
+- `TestAnACLTestExitMustMatchItsStatus` (`cmd/tailkeeper`): the stand-in binary is a POSIX shell script.
+- `TestTheDoctorProbeJudgesItsOutputAndItsExit` (`cmd/tailkeeper`): the stand-in binary is a POSIX shell script.
+- `TestTheDoctorProbeCountsItsAuditLinesAndFailsWhenItWroteNone` (`cmd/tailkeeper`): the stand-in binary is a POSIX shell script.
+- `TestTheDoctorProbeJudgesTheRowsAndNotOnlyTheCount` (`cmd/tailkeeper`): the stand-in binary is a POSIX shell script.
+- `TestTheGitOpsOracleSaysNotRequestedWhenTheVariableIsUnsetAndItIsNotASkippedTest` (`cmd/tailkeeper`): the stand-in binary is a POSIX shell script.
+- `TestTheGitOpsOracleIsNotRunWhenThePolicyIsNotExternallyManagedAndItPrintsNoPath` (`cmd/tailkeeper`): the stand-in binary is a POSIX shell script.
+- `TestTheGitOpsOracleDiffsTheOwnersFileAgainstTheLivePolicyAndHoldsWhenEqual` (`cmd/tailkeeper`): the stand-in binary is a POSIX shell script.
+- `TestTheGitOpsOracleFailsWhenTheOwnersFileIsNotTheLivePolicy` (`cmd/tailkeeper`): the stand-in binary is a POSIX shell script.
+- `TestEveryRegisteredToolHasARowInTheLiveRunIncludingACLHistory` (`cmd/tailkeeper`): the stand-in binary is a POSIX shell script.
+- `TestTheWarningsBaselineValidatesACopyThatIsNotTheLivePolicy` (`cmd/tailkeeper`): the stand-in binary is a POSIX shell script.
+- `TestACopyThatIsTheLivePolicyByteForByteFailsTheBaselineCheck` (`cmd/tailkeeper`): the stand-in binary is a POSIX shell script.
+- `TestATailnetWhoseOwnTestsFailIsANoteAndTheCopyCheckIsNotMade` (`cmd/tailkeeper`): the stand-in binary is a POSIX shell script.
+- `TestTheInvariantsCheckIsRecordedAsNotRunAndSendsNoEmptyFile` (`cmd/tailkeeper`): the stand-in binary is a POSIX shell script.
+- `TestVersionPairDiffsTheLastRowOfThePageWithItself` (`cmd/tailkeeper`): the stand-in binary is a POSIX shell script.
+- `TestAVersionPairThatIsNotEqualIsAProblem` (`cmd/tailkeeper`): the stand-in binary is a POSIX shell script.
+- `TestTheLivePolicyRunStartsTheSelfCheckAndJudgesIt` (`cmd/tailkeeper`): the stand-in binary is a POSIX shell script.
+- `TestTheDNSAndPseudonymChecksAreMadeOnTheAnswer` (`cmd/tailkeeper`): the stand-in binary is a POSIX shell script.
+- `TestTheCallCountInTheMakefileCommentIsTheMostProcessesARunCanStart` (`cmd/tailkeeper`): the stand-in binary is a POSIX shell script.
 - `TestAuditGrowsByOneLinePerCall` (`cmd/tailkeeper`): the stand-in binary is a POSIX shell script.
 - `TestCheckScriptJudgesALiveRun` (`cmd/tailkeeper`): the check is a POSIX shell script.
+- `TestTheLiveLogicCountsTheThirdTestAndItsClosingLine` (`cmd/tailkeeper`): the check is a POSIX shell script.
 - `TestLiveReads` (`cmd/tailkeeper`): reads the configured tailnet; skipped on every platform unless `make live` runs it.
 - `TestLiveMCP` (`cmd/tailkeeper`): reads the configured tailnet; skipped on every platform unless `make live` runs it.
+- `TestLivePolicy` (`cmd/tailkeeper`): reads the configured tailnet; skipped on every platform unless `make live` runs it.
 - `TestExecProviderReexecKeepsStdio` (`cmd/tailkeeper`): the `exec` provider re-executes with `execve`, which Windows lacks.
 - `TestInterruptEndsAHungCall` (`cmd/tailkeeper`): `os.Interrupt` cannot be sent to another process on Windows.
 - `TestInterruptEndsAHungLocalCall` (`cmd/tailkeeper`): `os.Interrupt` cannot be sent to another process on Windows.
@@ -110,7 +131,7 @@ The suite runs on Windows in CI (the `test-os` job). These tests do not run ther
 
 ### Not compiled on Windows
 
-These files carry `//go:build !windows`. Their tests need the file lock (`syscall.Flock`), rotation, FIFOs or the change time of a file, none of which Windows has in this build.
+These files carry `//go:build !windows`, except `internal/doctor/starter_unix_test.go`, which carries `//go:build unix`. Their tests need the file lock (`syscall.Flock`), rotation, FIFOs or the change time of a file, or (the `unix` file) a symbolic link and a POSIX file mode, none of which Windows has in this build.
 
 <!-- windows-excluded:begin -->
 - `TestRecordDoesNotRetryAnUnavailableLog` (`internal/app`): holds the audit log's file lock with `syscall.Flock`.
@@ -150,6 +171,7 @@ These files carry `//go:build !windows`. Their tests need the file lock (`syscal
 - `TestUnchangedRefusesAChangedOwner` (`internal/config`): reads the owner and group of a file from `syscall.Stat_t`, which Windows lacks.
 - `TestAnInspectionFailureIsConfigUnsafeInLoadAndReadSecretFile` (`internal/config`): provokes the failure with a file name longer than 255 bytes, which Windows does not refuse in the same way.
 - `TestUnrecordedReadsWarnInTheAuditLogCheck` (`internal/doctor`): holds the audit log's file lock with `syscall.Flock`.
+- `TestTheStarterFileIsMode0600AndAnExistingFileASymlinkAndADirectoryAreRefused` (`internal/doctor`): needs a symbolic link and a POSIX file mode, which this build does not check.
 - `TestAuditWarningRearmsAfterRecovery` (`internal/mcpserver`): holds the audit log's file lock with `syscall.Flock`.
 - `TestAFifoIsRefusedNotWaitedOn` (`internal/safefile`): needs FIFOs (`syscall.Mkfifo`).
 - `TestAFifoSwappedInAfterTheInspectionIsRefusedNotWaitedOn` (`internal/safefile`): needs FIFOs (`syscall.Mkfifo`) and `O_NOFOLLOW`.

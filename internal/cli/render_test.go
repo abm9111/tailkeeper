@@ -46,7 +46,7 @@ func TestUsageNamesTheFlagsOfEveryCommand(t *testing.T) {
 	(&Runner{}).usage(&b)
 	for _, want := range []string{
 		"tailkeeper mcp [--context NAME] [--profile reads|core|full] [--enable-alpha]\n",
-		"tailkeeper doctor [--context NAME] [--json] [--probe]\n",
+		"tailkeeper doctor [--context NAME] [--json] [--probe | --policy --out FILE [--tag TAG] [--admin-group GROUP] [--with-logins]]\n",
 		"tailkeeper scopes [--json] [--alpha]\n",
 		"tailkeeper audit verify [--json] | audit tail [-n N] [--json] | audit rotate [--json]\n",
 		"tailkeeper docs [--scopes] [--check FILE]\n",

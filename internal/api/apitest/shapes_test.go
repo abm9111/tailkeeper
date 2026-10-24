@@ -54,6 +54,7 @@ var provenanceOf = map[string]Kind{
 	"TestUnevaluable":      Observed,
 	"DetailsOK":            Observed,
 	"PolicyText":           Observed,
+	"AuditACLUpdates":      Observed,
 
 	"TestsFailedIn400":  Assumed,
 	"ErrorsListAt200":   Assumed,
@@ -69,13 +70,13 @@ var observedBy = map[string]string{
 	"BareMessage200": "A-3", "PolicySyntaxError": "A-3", "PolicyUnknownField": "A-3", "PolicyTagNotFound": "A-3",
 	"PolicyServerError500": "A-6", "SSHTestFailed": "A-10", "TestUnevaluable": "A-2",
 	"PolicyDuplicateKey": "A-4", "PolicyKeyRejected": "A-14", "CanaryFailed": "A-9",
-	"DetailsOK": "A-8", "PolicyText": "A-13",
+	"DetailsOK": "A-8", "PolicyText": "A-13", "AuditACLUpdates": "H-1",
 }
 
 func TestEveryShapesProvenanceIsPinned(t *testing.T) {
 	const how = "update provenanceOf only when the API documentation or a capture committed by make probe-acl says so"
-	if len(provenanceOf) != 24 {
-		t.Fatalf("the table holds %d builders, want 24", len(provenanceOf))
+	if len(provenanceOf) != 25 {
+		t.Fatalf("the table holds %d builders, want 25", len(provenanceOf))
 	}
 	inLedger := map[string]bool{}
 	for _, s := range AllShapes() {

@@ -163,9 +163,20 @@ mutate:
 # scripts/live-check.sh fails the run if a live test skipped (it checked nothing) or
 # did not reach its closing line, and prints only the lines that hold no tailnet value.
 #
-# The go test timeout is 1500s. Each of the 45 calls may take up to 90s (live_test.go),
+# The go test timeout is 1500s. Each of the 53 calls may take up to 90s (live_test.go),
 # so a run in which most calls time out needs longer; a run that runs out of time ends
-# without a pass line, which fails, and the log is withheld.
+# without a pass line, which fails, and the log is withheld. 53 is the most processes a
+# run starts: one for each tool; the calls made on their answers (the version pair's diff,
+# the pseudonym test, an empty patch and a baseline patch); doctor --probe; and two that
+# happen only when they apply: the GitOps oracle's diff (the policy is managed outside the
+# admin console and TAILKEEPER_LIVE_POLICY_SOURCE names a file) and the second spelling of
+# the baseline patch (the server refused the first as invalid).
+#
+# TestLivePolicy, the third live test, builds the probe-tagged binary and runs its
+# self-check: counts from the live policy, and the shapes of probes A-1, A-8, A-9,
+# A-10 and H-1 against the committed captures. A release build has neither the tag
+# nor that command. The call count above is the tool rows and doctor, not this check:
+# its thirty or so requests, two seconds apart, share the 1500s timeout.
 LIVE_UNAVAILABLE ?=
 
 live: export TAILKEEPER_LIVE_UNAVAILABLE := $(LIVE_UNAVAILABLE)

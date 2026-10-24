@@ -1,0 +1,269 @@
+# Mutants of internal/doctor: each is a change to the code that a test must notice.
+# scripts/mutate.go says what the format is and what the three outcomes mean. The list
+# holds one mutant for each guard on the text a row or an error line shows (the masking,
+# and its order against the cut), on the audit lines of doctor's own calls, and on the
+# invariants starter.
+
+mutant: a failed probe call is recorded as ok
+file: doctor.go
+old: status = string(code)
+new: status = "ok"
+kill: TestAProbeThatFailedIsRecordedWithItsErrorsCodeAndOneNeverSentIsNotRecorded
+
+mutant: a probe that sent nothing is recorded as a call
+file: doctor.go
+old: if p.Called {
+new: if true {
+kill: TestAProbeThatFailedIsRecordedWithItsErrorsCodeAndOneNeverSentIsNotRecorded
+
+mutant: a row is not masked
+file: doctor.go
+old: return sanitize.String(sanitize.MaskText(s), sanitize.DefaultMax)
+new: return sanitize.String(s, sanitize.DefaultMax)
+kill: TestMaskRowMasksBeforeItCuts
+
+mutant: a row is cut before it is masked
+file: doctor.go
+old: return sanitize.String(sanitize.MaskText(s), sanitize.DefaultMax)
+new: return sanitize.MaskText(sanitize.String(s, sanitize.DefaultMax))
+kill: TestMaskRowMasksBeforeItCuts
+
+mutant: the message of an error row is shown raw
+file: doctor.go
+old: e := tkerr.From(err)\n\tr.add(name, s, string(e.Code)+": "+maskRow(e.Message), maskRow(e.Hint))\n}\n\n// addReadErr
+new: e := tkerr.From(err)\n\tr.add(name, s, string(e.Code)+": "+e.Message, maskRow(e.Hint))\n}\n\n// addReadErr
+kill: TestARowFromAnErrorShowsNoLoginInTheMessageOrTheHint
+
+mutant: the hint of a failed read is shown raw
+file: doctor.go
+old: s = Fail\n\t}\n\tr.add(name, s, string(e.Code)+": "+maskRow(e.Message), maskRow(e.Hint))
+new: s = Fail\n\t}\n\tr.add(name, s, string(e.Code)+": "+maskRow(e.Message), e.Hint)
+kill: TestARowFromAnErrorShowsNoLoginInTheMessageOrTheHint
+
+mutant: the message of a failed read is shown raw
+file: doctor.go
+old: s = Fail\n\t}\n\tr.add(name, s, string(e.Code)+": "+maskRow(e.Message), maskRow(e.Hint))
+new: s = Fail\n\t}\n\tr.add(name, s, string(e.Code)+": "+e.Message, maskRow(e.Hint))
+kill: TestARowFromAnErrorShowsNoLoginInTheMessageOrTheHint
+
+mutant: the message of the key record row is shown raw
+file: doctor.go
+old: r.add("key record", Fail, string(e.Code)+": "+maskRow(e.Message), maskRow(hint))
+new: r.add("key record", Fail, string(e.Code)+": "+e.Message, maskRow(hint))
+kill: TestTheKeyRecordRowShowsNoLoginInTheMessageOrTheHint
+
+mutant: the hint of the key record row is shown raw
+file: doctor.go
+old: r.add("key record", Fail, string(e.Code)+": "+maskRow(e.Message), maskRow(hint))
+new: r.add("key record", Fail, string(e.Code)+": "+maskRow(e.Message), hint)
+kill: TestTheKeyRecordRowShowsNoLoginInTheMessageOrTheHint
+
+mutant: a missing key record does not name the tailnet it looked in
+file: doctor.go
+old: if e.Code == tkerr.NotFound || e.Code == tkerr.ScopeMissing {
+new: if e.Code == tkerr.ScopeMissing {
+kill: TestTheKeyRecordRowNamesTheTailnetByItsStartWhenTheRecordIsNotFound
+
+mutant: the canary refused before sending shows its message raw
+file: doctor.go
+old: "tailkeeper refused its own canary test before sending it: " + maskRow(e.Message)
+new: "tailkeeper refused its own canary test before sending it: " + e.Message
+kill: TestTheCanaryRefusedBeforeSendingShowsNoLoginInItsMessage
+
+mutant: the audit log row shows the message of a failure to record raw
+file: doctor.go
+old: n, maskRow(e.Message)), maskRow(e.Hint))
+new: n, e.Message), maskRow(e.Hint))
+kill: TestTheAuditLogRowShowsNoLoginFromAFailureToRecord
+
+mutant: the audit log row shows the hint of a failure to record raw
+file: doctor.go
+old: n, maskRow(e.Message)), maskRow(e.Hint))
+new: n, maskRow(e.Message)), e.Hint)
+kill: TestTheAuditLogRowShowsNoLoginFromAFailureToRecord
+
+mutant: a starter that names no source is not refused before the credential
+file: starter.go
+old: if len(in.AdminGroups) == 0 && !in.WithLogins {
+new: if false {
+kill: TestAStarterWithNoSourceIsRefusedBeforeAnyRequest
+
+mutant: a starter that would hold no test is written
+file: starter.go
+old: if nTests == 0 {
+new: if nTests < 0 {
+kill: TestAStarterThatWouldHoldNoTestIsRefusedAndNoFileIsWritten
+
+mutant: the number of tests is a sum, not a product
+file: starter.go
+old: nTests := (len(groups) + len(names)) * len(tagList)
+new: nTests := (len(groups) + len(names)) + len(tagList)
+kill: TestTheStarterNamesTheTagsAndGroupsGivenAndTheCredentialsOwnTags
+
+mutant: the early check does not look at the output path
+file: starter.go
+old: return inspectOut(in.Out)\n}
+new: return nil\n}
+kill: TestAnExistingFileOrDirectoryIsRefusedBeforeAnyRequest|TestTheStarterFileIsMode0600AndAnExistingFileASymlinkAndADirectoryAreRefused
+
+mutant: creating the starter does not look at the output path
+file: starter.go
+old: func createStarter(path string, body []byte) error {\n\tif err := inspectOut(path); err != nil {\n\t\treturn err\n\t}\n
+new: func createStarter(path string, body []byte) error {\n
+kill: TestTheStarterFileIsMode0600AndAnExistingFileASymlinkAndADirectoryAreRefused
+
+mutant: a symbolic link is not told from an existing file
+file: starter.go
+old: case err == nil && fi.Mode()&os.ModeSymlink != 0:
+new: case false:
+kill: TestTheStarterFileIsMode0600AndAnExistingFileASymlinkAndADirectoryAreRefused
+
+mutant: a directory is not told from an existing file
+file: starter.go
+old: case err == nil && fi.IsDir():
+new: case false:
+kill: TestAnExistingFileOrDirectoryIsRefusedBeforeAnyRequest
+
+mutant: the message of the users read error is shown raw
+file: starter.go
+old: c.Message = sanitize.String(sanitize.MaskText(c.Message), sanitize.DefaultMax)
+new: c.Message = sanitize.String(c.Message, sanitize.DefaultMax)
+kill: TestAUsersReadErrorShowsNoLoginInItsMessageWhateverTheStatus
+
+mutant: the message of the users read error is cut before it is masked
+file: starter.go
+old: c.Message = sanitize.String(sanitize.MaskText(c.Message), sanitize.DefaultMax)
+new: c.Message = sanitize.MaskText(sanitize.String(c.Message, sanitize.DefaultMax))
+kill: TestAUsersReadErrorShowsNoLoginInItsMessageWhateverTheStatus
+
+mutant: the hint of the users read error is shown raw
+file: starter.go
+old: c.Hint = sanitize.String(sanitize.MaskText(c.Hint), sanitize.DefaultMax)
+new: c.Hint = sanitize.String(c.Hint, sanitize.DefaultMax)
+kill: TestAUsersReadErrorShowsNoLoginInItsHint
+
+mutant: the hint of the users read error is cut before it is masked
+file: starter.go
+old: c.Hint = sanitize.String(sanitize.MaskText(c.Hint), sanitize.DefaultMax)
+new: c.Hint = sanitize.MaskText(sanitize.String(c.Hint, sanitize.DefaultMax))
+kill: TestAUsersReadErrorShowsNoLoginInItsHint
+
+mutant: the users read error is not masked
+file: starter.go
+old: return nil, maskUsersErr(err)
+new: return nil, err
+kill: TestAUsersReadErrorShowsNoLoginInItsMessageWhateverTheStatus
+
+mutant: the credential error of the users read is not masked
+file: starter.go
+old: return nil, maskUsersErr(a.Env.APIErr)
+new: return nil, a.Env.APIErr
+kill: TestACredentialErrorOfTheUsersReadShowsNoLogin
+
+mutant: a key record that is not found is a failure of the starter
+file: starter.go
+old: case tkerr.From(err).Code == tkerr.NotFound:
+new: case false:
+kill: TestWhenTheKeyRecordIsNotFoundTheStarterSaysSoAndDoesNotAskForAScope
+
+mutant: a key record the credential may not read is a failure of the starter
+file: starter.go
+old: case tkerr.From(err).Code == tkerr.ScopeMissing:
+new: case false:
+kill: TestWhenTheKeyRecordCannotBeReadTheStarterSaysSoAndNamesTheScopes
+
+mutant: the kind probes send a name whatever its spelling
+file: probes_policy.go
+old: if re.MatchString(n) {
+new: if true {
+kill: TestAKindProbeNeverSendsANameTheSummaryCutOrTheMaskerWouldRewrite
+
+mutant: a tag name of any length is sent
+file: doctor.go
+old: ^tag:[A-Za-z0-9][A-Za-z0-9-]{0,99}$
+new: ^tag:[A-Za-z0-9][A-Za-z0-9-]*$
+kill: TestAKindProbeNeverSendsANameTheSummaryCutOrTheMaskerWouldRewrite
+
+mutant: a service the live policy names is not probed
+file: probes_policy.go
+old: if svc != "" && src != "" {
+new: if false {
+kill: TestAServiceTheLivePolicyNamesIsProbedAndOneItDoesNotNameIsNot
+
+mutant: the refused row names a service as not probed when it is
+file: probes_policy.go
+old: refused := kindsRefused
+new: refused := "svc, " + kindsRefused
+kill: TestAServiceTheLivePolicyNamesIsProbedAndOneItDoesNotNameIsNot
+
+mutant: the ICMP kind is sent without its protocol
+file: probes_policy.go
+old: if proto != "" {
+new: if false {
+kill: TestTheICMPKindIsSentWithItsProtocolAndPortZero
+
+mutant: the read of the kind source is recorded as ok
+file: probes_policy.go
+old: noteDirect(ctx, a, "doctor.probe kind source", derr)
+new: noteDirect(ctx, a, "doctor.probe kind source", nil)
+kill: TestAFailedDetailsReadForTheKindProbesIsRecordedWithItsCode
+
+mutant: a run with no credential does not list the policy probes
+file: doctor.go
+old: names = append(names, policyProbeNames...)
+new: _ = policyProbeNames
+kill: TestChecksThatCannotRunAreListed
+
+mutant: a service name of any length is sent
+file: probes_policy.go
+old: ^svc:[A-Za-z0-9][A-Za-z0-9-]{0,99}$
+new: ^svc:[A-Za-z0-9][A-Za-z0-9-]*$
+kill: TestAServiceNameFollowsTheRuleOfATagAndOfAHostAlias
+
+mutant: a service name of any characters is sent
+file: probes_policy.go
+old: ^svc:[A-Za-z0-9][A-Za-z0-9-]{0,99}$
+new: ^svc:[^"]*$
+kill: TestAServiceNameFollowsTheRuleOfATagAndOfAHostAlias
+
+mutant: a service the probe cannot name leaves no row saying so
+file: probes_policy.go
+old: svc, svcSeen = firstNamed(named, svcNameRE), len(named) > 0
+new: svc, svcSeen = firstNamed(named, svcNameRE), false
+kill: TestAServiceNameFollowsTheRuleOfATagAndOfAHostAlias
+
+mutant: a user of another role than the one asked for is written into the starter
+file: starter.go
+old: u.Role != role || !validLogin(u.LoginName)
+new: !validLogin(u.LoginName)
+kill: TestAUserOfAnotherRoleIsNeverWrittenIntoTheStarter
+
+mutant: a login that carries a pseudonym is written into the starter
+file: starter.go
+old: !strings.Contains(s, "@") || strings.Contains(s, "[p:")
+new: !strings.Contains(s, "@")
+kill: TestAMaskedLoginIsNeverWrittenIntoTheStarter
+
+mutant: the starter is opened without O_EXCL
+file: starter.go
+old: os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o600
+new: os.O_WRONLY|os.O_CREATE, 0o600
+kill: TestTheStarterIsOpenedOnlyAsANewFile
+
+mutant: a failed read of the key record is a warning
+file: doctor.go
+old: r.addKeyReadErr(a.Tailnet, err)
+new: r.addReadErr("key record", err)
+kill: TestAFailedKeyRecordReadIsAFailingRowThatShowsNoLogin
+
+mutant: a failed read of the key record leaves no row
+file: doctor.go
+old: r.addKeyReadErr(a.Tailnet, err)
+new: _ = err
+kill: TestAFailedKeyRecordReadIsAFailingRowThatShowsNoLogin
+
+mutant: a kind probe the validation limit refused is not recorded as the acl_test call it was
+file: doctor.go
+old: noteRead(ctx, a, f)\n\tif err != nil {\n\t\treturn err\n\t}\n\treturn json.Unmarshal(b, out)
+new: if err == nil || tkerr.From(err).Code != tkerr.ValidateRateLimited {\n\t\tnoteRead(ctx, a, f)\n\t}\n\tif err != nil {\n\t\treturn err\n\t}\n\treturn json.Unmarshal(b, out)
+kill: TestAKindProbeTheValidationLimitRefusedIsRecordedAsAnACLTestCall

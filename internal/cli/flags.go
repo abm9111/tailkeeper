@@ -526,6 +526,27 @@ func (b *binding) check() error {
 			}
 		}
 	}
+	named := map[string]bool{}
+	for _, p := range b.params {
+		if s, ok := p.value.(*strValue); ok && s.set {
+			named[p.flag] = true
+		}
+	}
+	files := map[string]bool{} // a file flag that was given, --against live included
+	for _, f := range b.files {
+		if f.val.set {
+			files[f.flag] = true
+		}
+	}
+	if named["from-version"] && files["against"] {
+		return usageErr("--from-version and --against both give the old side: give one")
+	}
+	if named["to-version"] && files["from"] {
+		return usageErr("--to-version and --from both give the new side: give one")
+	}
+	if named["to-version"] && files["patch"] {
+		return usageErr("--to-version and --patch both give the new side: give one")
+	}
 	return nil
 }
 

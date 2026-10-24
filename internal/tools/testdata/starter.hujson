@@ -1,0 +1,15 @@
+// This file is a template the owner edits. It is not enforced until acl.invariantsFile points at it.
+// Keep it in the base branch beside CODEOWNERS.
+// A login in this file must not be committed to a public repository.
+// Tailscale's test language cannot express these controls:
+// - autogroup:admin as a source
+// - an application capability
+// - via
+// - SSH autogroups and groups
+{
+	"tests": [
+		{"src":"group:admins","accept":["tag:web:22"]}
+	],
+	// SSH invariants need the owner's SSH users.
+	"sshTests": []
+}

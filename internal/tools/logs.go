@@ -6,6 +6,7 @@ import (
 	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
+	"fmt"
 	"net/url"
 	"slices"
 	"sort"
@@ -40,6 +41,65 @@ type AuditActor struct {
 	LoginName   string   `json:"loginName,omitempty" tk:"untrusted,personal"`
 	DisplayName string   `json:"displayName,omitempty" tk:"untrusted,personal"`
 	Tags        []string `json:"tags,omitempty" tk:"untrusted"`
+}
+
+// The most an actor takes in a result besides its login and display name, which the registry
+// cuts at a string each: the id and the type are cut here, and the tags are counted.
+const (
+	actorIDMax      = 256
+	actorTypeMax    = 64
+	actorTagsMax    = 16
+	actorTagsBudget = 4096
+)
+
+// auditPageBudget is the most characters, as JSON text and as the registry will show them,
+// that the entries of one page of audit_log take. A page of 500 ordinary entries is about
+// 300,000; the limit of a page can be 5,000.
+const auditPageBudget = 1000000
+
+// auditNoteCut is appended to the note of a page that ended before its limit.
+const auditNoteCut = " This page ended before its limit because of the size of the entries it holds: continue with nextCursor."
+
+// boundEntry cuts the fields of an entry that the registry does not cap, because they are not
+// text from the tailnet by their tag: the group, the origin, the action, the time a change was
+// deferred to, and the id and type of its target. No string of an entry is left as the log
+// wrote it: the rest are capped by the registry.
+func boundEntry(env *registry.Env, e AuditEntry) AuditEntry {
+	e.EventGroupID = sanitize.String(e.EventGroupID, 256)
+	e.Origin = sanitize.String(e.Origin, 128)
+	e.Action = sanitize.String(e.Action, 128)
+	e.DeferredAt = sanitize.String(e.DeferredAt, versionTimeMax)
+	e.Target.ID = sanitize.String(e.Target.ID, 256)
+	e.Target.Type = sanitize.String(e.Target.Type, 128)
+	e.Actor = boundActor(env, e.Actor)
+	return e
+}
+
+// boundActor cuts what an actor takes in a result: an id and a type to a few bytes, and the
+// tags to the first that fit within actorTagsMax and actorTagsBudget, with a last entry that
+// counts the rest. The log holds as many tags as an 8 MiB reply can, and they sit in every
+// entry. A tag costs what the result will show of it, masked as the registry masks it: a tag
+// that holds a login costs the same whatever the length of the login, so where the list ends
+// tells nothing of it.
+func boundActor(env *registry.Env, a AuditActor) AuditActor {
+	a.ID, a.Type = sanitize.String(a.ID, actorIDMax), sanitize.String(a.Type, actorTypeMax)
+	left := actorTagsBudget
+	kept := 0
+	empty := shownJSONLen(env, AuditActor{Tags: []string{""}})
+	for _, tag := range a.Tags {
+		// What a tag adds to the list: the length of an actor with it, less that of an actor
+		// with an empty tag, and the three characters of the empty tag (quotes and comma).
+		cost := shownJSONLen(env, AuditActor{Tags: []string{tag}}) - empty + 3
+		if kept == actorTagsMax || cost > left {
+			break
+		}
+		left -= cost
+		kept++
+	}
+	if kept < len(a.Tags) {
+		a.Tags = append(a.Tags[:kept:kept], fmt.Sprintf("(%d more not shown)", len(a.Tags)-kept))
+	}
+	return a
 }
 
 // AuditTarget is what changed.
@@ -81,6 +141,15 @@ type AuditLogOutput struct {
 }
 
 const auditNote = "Entries can be deferred with no documented maximum delay; reads, support-initiated changes and the cascade of a user suspension are not logged."
+
+// actorTagsNote is appended to a note when a result leaves out some of an actor's tags.
+const actorTagsNote = " An actor lists only the first of its tags when it has many: the last entry of its tags counts the rest."
+
+// actorTagsCut reports whether boundActor left tags out of a: its last tag is the count.
+func actorTagsCut(a AuditActor) bool {
+	n := len(a.Tags)
+	return n > 0 && strings.HasPrefix(a.Tags[n-1], "(") && strings.HasSuffix(a.Tags[n-1], " more not shown)")
+}
 
 // digestsWithheld is appended to the note while masking is on and no privacy key
 // is loaded: an unkeyed digest would confirm a guessed value. digestsWithheldBadKey
@@ -212,7 +281,11 @@ func (c auditCursor) encode() string {
 	return base64.RawURLEncoding.EncodeToString(b)
 }
 
-func decodeAuditCursor(s string) (auditCursor, time.Time, time.Time, time.Time, error) {
+// decodeAuditCursor reads a cursor and checks its window against maxSpan, the longest
+// window the caller reads. audit_log passes auditMaxSpan; acl_history passes its own,
+// which is longer, so a cursor of one tool is not a cursor of the other even before
+// the filters are compared.
+func decodeAuditCursor(s string, maxSpan time.Duration) (auditCursor, time.Time, time.Time, time.Time, error) {
 	var c auditCursor
 	bad := validationf("cursor must be the nextCursor of a previous page")
 	b, err := base64.RawURLEncoding.DecodeString(s)
@@ -223,7 +296,7 @@ func decodeAuditCursor(s string) (auditCursor, time.Time, time.Time, time.Time, 
 	end, err2 := time.Parse(time.RFC3339Nano, c.End)
 	after, err3 := time.Parse(time.RFC3339Nano, c.After)
 	// The cursor is not signed, so its window gets the same checks as a new one.
-	if err1 != nil || err2 != nil || err3 != nil || !start.Before(end) || end.Sub(start) > auditMaxSpan ||
+	if err1 != nil || err2 != nil || err3 != nil || !start.Before(end) || end.Sub(start) > maxSpan ||
 		after.Before(start) || after.After(end) {
 		return c, time.Time{}, time.Time{}, time.Time{}, bad
 	}
@@ -428,7 +501,7 @@ func (in AuditLogInput) Check() error {
 	if in.Cursor == "" {
 		return checkWindow(in.Start, in.End, auditMaxSpan)
 	}
-	_, _, _, _, err := decodeAuditCursor(in.Cursor)
+	_, _, _, _, err := decodeAuditCursor(in.Cursor, auditMaxSpan)
 	return err
 }
 
@@ -443,7 +516,7 @@ func auditLog(ctx context.Context, env *registry.Env, in AuditLogInput) (AuditLo
 		cur               *auditCursor
 	)
 	if in.Cursor != "" {
-		c, s, e, a, err := decodeAuditCursor(in.Cursor)
+		c, s, e, a, err := decodeAuditCursor(in.Cursor, auditMaxSpan)
 		if err != nil {
 			return AuditLogOutput{}, err
 		}
@@ -530,10 +603,10 @@ func auditLog(ctx context.Context, env *registry.Env, in AuditLogInput) (AuditLo
 		if err != nil {
 			return AuditLogOutput{}, tkerr.New(tkerr.APIError, "an audit entry has an unparsable eventTime, so the log cannot be paged", "")
 		}
-		e := AuditEntry{
-			EventTime: l.EventTime, DeferredAt: l.DeferredAt, EventGroupID: l.EventGroupID, Origin: l.Origin,
+		e := boundEntry(env, AuditEntry{
+			EventTime: versionEventTime(l.EventTime, t), DeferredAt: l.DeferredAt, EventGroupID: l.EventGroupID, Origin: l.Origin,
 			Action: l.Action, Actor: l.Actor, Target: l.Target, ActionDetails: l.ActionDetails, Error: l.Error,
-		}
+		})
 		e.OldDigest, e.OldPreview = digestPreview(l.Old, env, in.IncludeValues)
 		e.NewDigest, e.NewPreview = digestPreview(l.New, env, in.IncludeValues)
 		all = append(all, timedEntry{t, displayKey(env, e), e})
@@ -559,10 +632,20 @@ func auditLog(ctx context.Context, env *registry.Env, in AuditLogInput) (AuditLo
 	}
 	out := AuditLogOutput{WindowStart: start.UTC().Format(time.RFC3339Nano), WindowEnd: end.UTC().Format(time.RFC3339Nano),
 		Note: auditNote, Entries: []AuditEntry{}}
-	if len(all) > limit {
-		last := all[limit-1].t
+	// A page ends at the limit or when the next entry would take it past the budget, and holds
+	// at least one entry: an entry is bounded, so one fits.
+	n, spent := 0, 0
+	for n < min(limit, len(all)) {
+		cost := shownJSONLen(env, all[n].e)
+		if n > 0 && spent+cost > auditPageBudget {
+			break
+		}
+		n, spent = n+1, spent+cost
+	}
+	if len(all) > n {
+		last := all[n-1].t
 		next := auditCursor{Start: out.WindowStart, End: out.WindowEnd, After: last.UTC().Format(time.RFC3339Nano), Filters: filters}
-		for _, te := range all[:limit] {
+		for _, te := range all[:n] {
 			if te.t.Equal(last) {
 				next.Skip++
 			}
@@ -571,12 +654,21 @@ func auditLog(ctx context.Context, env *registry.Env, in AuditLogInput) (AuditLo
 			next.Skip += cur.Skip
 		}
 		out.NextCursor = next.encode()
-		all = all[:limit]
+		if n < limit {
+			out.Note += auditNoteCut
+		}
+		all = all[:n]
 	}
 	for _, te := range all {
 		out.Entries = append(out.Entries, te.e)
 	}
 	out.Count = len(out.Entries)
+	for _, e := range out.Entries {
+		if actorTagsCut(e.Actor) {
+			out.Note += actorTagsNote
+			break
+		}
+	}
 	if !env.ShowPersonalData() && env.Privacy == nil {
 		if env.PrivacyErr != nil {
 			out.Note += digestsWithheldBadKey

@@ -29,6 +29,10 @@ import (
 // argument handling, exit codes and the stdio transport end to end.
 var bin string
 
+// probeBin is the probe-tagged binary. It is built only when TAILKEEPER_LIVE=1,
+// which only `make live` sets. A release build and `make verify` leave it empty.
+var probeBin string
+
 // coverDir is where go test collects coverage counters when it runs with -cover.
 // The binary is then built with coverage too and writes there, so the end-to-end
 // runs count toward coverage instead of only this package's in-process code.
@@ -51,6 +55,21 @@ func TestMain(m *testing.M) {
 	}
 	if out, err := exec.Command("go", append(args, ".")...).CombinedOutput(); err != nil {
 		panic("go build: " + err.Error() + "\n" + string(out))
+	}
+	// The self-check runs in the probe-tagged binary. Only a live run builds it:
+	// make verify does not set the switch, so it does not pay for the second build.
+	if os.Getenv("TAILKEEPER_LIVE") == "1" {
+		probeBin = filepath.Join(dir, "tailkeeper-probe")
+		if runtime.GOOS == "windows" {
+			probeBin += ".exe"
+		}
+		pargs := []string{"build", "-tags", "probe", "-o", probeBin}
+		if coverDir != "" {
+			pargs = append(pargs, "-cover", "-coverpkg=github.com/abm9111/tailkeeper/...")
+		}
+		if out, err := exec.Command("go", append(pargs, ".")...).CombinedOutput(); err != nil {
+			panic("go build -tags probe: " + err.Error() + "\n" + string(out))
+		}
 	}
 	code := m.Run()
 	_ = os.RemoveAll(dir)
@@ -137,8 +156,8 @@ func TestStdioMCPServer(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(tools.Tools) != 43 {
-		t.Errorf("reads profile lists %d tools, want 43", len(tools.Tools))
+	if len(tools.Tools) != 44 {
+		t.Errorf("reads profile lists %d tools, want 44", len(tools.Tools))
 	}
 	res, err := cs.CallTool(ctx, &mcp.CallToolParams{Name: "devices_list", Arguments: map[string]any{}})
 	if err != nil {

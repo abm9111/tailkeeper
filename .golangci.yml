@@ -54,6 +54,12 @@ linters:
         linters: [gosec]
         text: G304
         source: 'os\.Open\(filepath\.Join\(dir, name\)\)'
+      # A committed capture named by --against. The file name is a probe ID of the
+      # form A-n or H-n, so the read stays inside that directory.
+      - path: internal/probe/selfcheck.go
+        linters: [gosec]
+        text: G304
+        source: 'os\.ReadFile\(filepath\.Join\(dir, id\+"\.json"\)\)'
       # An operator's policy file: the name is checked, the file is inspected with
       # Lstat (a symlink or a non-regular file is refused), opened without following
       # a symlink, and compared with what was inspected.
@@ -61,6 +67,19 @@ linters:
         linters: [gosec]
         text: G304
         source: 'os\.OpenFile\(path, os\.O_RDONLY\|syscall\.O_NOFOLLOW\|syscall\.O_NONBLOCK, 0\)'
+      # The invariants starter: the path is the operator's --out. Lstat has refused
+      # a symlink and anything that already exists, and O_EXCL refuses a name created
+      # since the inspection. The file is mode 0600.
+      - path: internal/doctor/starter\.go
+        linters: [gosec]
+        text: G304
+        source: 'os\.OpenFile\(path, os\.O_WRONLY\|os\.O_CREATE\|os\.O_EXCL, 0o600\)'
+      # The sentence names the scopes a missing key record needs. They are scope
+      # names, not a credential.
+      - path: internal/doctor/starter\.go
+        linters: [gosec]
+        text: G101
+        source: 'credTagsUnreadable = "unreadable \(needs oauth_keys:read or federated_keys:read\)"'
 
       # G204 (subprocess with variable arguments): the exec provider's command is
       # the owner's configuration (spec §7.3), and the process replaces itself with

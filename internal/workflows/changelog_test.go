@@ -1,10 +1,13 @@
 package workflows
 
 import (
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"runtime"
+	"strconv"
 	"strings"
 	"testing"
 )
@@ -121,5 +124,78 @@ func TestChangelogNotesCheckFindsAnEmptySection(t *testing.T) {
 		if strings.Contains(notes, "older entry") {
 			t.Errorf("%s: the notes hold the entries of the section below: %q", c.name, notes)
 		}
+	}
+}
+
+// bulletStarting returns the changelog bullet that begins with prefix, or "".
+func bulletStarting(changelog, prefix string) string {
+	for _, line := range strings.Split(changelog, "\n") {
+		if strings.HasPrefix(line, prefix) {
+			return line
+		}
+	}
+	return ""
+}
+
+// nameLimit reads the longest name a pattern in source allows from its "{0,N}" tail and
+// whether its character class holds a dot and an underscore, from the line that declares
+// the pattern named varName.
+func nameLimit(t *testing.T, path, varName string) (max int, dotsAndUnderscores bool) {
+	t.Helper()
+	src := readRepoFile(t, path)
+	var line string
+	for _, l := range strings.Split(src, "\n") {
+		if strings.Contains(l, varName+" ") && strings.Contains(l, "regexp.MustCompile") {
+			line = l
+		}
+	}
+	m := regexp.MustCompile(`\{0,(\d+)\}`).FindStringSubmatch(line)
+	if m == nil {
+		t.Fatalf("%s: no declaration of %s with a {0,N} length found in %q", path, varName, line)
+	}
+	n, err := strconv.Atoi(m[1])
+	if err != nil {
+		t.Fatal(err)
+	}
+	return n + 1, strings.Contains(line, "._")
+}
+
+// The changelog says what the starter's refusal asks for and which names the kind probes
+// send, as the code does: the hint names the sources and the destinations apart, and the
+// limits are those of the patterns.
+func TestTheChangelogStatesTheStarterHintAndTheProbeNamesAsTheCodeDoes(t *testing.T) {
+	changelog := readRepoFile(t, "../../CHANGELOG.md")
+
+	starter := bulletStarting(changelog, "- `tailkeeper doctor --policy --out FILE`")
+	hint := readRepoFile(t, "../../internal/doctor/starter.go")
+	if !strings.Contains(hint, "pass --admin-group GROUP (or --with-logins) for the sources and --tag TAG for the destinations") {
+		t.Fatal("the starter's refusal no longer says what this test compares the changelog with: update both")
+	}
+	for _, want := range []string{
+		"with a hint to pass `--admin-group` (or `--with-logins`) for the sources and `--tag` for the destinations",
+		"`--tag` may be left out when the credential's key has tags",
+	} {
+		if !strings.Contains(starter, want) {
+			t.Errorf("the changelog's starter bullet lacks %q", want)
+		}
+	}
+
+	probe := bulletStarting(changelog, "- `doctor --probe` also checks")
+	tagMax, tagDots := nameLimit(t, "../../internal/doctor/doctor.go", "canaryTagRE")
+	hostMax, hostDots := nameLimit(t, "../../internal/doctor/probes_policy.go", "hostAliasRE")
+	if tagDots || !hostDots {
+		t.Fatalf("the patterns changed shape (a tag with dots: %v, a host alias with dots and underscores: %v): update the changelog and this test", tagDots, hostDots)
+	}
+	for _, want := range []string{
+		"a tag only when its name after `tag:` is letters, digits and hyphens",
+		"a host alias only when its name is letters, digits, hyphens, dots and underscores",
+		fmt.Sprintf("either name is at most %d characters", min(tagMax, hostMax)),
+	} {
+		if !strings.Contains(probe, want) {
+			t.Errorf("the changelog's probe bullet lacks %q", want)
+		}
+	}
+	if tagMax != hostMax {
+		t.Errorf("the tag allows %d characters and the host alias %d: the changelog says one limit for both", tagMax, hostMax)
 	}
 }

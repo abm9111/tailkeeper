@@ -663,10 +663,19 @@ func TestDiffRegistration(t *testing.T) {
 	if m.OpenWorld || m.Credential != registry.CredOptional || m.Title != "Compare two policies" || m.Area != "acl" || m.Verb != "diff" {
 		t.Errorf("meta = %+v", m)
 	}
-	if len(m.OptionalScopes) != 1 || m.OptionalScopes[0].Scope != "users:read" {
+	wantOpt := map[string]bool{"users:read": true, "logs:configuration:read": true}
+	if len(m.OptionalScopes) != len(wantOpt) {
 		t.Errorf("optional scopes = %+v", m.OptionalScopes)
 	}
-	want := map[string]bool{"GET /tailnet/{tailnet}/acl": true, "GET /tailnet/{tailnet}/users": true, "GET /tailnet/{tailnet}/settings": true}
+	for _, o := range m.OptionalScopes {
+		if !wantOpt[o.Scope] || o.Reason == "" {
+			t.Errorf("optional scope %+v", o)
+		}
+	}
+	want := map[string]bool{
+		"GET /tailnet/{tailnet}/acl": true, "GET /tailnet/{tailnet}/users": true,
+		"GET /tailnet/{tailnet}/settings": true, "GET /tailnet/{tailnet}/logging/configuration": true,
+	}
 	if len(m.Operations) != len(want) {
 		t.Errorf("operations = %v", m.Operations)
 	}

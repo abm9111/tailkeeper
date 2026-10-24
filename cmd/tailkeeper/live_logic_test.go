@@ -3,23 +3,31 @@ package main
 import (
 	"encoding/json"
 	"errors"
+	"fmt"
+	"go/ast"
+	"go/parser"
+	"go/token"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"runtime"
 	"slices"
+	"sort"
 	"strconv"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
+
+	"github.com/abm9111/tailkeeper/internal/probe"
 )
 
 // These tests exercise the logic around the live calls (how an outcome is named,
 // what the checks find, how an ID is found, what scripts/live-check.sh refuses)
 // without the network and without a tailnet, so `make verify` runs them. None of
 // them is named TestLive…, which is what `make live` selects: the live run counts
-// exactly two passes.
+// exactly three passes (TestLiveReads, TestLiveMCP and TestLivePolicy).
 
 // stubBinary writes a POSIX shell script that stands in for the tailkeeper binary.
 func stubBinary(t *testing.T, script string) string {
@@ -350,8 +358,10 @@ exit 5
 	all := newLiveRun(stub, stubEnv, set)
 	all.all()
 	c = all.counts()
-	if c[outcomeFail] != 0 || len(all.problems) != 0 || c[outcomeUnavailable] != all.calls || c[outcomeOK] != 0 {
-		t.Errorf("every tool listed: %d fail, %d unavailable, %d problems, %d calls", c[outcomeFail], c[outcomeUnavailable], len(all.problems), all.calls)
+	// The doctor probe is not a tool: the scope error it meets is its own failure.
+	const doctorFailure = `doctor: probe printed an error document, code "scope_missing" (exit 5)`
+	if c[outcomeFail] != 0 || len(all.problems) != 1 || all.problems[0] != doctorFailure || c[outcomeUnavailable] != all.calls || c[outcomeOK] != 0 {
+		t.Errorf("every tool listed: %d fail, %d unavailable, problems %q, %d calls", c[outcomeFail], c[outcomeUnavailable], all.problems, all.calls)
 	}
 
 	one := newLiveRun(stub, stubEnv, map[string]bool{"network_flow_logs": true})
@@ -777,6 +787,9 @@ func TestCheckScriptJudgesALiveRun(t *testing.T) {
     live_test.go:470: mcp: 41 tools advertised
     live_test.go:495: mcp: devices_list: 1234 bytes, checks passed (3 personal values examined)
 --- PASS: TestLiveMCP (1.02s)
+=== RUN   TestLivePolicy
+    live_policy_test.go:40: self-check: 9 checks, all held
+--- PASS: TestLivePolicy (1.02s)
 PASS
 ok  	github.com/abm9111/tailkeeper/cmd/tailkeeper	22.5s
 `
@@ -847,6 +860,892 @@ ok  	github.com/abm9111/tailkeeper/cmd/tailkeeper	0.3s
 	}
 }
 
+// answeringStub is a stand-in that gives every list an id, acl_validate a pass that is
+// not the live policy, and doctor a report in which every probe reads ok.
+func answeringStub(t *testing.T) string {
+	t.Helper()
+	return stubBinary(t, answeringScript("false", false))
+}
+
+// maximalStub is answeringStub for a run that starts the most processes: the settings say
+// the policy is managed outside the console, and the first baseline patch is refused as
+// invalid, so the run tries the second spelling.
+func maximalStub(t *testing.T) string {
+	t.Helper()
+	return stubBinary(t, answeringScript("true", true))
+}
+
+func answeringScript(managed string, refuseFirstBaseline bool) string {
+	refuse := "0"
+	if refuseFirstBaseline {
+		refuse = "1"
+	}
+	return "REFUSE_FIRST_BASELINE=" + refuse + "\nMANAGED=" + managed + "\n" + `echo "$*" >> "$STUB_LOG"
+case "$*" in
+*"doctor --probe --json"*)
+	printf '%s\n' '` + doctorReportJSON(0, nil) + `'
+	exit 0 ;;
+*"acl validate"*)
+	if [ "$REFUSE_FIRST_BASELINE" = 1 ] && grep -q '/hosts/tk-live-check' "$5" 2>/dev/null; then
+		printf '%s\n' '{"status":"invalid"}'
+		exit 2
+	else
+		printf '%s\n' '{"status":"pass","serverChecked":true,"identicalToLive":false,"invariantsApplied":0}'
+	fi ;;
+*"acl diff"*)
+	printf '%s\n' '{"status":"equal"}' ;;
+*"acl history"*)
+	printf '%s\n' '{"versions":[{"version":"v1.example"}]}' ;;
+*"acl get"*)
+	printf '%s\n' '{"warnings":[]}' ;;
+*"dns get"*)
+	printf '%s\n' '{"policyOverridesAnalysed":true}' ;;
+*"settings get"*)
+	printf '{"externallyManaged":"%s"}\n' "$MANAGED" ;;
+*"users list"*)
+	printf '%s\n' '{"users":[{"id":"u1","loginName":"a…@example.com [p:abcdefghij]"}]}' ;;
+*"devices list"*)
+	printf '%s\n' '{"devices":[{"nodeId":"n1"}]}' ;;
+*"keys list"*)
+	printf '%s\n' '{"keys":[{"id":"k1"}]}' ;;
+*"webhooks list"*)
+	printf '%s\n' '{"webhooks":[{"endpointId":"w1"}]}' ;;
+*"services list"*)
+	printf '%s\n' '{"services":[{"name":"svc:web"}]}' ;;
+*"posture list"*)
+	printf '%s\n' '{"integrations":[{"id":"p1"}]}' ;;
+*"invites users"*|*"invites devices"*)
+	printf '%s\n' '{"invites":[{"id":"i1"}]}' ;;
+*"oauth-apps list"*)
+	printf '%s\n' '{"apps":[{"id":"a1"}]}' ;;
+*"local ip"*)
+	printf '%s\n' '{"addresses":["100.64.0.1"]}' ;;
+*"local status"*)
+	printf '%s\n' '{"self":{"dnsName":"self.example.com"},"peers":[{"online":true,"tailscaleIps":["100.64.0.2"]}]}' ;;
+*"acl test"*)
+	printf '%s\n' '{"status":"unresolved","evaluatedAt":"2026-10-13T00:00:00Z","note":"n","verdicts":[{"verdict":"unresolved"}],"unmatched":["line"]}'
+	exit 2 ;;
+*)
+	printf '{}\n' ;;
+esac
+`
+}
+
+func TestAnExtraCallCountsTowardTheAuditLowerBoundButAddsNoRow(t *testing.T) {
+	stub := stubBinary(t, "printf '{}\n'\n")
+	l := newLiveRun(stub, stubEnv, nil)
+	l.call("dns_get")
+	rows, calls := len(l.results), l.calls
+	l.extraCall("dns_get")
+	if l.calls != calls+1 || len(l.results) != rows {
+		t.Errorf("calls %d (was %d), rows %d (was %d)", l.calls, calls, len(l.results), rows)
+	}
+}
+
+func TestAFieldCheckNamesThePathAndNeverTheValue(t *testing.T) {
+	l := newLiveRun("/nonexistent/tailkeeper", nil, nil)
+	const secret = "secret-value"
+	l.field("acl_get", map[string]any{"warnings": secret}, "warnings", "0")
+	if len(l.problems) != 1 || l.problems[0] != "acl_get: field warnings is not 0" {
+		t.Fatalf("problems %q", l.problems)
+	}
+	if strings.Contains(l.problems[0], secret) {
+		t.Errorf("the problem repeats the value: %q", l.problems[0])
+	}
+}
+
+// doctorStub stands in for the binary where doctor --probe and the audit log are concerned:
+// `audit verify` prints the line count held in the file STUB_AUDIT, and doctor --probe adds
+// STUB_LINES to it and prints STUB_OUT, exiting STUB_EXIT.
+func doctorStub(t *testing.T) string {
+	t.Helper()
+	return stubBinary(t, `n=$(cat "$STUB_AUDIT" 2>/dev/null || echo 0)
+case "$*" in
+"audit verify") printf 'audit.log: %s lines, chain intact\n' "$n" ;;
+*"doctor --probe --json"*)
+	echo $((n + STUB_LINES)) > "$STUB_AUDIT"
+	printf '%s' "$STUB_OUT"
+	exit "$STUB_EXIT" ;;
+*) printf '{}\n' ;;
+esac
+`)
+}
+
+func doctorRun(t *testing.T, out string, exit, lines int) *liveRun {
+	t.Helper()
+	env := append([]string{
+		"STUB_AUDIT=" + filepath.Join(t.TempDir(), "audit"),
+		"STUB_OUT=" + out, "STUB_EXIT=" + strconv.Itoa(exit), "STUB_LINES=" + strconv.Itoa(lines),
+	}, stubEnv...)
+	l := newLiveRun(doctorStub(t), env, nil)
+	l.doctorProbe()
+	return l
+}
+
+// doctorReportJSON is a report of doctor --probe --json in which every probe row reads ok, the
+// way a healthy tailnet gives it, with the status of the named rows changed (a name that is
+// not a row of the report adds one) and the first detail, when given, written in the first row.
+// failed is what the report says its count is.
+func doctorReportJSON(failed int, status map[string]string, detail ...string) string {
+	type row struct {
+		Name   string `json:"name"`
+		Status string `json:"status"`
+		Detail string `json:"detail"`
+	}
+	var rows []row
+	add := func(name, st string) {
+		if over, ok := status[name]; ok {
+			st = over
+		}
+		rows = append(rows, row{Name: name, Status: st, Detail: "a detail"})
+	}
+	add("read credential", "ok")
+	add("security contact", "warn") // a warning outside the probes is not the probes' to judge
+	add(canaryTestRow, "ok")
+	for _, name := range append(append([]string{}, policyProbeRows...), kindProbeRows...) {
+		add(name, "ok")
+	}
+	add("probe kinds refused", "info")
+	add("audit protection", "info")
+	extra := make([]string, 0, len(status))
+	for name := range status {
+		extra = append(extra, name)
+	}
+	sort.Strings(extra)
+	for _, name := range extra {
+		found := false
+		for _, r := range rows {
+			found = found || r.Name == name
+		}
+		if !found {
+			add(name, "ok")
+		}
+	}
+	if len(detail) > 0 {
+		rows[0].Detail = detail[0]
+	}
+	b, err := json.Marshal(map[string]any{"checks": rows, "failed": failed, "warned": 0})
+	if err != nil {
+		panic(err)
+	}
+	return string(b)
+}
+
+// doctorReportWithout is doctorReportJSON with the named rows left out.
+func doctorReportWithout(names ...string) string {
+	var doc struct {
+		Checks []map[string]any `json:"checks"`
+		Failed int              `json:"failed"`
+		Warned int              `json:"warned"`
+	}
+	if err := json.Unmarshal([]byte(doctorReportJSON(0, nil)), &doc); err != nil {
+		panic(err)
+	}
+	kept := doc.Checks[:0]
+	for _, c := range doc.Checks {
+		if !slices.Contains(names, c["name"].(string)) {
+			kept = append(kept, c)
+		}
+	}
+	doc.Checks = kept
+	b, _ := json.Marshal(doc)
+	return string(b)
+}
+
+// The live run judges the rows of the probe, not only its count: each of the four policy
+// probes must read ok, a warning on a probe row names the row, a kind the tailnet has no
+// source for is a note, and any failing row is a problem. Only fixed words reach a line: never a
+// detail of a row.
+func TestTheDoctorProbeJudgesTheRowsAndNotOnlyTheCount(t *testing.T) {
+	const secretDetail = "marker of a row detail"
+	probeWarn := map[string]string{}
+	for _, name := range policyProbeRows {
+		probeWarn[name] = "warn"
+	}
+	probeWarn["probe tag"] = "n/a"
+	cases := []struct {
+		name     string
+		out      string
+		exit     int
+		problems []string // each is a problem the run must hold
+		notes    []string // each is a note the run must hold
+		clean    bool     // no problem at all
+	}{
+		{name: "every probe reads ok", out: doctorReportJSON(0, nil), notes: []string{"doctor: 0 failing checks"}, clean: true},
+		{
+			name: "four policy probes warn and one kind has no source",
+			out:  doctorReportJSON(0, probeWarn),
+			problems: []string{
+				"doctor: probe policy rejection reads warn", "doctor: probe details keys reads warn",
+				"doctor: probe invariants canary reads warn", "doctor: probe ssh tests reads warn",
+			},
+			notes: []string{"doctor: probe tag not probed: no source in the tailnet"},
+		},
+		{
+			name:  "a kind with no source in the tailnet is a note",
+			out:   doctorReportJSON(0, map[string]string{"probe host alias": "n/a"}),
+			notes: []string{"doctor: probe host alias not probed: no source in the tailnet", "doctor: 0 failing checks"},
+			clean: true,
+		},
+		{
+			name:     "a policy probe with no credential reads n/a",
+			out:      doctorReportJSON(0, map[string]string{"probe ssh tests": "n/a"}),
+			problems: []string{"doctor: probe ssh tests reads n/a"},
+		},
+		{
+			name:     "a policy probe reads info",
+			out:      doctorReportJSON(0, map[string]string{"probe details keys": "info"}),
+			problems: []string{"doctor: probe details keys reads info"},
+		},
+		{
+			name:     "a kind probe warns",
+			out:      doctorReportJSON(0, map[string]string{"probe IPv6 address": "warn"}),
+			problems: []string{"doctor: probe IPv6 address reads warn"},
+		},
+		{
+			name:     "a probe row fails and the process exits 8",
+			out:      doctorReportJSON(1, map[string]string{"probe tag": "fail"}),
+			exit:     8,
+			problems: []string{"doctor: probe tag reads fail"},
+		},
+		{
+			name:     "a row outside the probes fails and the process exits 8",
+			out:      doctorReportJSON(1, map[string]string{"key record": "fail"}),
+			exit:     8,
+			problems: []string{"doctor: key record reads fail"},
+		},
+		{
+			name:     "a policy probe row is missing",
+			out:      doctorReportWithout("probe invariants canary"),
+			problems: []string{"doctor: probe invariants canary is absent"},
+		},
+		{
+			name:     "a kind probe row is missing",
+			out:      doctorReportWithout("probe ICMP, port 0"),
+			problems: []string{"doctor: probe ICMP, port 0 is absent"},
+		},
+		{
+			name:     "the canary test row is missing",
+			out:      doctorReportWithout("probe acl_test"),
+			problems: []string{"doctor: probe acl_test is absent"},
+		},
+		{
+			name:     "the canary test reads info",
+			out:      doctorReportJSON(0, map[string]string{"probe acl_test": "info"}),
+			problems: []string{"doctor: probe acl_test reads info"},
+		},
+		{
+			name:     "the canary test warns",
+			out:      doctorReportJSON(0, map[string]string{"probe acl_test": "warn"}),
+			problems: []string{"doctor: probe acl_test reads warn"},
+		},
+		{
+			name:  "the canary test has no tag to use",
+			out:   doctorReportJSON(0, map[string]string{"probe acl_test": "n/a"}),
+			notes: []string{"doctor: probe acl_test not probed: the live policy defines no tag", "doctor: 0 failing checks"},
+			clean: true,
+		},
+		{
+			name:     "a report with no rows",
+			out:      `{"failed":0,"checks":[]}`,
+			problems: []string{"doctor: probe policy rejection is absent", "doctor: probe tag is absent"},
+		},
+		{
+			name:     "a status the report does not use",
+			out:      doctorReportJSON(0, map[string]string{"probe details keys": secretDetail}),
+			problems: []string{"doctor: probe details keys reads an unknown status"},
+		},
+		{
+			name:     "the count says two failing and one row fails",
+			out:      doctorReportJSON(2, map[string]string{"probe tag": "fail"}),
+			exit:     8,
+			problems: []string{"doctor: probe tag reads fail", "doctor: the count of failing checks is 2 and 1 rows fail"},
+		},
+		{
+			name:     "the count says one failing and no row fails",
+			out:      doctorReportJSON(1, nil),
+			exit:     8,
+			problems: []string{"doctor: the count of failing checks is 1 and 0 rows fail"},
+		},
+		{
+			name:     "a row named with something other than a fixed word",
+			out:      doctorReportJSON(1, map[string]string{"probe pat@example.com": "fail"}),
+			exit:     8,
+			problems: []string{"doctor: a row reads fail"},
+		},
+	}
+	for _, c := range cases {
+		l := doctorRun(t, c.out, c.exit, 1)
+		for _, want := range c.problems {
+			if !slices.Contains(l.problems, want) {
+				t.Errorf("%s: problems %q lack %q", c.name, l.problems, want)
+			}
+		}
+		for _, want := range c.notes {
+			if !slices.Contains(l.notes, want) {
+				t.Errorf("%s: notes %q lack %q", c.name, l.notes, want)
+			}
+		}
+		if c.clean && len(l.problems) != 0 {
+			t.Errorf("%s: problems %q", c.name, l.problems)
+		}
+		if !c.clean && len(l.problems) == 0 {
+			t.Errorf("%s: the run holds no problem", c.name)
+		}
+		for _, line := range append(append([]string{}, l.notes...), l.problems...) {
+			for _, leak := range []string{secretDetail, "a detail", "pat@example.com"} {
+				if strings.Contains(line, leak) {
+					t.Errorf("%s: a line repeats %q: %q", c.name, leak, line)
+				}
+			}
+		}
+	}
+	// A detail is never repeated, whatever the row reads.
+	l := doctorRun(t, doctorReportJSON(0, map[string]string{"probe tag": "warn"}, secretDetail), 0, 1)
+	for _, line := range append(append([]string{}, l.notes...), l.problems...) {
+		if strings.Contains(line, secretDetail) {
+			t.Errorf("a line repeats a detail: %q", line)
+		}
+	}
+}
+
+// The rows the live run reads by name are the rows the doctor writes: a row renamed in the
+// doctor would otherwise read as absent in a run nobody is watching, or never be read.
+func TestTheRowsTheLiveRunReadsAreTheOnesTheDoctorWrites(t *testing.T) {
+	fset := token.NewFileSet()
+	f, err := parser.ParseFile(fset, "../../internal/doctor/probes_policy.go", nil, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var names []string
+	ast.Inspect(f, func(n ast.Node) bool {
+		spec, ok := n.(*ast.ValueSpec)
+		if !ok || len(spec.Names) != 1 || spec.Names[0].Name != "policyProbeNames" || len(spec.Values) != 1 {
+			return true
+		}
+		lit, ok := spec.Values[0].(*ast.CompositeLit)
+		if !ok {
+			return true
+		}
+		for _, e := range lit.Elts {
+			if b, ok := e.(*ast.BasicLit); ok {
+				v, err := strconv.Unquote(b.Value)
+				if err != nil {
+					t.Fatal(err)
+				}
+				names = append(names, v)
+			}
+		}
+		return false
+	})
+	read := append(append([]string{}, policyProbeRows...), kindProbeRows...)
+	read = append(read, "probe kinds refused")
+	if len(names) == 0 || !slices.Equal(names, read) {
+		t.Errorf("the doctor writes the probe rows %q; the live run reads %q", names, read)
+	}
+	// The canary test's row is written in another file of the doctor.
+	src, err := os.ReadFile("../../internal/doctor/doctor.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(src), `r.add("`+canaryTestRow+`", NA,`) || !strings.Contains(string(src), `names = append(names, "`+canaryTestRow+`")`) {
+		t.Errorf("the doctor does not write the row %q that the live run reads", canaryTestRow)
+	}
+}
+
+func TestTheDoctorProbeJudgesItsOutputAndItsExit(t *testing.T) {
+	credential := "tskey" + "-auth-" + strings.Repeat("A", 12)
+	cases := []struct {
+		name    string
+		out     string
+		exit    int
+		wantErr string // the problem; "" for none
+		note    string // the note, when there is no problem
+	}{
+		{"no failing checks", doctorReportJSON(0, nil), 0, "", "doctor: 0 failing checks"},
+		{"empty output, exit 0", ``, 0, "probe printed no JSON document (0 bytes, exit 0)", ""},
+		{"empty output, exit 8", ``, 8, "probe printed no JSON document (0 bytes, exit 8)", ""},
+		{"text, exit 0", `all good`, 0, "probe printed no JSON document (8 bytes, exit 0)", ""},
+		{"an error document, exit 1", `{"error":{"code":"forbidden"}}`, 1, `probe printed an error document, code "forbidden" (exit 1)`, ""},
+		{"an error document, exit 0", `{"error":{"code":"forbidden"}}`, 0, `probe printed an error document, code "forbidden" (exit 0)`, ""},
+		{"a report and exit 1", doctorReportJSON(0, nil), 1, "probe exit 1", ""},
+		{"a report and exit 2", doctorReportJSON(0, nil), 2, "probe exit 2", ""},
+		{"a count that is not a number", `{"failed":"x"}`, 8, "probe printed no count of failing checks", ""},
+		{"no count", `{"checks":[]}`, 0, "probe printed no count of failing checks", ""},
+		{"a negative count", `{"failed":-1}`, 8, "probe printed no count of failing checks", ""},
+		{"failures and exit 0", doctorReportJSON(2, map[string]string{"probe tag": "fail", "key record": "fail"}), 0, "probe exited 0 but reports 2 failing checks", ""},
+		{"none failing and exit 8", doctorReportJSON(0, nil), 8, "probe exited 8 but reports 0 failing checks", ""},
+		{"a whole address in a check", doctorReportJSON(0, nil, "pat@example.com"), 0, "1 whole email addresses", ""},
+		{"a credential in a check", doctorReportJSON(0, nil, credential), 0, "the tripwire matched the output", ""},
+	}
+	for _, c := range cases {
+		l := doctorRun(t, c.out, c.exit, 1)
+		if c.wantErr == "" {
+			if len(l.problems) != 0 || !slices.Contains(l.notes, c.note) {
+				t.Errorf("%s: problems %q, notes %q", c.name, l.problems, l.notes)
+			}
+			continue
+		}
+		if !slices.Contains(l.problems, "doctor: "+c.wantErr) {
+			t.Errorf("%s: problems %q lack %q", c.name, l.problems, c.wantErr)
+		}
+		// The scan of a report that is otherwise fine fails it and still counts its checks.
+		scanned := c.wantErr == "1 whole email addresses" || c.wantErr == "the tripwire matched the output"
+		for _, line := range append(l.notes, l.problems...) {
+			if strings.Contains(line, "pat@example.com") || strings.Contains(line, credential) {
+				t.Errorf("%s: a line repeats the check: %q", c.name, line)
+			}
+		}
+		for _, line := range l.notes {
+			if !scanned && strings.Contains(line, "failing checks") {
+				t.Errorf("%s: a failed probe is also a count: %q", c.name, line)
+			}
+		}
+	}
+}
+
+func TestTheDoctorProbeCountsItsAuditLinesAndFailsWhenItWroteNone(t *testing.T) {
+	l := doctorRun(t, doctorReportJSON(0, nil), 0, 3)
+	if len(l.problems) != 0 || l.probeLines != 3 || l.probeRuns != 1 {
+		t.Fatalf("problems %q, probe lines %d, runs %d", l.problems, l.probeLines, l.probeRuns)
+	}
+	l.calls = 10
+	if l.auditLowerBound() != 13 || l.maxProcesses() != 11 {
+		t.Errorf("lower bound %d, processes %d", l.auditLowerBound(), l.maxProcesses())
+	}
+
+	none := doctorRun(t, doctorReportJSON(0, nil), 0, 0)
+	if !slices.Contains(none.problems, "doctor: the probe wrote no audit line") || none.probeLines != 0 {
+		t.Errorf("a probe that wrote none: problems %q, lines %d", none.problems, none.probeLines)
+	}
+	// A report that is fine does not excuse the missing lines.
+	if slices.Contains(none.notes, "doctor: 0 failing checks") == false {
+		t.Errorf("the report was not read after the audit check: %q", none.notes)
+	}
+
+	// Without a log to count, the run says so: it is not a pass of the check.
+	l = newLiveRun(stubBinary(t, "printf '%s' '"+doctorReportJSON(0, nil)+"'\n"), stubEnv, nil)
+	l.doctorProbe()
+	if !slices.Contains(l.notes, "doctor: audit lines not measured") || l.probeLines != 0 {
+		t.Errorf("notes %q, lines %d", l.notes, l.probeLines)
+	}
+}
+
+func TestTheGitOpsOracleSaysNotRequestedWhenTheVariableIsUnsetAndItIsNotASkippedTest(t *testing.T) {
+	stub := stubBinary(t, "printf '{}\n'\n")
+	l := newLiveRun(stub, stubEnv, nil)
+	l.all()
+	if !slices.Contains(l.notes, "GitOps oracle: not requested") {
+		t.Fatalf("notes %q", l.notes)
+	}
+	script, err := filepath.Abs("../../scripts/live-check.sh")
+	if err != nil {
+		t.Fatal(err)
+	}
+	log := `=== RUN   TestLiveReads
+    live_test.go:1: GitOps oracle: not requested
+    live_test.go:2: summary: 46 tools: 46 ok, 0 unavailable, 0 none, 0 fail
+--- PASS: TestLiveReads (1.00s)
+=== RUN   TestLiveMCP
+    live_test.go:3: mcp: devices_list: 2 bytes, checks passed (1 personal values examined)
+--- PASS: TestLiveMCP (1.00s)
+=== RUN   TestLivePolicy
+    live_policy_test.go:40: self-check: 9 checks, all held
+--- PASS: TestLivePolicy (1.00s)
+ok  cmd/tailkeeper
+`
+	path := filepath.Join(t.TempDir(), "log")
+	if err := os.WriteFile(path, []byte(log), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	out, err := exec.Command("sh", script, path, "0").CombinedOutput()
+	if err != nil {
+		t.Fatalf("the oracle line was read as a skip: %v\n%s", err, out)
+	}
+}
+
+func TestTheGitOpsOracleIsNotRunWhenThePolicyIsNotExternallyManagedAndItPrintsNoPath(t *testing.T) {
+	dir := t.TempDir()
+	src := filepath.Join(dir, "policy.hujson")
+	if err := os.WriteFile(src, []byte("{}\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	log := filepath.Join(dir, "calls")
+	stub := stubBinary(t, `echo "$*" >> "$STUB_LOG"
+case "$*" in
+*"settings get"*) printf '%s\n' '{"externallyManaged":"false"}' ;;
+*"acl validate"*) printf '%s\n' '{"status":"pass","serverChecked":true,"identicalToLive":false,"invariantsApplied":0}' ;;
+*) printf '{}\n' ;;
+esac
+`)
+	l := newLiveRun(stub, append([]string{"STUB_LOG=" + log, "TAILKEEPER_LIVE_POLICY_SOURCE=" + src}, stubEnv...), nil)
+	l.all()
+	if !slices.Contains(l.notes, "GitOps oracle: not run") {
+		t.Fatalf("notes %q", l.notes)
+	}
+	b, err := os.ReadFile(log)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(b), "acl diff --against "+src) {
+		t.Errorf("the oracle called acl diff on the file though the policy is not managed outside the console:\n%s", b)
+	}
+	for _, line := range append(l.notes, l.problems...) {
+		if strings.Contains(line, src) {
+			t.Errorf("the path was printed: %q", line)
+		}
+	}
+}
+
+// oracleRun runs the GitOps oracle against a stand-in whose acl diff answers diff, and returns
+// the run, the calls the stand-in logged and the path of the owner's file.
+func oracleRun(t *testing.T, diff string) (l *liveRun, calls, src string) {
+	t.Helper()
+	dir := t.TempDir()
+	src = filepath.Join(dir, "policy.hujson")
+	if err := os.WriteFile(src, []byte("{}\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	log := filepath.Join(dir, "calls")
+	stub := stubBinary(t, `echo "$*" >> "$STUB_LOG"
+case "$*" in
+*"settings get"*) printf '%s\n' '{"externallyManaged":"true"}' ;;
+*"acl diff"*) printf '%s\n' "$STUB_DIFF" ;;
+*) printf '{}\n' ;;
+esac
+`)
+	l = newLiveRun(stub, append([]string{"STUB_LOG=" + log, "STUB_DIFF=" + diff, "TAILKEEPER_LIVE_POLICY_SOURCE=" + src}, stubEnv...), nil)
+	l.results = append(l.results,
+		liveOutcome{tool: "settings_get", outcome: outcomeOK},
+		liveOutcome{tool: "acl_diff", outcome: outcomeOK})
+	l.gitopsOracle(map[string]any{"externallyManaged": "true"})
+	b, err := os.ReadFile(log)
+	if err != nil {
+		t.Fatalf("the stand-in logged no call: %v", err)
+	}
+	return l, string(b), src
+}
+
+func TestTheGitOpsOracleDiffsTheOwnersFileAgainstTheLivePolicyAndHoldsWhenEqual(t *testing.T) {
+	l, calls, src := oracleRun(t, `{"status":"equal"}`)
+	if slices.Contains(l.notes, "GitOps oracle: not run") || slices.Contains(l.notes, "GitOps oracle: not requested") {
+		t.Fatalf("the oracle did not run: %q", l.notes)
+	}
+	if len(l.problems) != 0 {
+		t.Errorf("an equal file is a problem: %q", l.problems)
+	}
+	if want := "--json acl diff --against " + src; !strings.Contains(calls, want) {
+		t.Errorf("the oracle did not diff the owner's file; calls:\n%s", calls)
+	}
+	for _, line := range append(l.notes, l.problems...) {
+		if strings.Contains(line, src) {
+			t.Errorf("the path was printed: %q", line)
+		}
+	}
+}
+
+func TestTheGitOpsOracleFailsWhenTheOwnersFileIsNotTheLivePolicy(t *testing.T) {
+	for _, status := range []string{"changed", "", "equals"} {
+		l, _, src := oracleRun(t, `{"status":"`+status+`"}`)
+		if !slices.Contains(l.problems, "acl_diff: field status is not equal") {
+			t.Errorf("status %q: problems %q", status, l.problems)
+		}
+		for _, line := range append(l.notes, l.problems...) {
+			if strings.Contains(line, src) || strings.Contains(line, "changed") {
+				t.Errorf("status %q: a line repeats what was found: %q", status, line)
+			}
+		}
+	}
+}
+
+func TestEveryRegisteredToolHasARowInTheLiveRunIncludingACLHistory(t *testing.T) {
+	stub := answeringStub(t)
+	l := newLiveRun(stub, append([]string{"STUB_LOG=" + filepath.Join(t.TempDir(), "calls")}, stubEnv...), nil)
+	l.all()
+	if !l.ran["acl_history"] {
+		t.Fatal("acl_history was not run")
+	}
+	for _, p := range l.problems {
+		if strings.Contains(p, "was not exercised") {
+			t.Errorf("%s", p)
+		}
+	}
+	if len(l.results) != len(l.reg.All()) {
+		t.Errorf("%d results for %d tools", len(l.results), len(l.reg.All()))
+	}
+}
+
+func TestAnACLTestExitMustMatchItsStatus(t *testing.T) {
+	const (
+		passing    = `{"status":"pass","evaluatedAt":"2026-10-13T00:00:00Z","note":"n"}`
+		failing    = `{"status":"fail","evaluatedAt":"2026-10-13T00:00:00Z","note":"n"}`
+		unresolved = `{"status":"unresolved","evaluatedAt":"2026-10-13T00:00:00Z","note":"n"}`
+		unknown    = `{"status":"unknown","evaluatedAt":"2026-10-13T00:00:00Z","note":"n"}`
+	)
+	cases := []struct {
+		name, doc string
+		exit      int
+		outcome   string
+	}{
+		{"pass exits 0", passing, 0, outcomeOK},
+		{"fail exits 9", failing, 9, outcomeOK},
+		{"unresolved exits 2", unresolved, 2, outcomeOK},
+		{"unknown exits 1", unknown, 1, outcomeOK},
+		{"unresolved exiting 9", unresolved, 9, outcomeFail},
+		{"unknown exiting 0", unknown, 0, outcomeFail},
+	}
+	stub := docStub(t)
+	for _, c := range cases {
+		l := newLiveRun(stub, docEnv(c.doc, c.exit), nil)
+		l.call("acl_test")
+		if len(l.results) != 1 || l.results[0].outcome != c.outcome {
+			t.Errorf("%s: %+v", c.name, l.results)
+		}
+	}
+}
+
+func TestTheWarningsBaselineValidatesACopyThatIsNotTheLivePolicy(t *testing.T) {
+	dir := t.TempDir()
+	kept := filepath.Join(dir, "patches")
+	stub := stubBinary(t, `case "$*" in
+*"--patch "*|*"--invariants "*)
+	printf '%s\n' "$4" >> "$STUB_KEPT"
+	cat "$5" >> "$STUB_KEPT"
+	printf '\n' >> "$STUB_KEPT"
+	printf '%s\n' '{"status":"pass","serverChecked":true,"identicalToLive":false,"invariantsApplied":0,"existingWarnings":[{"message":"kept"}]}' ;;
+*"acl validate"*)
+	printf '%s\n' '{"status":"pass","serverChecked":true,"identicalToLive":true,"invariantsApplied":0}' ;;
+*)
+	printf '{}\n' ;;
+esac
+`)
+	l := newLiveRun(stub, append([]string{"STUB_KEPT=" + kept}, stubEnv...), nil)
+	l.call("acl_validate")
+	l.call("acl_get")
+	l.policyCopies(1)
+	body, err := os.ReadFile(kept)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(body), baselinePatch) || !strings.Contains(string(body), emptyPatch) {
+		t.Fatalf("the copies were:\n%s", body)
+	}
+	if strings.Contains(string(body), "--invariants") {
+		t.Errorf("an invariants file was sent:\n%s", body)
+	}
+	if !slices.Contains(l.notes, "acl_validate: baseline stored 1, existing 1, new 0, spelling matched") {
+		t.Fatalf("notes %q", l.notes)
+	}
+	if len(l.problems) != 0 {
+		t.Errorf("problems %q", l.problems)
+	}
+}
+
+// copiesStub answers every copy sent with --patch with the document patch and the exit the
+// tool makes for its status, and the live policy itself with a pass that is identical to it.
+func copiesStub(t *testing.T, patch string, exit int) *liveRun {
+	t.Helper()
+	stub := stubBinary(t, `case "$*" in
+*"--patch "*) printf '%s\n' "$STUB_PATCH"; exit "$STUB_EXIT" ;;
+*"acl validate"*) printf '%s\n' '{"status":"pass","serverChecked":true,"identicalToLive":true,"invariantsApplied":0}' ;;
+*) printf '{}\n' ;;
+esac
+`)
+	l := newLiveRun(stub, append([]string{"STUB_PATCH=" + patch, "STUB_EXIT=" + strconv.Itoa(exit)}, stubEnv...), nil)
+	l.call("acl_validate")
+	l.call("acl_get")
+	l.policyCopies(0)
+	return l
+}
+
+func TestACopyThatIsTheLivePolicyByteForByteFailsTheBaselineCheck(t *testing.T) {
+	l := copiesStub(t, `{"status":"pass","serverChecked":true,"identicalToLive":true,"invariantsApplied":0}`, 0)
+	if !slices.Contains(l.problems, "acl_validate: field identicalToLive is not false") {
+		t.Fatalf("problems %q", l.problems)
+	}
+	ok := copiesStub(t, `{"status":"pass","serverChecked":true,"identicalToLive":false,"invariantsApplied":0}`, 0)
+	if len(ok.problems) != 0 {
+		t.Errorf("a copy that is not the live policy: problems %q", ok.problems)
+	}
+}
+
+func TestATailnetWhoseOwnTestsFailIsANoteAndTheCopyCheckIsNotMade(t *testing.T) {
+	// A copy that fails the tailnet's own tests: not a failure of the harness, and not a pass.
+	l := copiesStub(t, `{"status":"fail","serverChecked":true,"identicalToLive":true,"invariantsApplied":0}`, 9)
+	if len(l.problems) != 0 {
+		t.Fatalf("problems %q", l.problems)
+	}
+	for _, want := range []string{
+		"acl_validate: patch copy check not made: the tailnet's own tests answered fail",
+		"acl_validate: baseline copy check not made: the tailnet's own tests answered fail",
+	} {
+		if !slices.Contains(l.notes, want) {
+			t.Errorf("notes %q lack %q", l.notes, want)
+		}
+	}
+	for _, n := range l.notes {
+		if strings.HasPrefix(n, "acl_validate: baseline stored") {
+			t.Errorf("the baseline was classified though the check was not made: %q", n)
+		}
+	}
+	// Any other status that is not a pass is still a problem.
+	for status, exit := range map[string]int{"invalid": 2, "rejected": 2, "unresolved": 2, "unknown": 1} {
+		bad := copiesStub(t, `{"status":"`+status+`","identicalToLive":false}`, exit)
+		if !slices.Contains(bad.problems, "acl_validate: field status is not pass") {
+			t.Errorf("status %s: problems %q", status, bad.problems)
+		}
+		for _, n := range bad.notes {
+			if strings.HasPrefix(n, "acl_validate: baseline stored") {
+				t.Errorf("status %s: the baseline was classified though the copy did not pass: %q", status, n)
+			}
+		}
+	}
+}
+
+func TestTheInvariantsCheckIsRecordedAsNotRunAndSendsNoEmptyFile(t *testing.T) {
+	log := filepath.Join(t.TempDir(), "calls")
+	stub := stubBinary(t, `echo "$*" >> "$STUB_LOG"
+case "$*" in
+*"acl validate"*) printf '%s\n' '{"status":"pass","serverChecked":true,"identicalToLive":false,"invariantsApplied":0}' ;;
+*) printf '{}\n' ;;
+esac
+`)
+	l := newLiveRun(stub, append([]string{"STUB_LOG=" + log}, stubEnv...), nil)
+	l.call("acl_validate")
+	l.policyCopies(0)
+	want := "acl_validate: invariants not run: no test is known to hold on the live policy, and an empty file proves nothing"
+	if !slices.Contains(l.notes, want) {
+		t.Errorf("notes %q", l.notes)
+	}
+	b, err := os.ReadFile(log)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(b), "--invariants") {
+		t.Errorf("an invariants file was sent:\n%s", b)
+	}
+	for _, p := range l.problems {
+		if strings.Contains(p, "invariantsApplied") {
+			t.Errorf("an applied count is asserted though nothing was applied: %q", p)
+		}
+	}
+}
+
+func TestTheCallCountInTheMakefileCommentIsTheMostProcessesARunCanStart(t *testing.T) {
+	// The most: the oracle runs (the policy is managed outside the console), the first baseline
+	// spelling is refused so the second is sent, and doctor --probe runs.
+	dir := t.TempDir()
+	src := filepath.Join(dir, "policy.hujson")
+	if err := os.WriteFile(src, []byte("{}\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	log := filepath.Join(dir, "calls")
+	l := newLiveRun(maximalStub(t), append([]string{"STUB_LOG=" + log, "TAILKEEPER_LIVE_POLICY_SOURCE=" + src}, stubEnv...), nil)
+	l.all()
+	b, err := os.ReadFile(log)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Every process the stand-in saw is one the run started, and the count is of those; the
+	// reads of the audit log's length are not tool calls and write no line.
+	started, diffs, patches := 0, 0, 0
+	for _, line := range strings.Split(strings.TrimSuffix(string(b), "\n"), "\n") {
+		if line == "audit verify" {
+			continue
+		}
+		started++
+		if strings.Contains(line, "acl diff --against "+src) {
+			diffs++
+		}
+		if strings.Contains(line, "acl validate --patch") {
+			patches++
+		}
+	}
+	if started != l.maxProcesses() {
+		t.Fatalf("the stand-in saw %d processes; the run counts %d", started, l.maxProcesses())
+	}
+	if diffs != 1 || patches != 3 {
+		t.Fatalf("the oracle ran %d times and %d patches were sent, want 1 and 3 (empty, baseline, its second spelling)", diffs, patches)
+	}
+	mk, err := os.ReadFile("../../Makefile")
+	if err != nil {
+		t.Fatal(err)
+	}
+	const mark = "Each of the "
+	i := strings.Index(string(mk), mark)
+	if i < 0 {
+		t.Fatal("the live comment does not count the calls")
+	}
+	rest := string(mk)[i+len(mark):]
+	n, _, ok := strings.Cut(rest, " calls")
+	if !ok {
+		t.Fatal("the live comment has no call count")
+	}
+	if n != strconv.Itoa(l.maxProcesses()) {
+		t.Errorf("the comment says %s calls; the most a run can start is %d", n, l.maxProcesses())
+	}
+}
+
+// TestTheLiveLogicCountsTheThirdTestAndItsClosingLine is the judge's view of
+// TestLivePolicy: a canned log passes with its closing line, and fails when the
+// test did not pass, was skipped, or never logged that every check held.
+func TestTheLiveLogicCountsTheThirdTestAndItsClosingLine(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("the check is a POSIX shell script")
+	}
+	script, err := filepath.Abs("../../scripts/live-check.sh")
+	if err != nil {
+		t.Fatal(err)
+	}
+	const three = `=== RUN   TestLiveReads
+    live_test.go:421: summary: 43 tools: 25 ok, 1 unavailable, 17 none, 0 fail
+--- PASS: TestLiveReads (21.40s)
+=== RUN   TestLiveMCP
+    live_test.go:495: mcp: devices_list: 1234 bytes, checks passed
+--- PASS: TestLiveMCP (1.02s)
+=== RUN   TestLivePolicy
+    live_policy_test.go:40: self-check: 9 checks, all held
+--- PASS: TestLivePolicy (1.02s)
+PASS
+`
+	run := func(log, status string) (string, int) {
+		t.Helper()
+		path := filepath.Join(t.TempDir(), "log")
+		if err := os.WriteFile(path, []byte(log), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		out, err := exec.Command("sh", script, path, status).CombinedOutput()
+		code := 0
+		var ee *exec.ExitError
+		if errors.As(err, &ee) {
+			code = ee.ExitCode()
+		} else if err != nil {
+			t.Fatal(err)
+		}
+		return string(out), code
+	}
+	if out, code := run(three, "0"); code != 0 || !strings.Contains(out, "self-check: 9 checks, all held") {
+		t.Fatalf("a complete log: exit %d\n%s", code, out)
+	}
+	noPass := strings.Replace(three, "--- PASS: TestLivePolicy (1.02s)\n", "", 1)
+	if out, code := run(noPass, "0"); code != 1 || !strings.Contains(out, "TestLivePolicy did not pass") {
+		t.Fatalf("no pass line: exit %d\n%s", code, out)
+	}
+	skipped := strings.Replace(three, "--- PASS: TestLivePolicy (1.02s)", "--- SKIP: TestLivePolicy (0.00s)", 1)
+	if out, code := run(skipped, "0"); code != 1 || !strings.Contains(out, "skipped, so it checked nothing") {
+		t.Fatalf("a skip: exit %d\n%s", code, out)
+	}
+	noClose := strings.Replace(three, "    live_policy_test.go:40: self-check: 9 checks, all held\n", "", 1)
+	if out, code := run(noClose, "0"); code != 1 || !strings.Contains(out, "no closing line") {
+		t.Fatalf("no closing line: exit %d\n%s", code, out)
+	}
+	// The closing line is the policy test's own: the same words logged by another test do not count.
+	elsewhere := strings.Replace(three, "live_policy_test.go:40: self-check: 9 checks, all held", "live_test.go:40: self-check: 9 checks, all held", 1)
+	if out, code := run(elsewhere, "0"); code != 1 || !strings.Contains(out, "no closing line") {
+		t.Fatalf("a closing line from another file: exit %d\n%s", code, out)
+	}
+}
+
 // TestNothingButMakeLiveReachesTheLiveRun: the live run reads a real tailnet, so neither the
 // gate nor the workflows may reach it.
 func TestNothingButMakeLiveReachesTheLiveRun(t *testing.T) {
@@ -909,5 +1808,306 @@ func TestNothingButMakeLiveReachesTheLiveRun(t *testing.T) {
 		if strings.Contains(string(b), "TAILKEEPER_LIVE") || strings.Contains(string(b), "make live") {
 			t.Errorf("%s reaches the live run", filepath.Base(f))
 		}
+	}
+}
+
+// selfCheckOutput is the output of a self-check that holds everything, as the probe prints it:
+// the four policy checks and the five shapes, and the closing count.
+const selfCheckOutput = `self-check: reformat held 2
+self-check: round-trip held 0
+self-check: summary held 12 (not compared: 1 unknown)
+self-check: etag held 1
+shape: A-1 same
+shape: A-8 same (not compared: the form of the policy text, warnings and errors)
+shape: A-9 same (not compared: a tag, a host alias, a user, a service)
+shape: A-10 same (not compared: the ssh fallback)
+shape: H-1 same
+self-check: 9 checks, all held
+`
+
+func TestTheSelfCheckIsJudgedOnEveryLineItPrintsAndTheNumberOfChecksItMakes(t *testing.T) {
+	const want = 9
+	if got := probe.SelfCheckCount(); got != want {
+		t.Fatalf("the probe makes %d checks, this test expects %d", got, want)
+	}
+	lines, problems := judgeSelfCheck([]byte("tailkeeper: probe-acl: A-1\n"+selfCheckOutput), 0, want)
+	if len(problems) != 0 || len(lines) != 10 {
+		t.Fatalf("a complete run: %d lines, problems %q", len(lines), problems)
+	}
+
+	// A failing run still shows every line, before it fails on the exit code.
+	failing := strings.Replace(selfCheckOutput, "shape: A-9 same (not compared: a tag, a host alias, a user, a service)", "shape: A-9 differs: 1 paths (not compared: a tag, a host alias, a user, a service)", 1)
+	failing = strings.Replace(failing, "self-check: 9 checks, all held", "self-check: 9 checks, 1 not held", 1)
+	lines, problems = judgeSelfCheck([]byte(failing), 1, want)
+	if len(lines) != 10 || !slices.Contains(lines, "shape: A-9 differs: 1 paths (not compared: a tag, a host alias, a user, a service)") {
+		t.Errorf("a failing run hides lines: %q", lines)
+	}
+	for _, want := range []string{"self-check exit 1", "1 checks did not hold"} {
+		if !slices.Contains(problems, want) {
+			t.Errorf("problems %q lack %q", problems, want)
+		}
+	}
+
+	// A run that dropped the shape checks has fewer checks than it must make, whatever it says.
+	dropped := "self-check: reformat held 2\nself-check: round-trip held 0\nself-check: summary held 12\nself-check: etag held 1\nself-check: 4 checks, all held\n"
+	_, problems = judgeSelfCheck([]byte(dropped), 0, want)
+	if !slices.Contains(problems, "the self-check made 4 checks, and the run must make 9") {
+		t.Errorf("dropped checks: problems %q", problems)
+	}
+	// A closing count that is not the number of lines printed.
+	short := strings.Replace(selfCheckOutput, "shape: H-1 same\n", "", 1)
+	_, problems = judgeSelfCheck([]byte(short), 0, want)
+	if !slices.Contains(problems, "the closing count is 9, and 8 checks were printed") {
+		t.Errorf("a short run: problems %q", problems)
+	}
+	// No closing line at all.
+	_, problems = judgeSelfCheck([]byte(strings.Replace(selfCheckOutput, "self-check: 9 checks, all held\n", "", 1)), 0, want)
+	if !slices.Contains(problems, "the self-check printed no closing count") {
+		t.Errorf("no closing line: problems %q", problems)
+	}
+	// A line that is not of the forms the self-check prints is a problem and is not logged.
+	lines, problems = judgeSelfCheck([]byte(selfCheckOutput+"leaked 198.51.100.7\n"), 0, want)
+	if !slices.Contains(problems, "a self-check line is not a count, a boolean or a probe name") || slices.Contains(lines, "leaked 198.51.100.7") {
+		t.Errorf("a stray line: problems %q, lines %q", problems, lines)
+	}
+}
+
+// recorder is a reporter that keeps, in order, what the live run would log and fail on.
+type recorder struct{ events []string }
+
+func (r *recorder) Helper() {}
+
+func (r *recorder) Log(args ...any) { r.events = append(r.events, "log: "+fmt.Sprint(args...)) }
+
+func (r *recorder) Error(args ...any) { r.events = append(r.events, "error: "+fmt.Sprint(args...)) }
+
+func (r *recorder) Fatal(args ...any) { r.events = append(r.events, "fatal") }
+
+// errorsOf is the problems a recorder was told of.
+func (r *recorder) errorsOf() []string {
+	var out []string
+	for _, e := range r.events {
+		if after, ok := strings.CutPrefix(e, "error: "); ok {
+			out = append(out, after)
+		}
+	}
+	return out
+}
+
+// livePolicyRun runs checkLivePolicy against a stand-in for the tagged binary that writes
+// stderr then out and exits exit, and returns what the run reported and the arguments the
+// stand-in was started with.
+func livePolicyRun(t *testing.T, out string, exit int, timeout time.Duration) (*recorder, string) {
+	t.Helper()
+	log := filepath.Join(t.TempDir(), "args")
+	bin := stubBinary(t, `echo "$*" >> "$STUB_LOG"
+printf 'tailkeeper: probe-acl: A-1\n' >&2
+printf '%s' "$STUB_OUT"
+if [ -n "$STUB_SLEEP" ]; then exec sleep "$STUB_SLEEP"; fi
+exit "$STUB_EXIT"
+`)
+	env := append([]string{"STUB_LOG=" + log, "STUB_OUT=" + out, "STUB_EXIT=" + strconv.Itoa(exit)}, stubEnv...)
+	if timeout < time.Second {
+		env = append(env, "STUB_SLEEP=30")
+	}
+	r := &recorder{}
+	checkLivePolicy(r, bin, env, "/captures/observed", timeout)
+	b, _ := os.ReadFile(log)
+	return r, string(b)
+}
+
+// TestLivePolicy is only glue around checkLivePolicy, and runs only for a live run; these are
+// the wiring's own tests: that the self-check is run on the captures, judged on its output
+// and its exit, and that every line it prints is logged before the run fails.
+func TestTheLivePolicyRunStartsTheSelfCheckAndJudgesIt(t *testing.T) {
+	r, args := livePolicyRun(t, selfCheckOutput, 0, time.Minute)
+	if args != "probe-acl --self-check --against /captures/observed\n" {
+		t.Errorf("the stand-in was started with %q", args)
+	}
+	if len(r.errorsOf()) != 0 || len(r.events) != 10 {
+		t.Errorf("a complete run: %d events, problems %q", len(r.events), r.errorsOf())
+	}
+	for _, e := range r.events {
+		if strings.Contains(e, "probe-acl: A-1") {
+			t.Errorf("a progress line of the probe is logged: %q", e)
+		}
+	}
+
+	// Nothing printed and exit 0: a run whose self-check was dropped is not a pass.
+	r, _ = livePolicyRun(t, "", 0, time.Minute)
+	if !slices.Contains(r.errorsOf(), "the self-check printed no closing count") {
+		t.Errorf("a silent self-check: %q", r.events)
+	}
+
+	// The probe makes SelfCheckCount() checks; a run that made fewer fails.
+	dropped := "self-check: reformat held 2\nself-check: round-trip held 0\nself-check: summary held 12\nself-check: etag held 1\nself-check: 4 checks, all held\n"
+	r, _ = livePolicyRun(t, dropped, 0, time.Minute)
+	if !slices.Contains(r.errorsOf(), "the self-check made 4 checks, and the run must make 9") {
+		t.Errorf("a self-check without its shapes: %q", r.events)
+	}
+
+	// A failing run logs every line before it fails, and fails on the exit and the check.
+	failing := strings.Replace(selfCheckOutput, "shape: H-1 same", "shape: H-1 differs: 3 paths", 1)
+	failing = strings.Replace(failing, "self-check: 9 checks, all held", "self-check: 9 checks, 1 not held", 1)
+	r, _ = livePolicyRun(t, failing, 1, time.Minute)
+	firstError := slices.IndexFunc(r.events, func(e string) bool { return strings.HasPrefix(e, "error: ") })
+	if firstError != 10 || !slices.Contains(r.events, "log: shape: H-1 differs: 3 paths") {
+		t.Errorf("the lines were not all logged before the first problem (at %d): %q", firstError, r.events)
+	}
+	for _, want := range []string{"self-check exit 1", "1 checks did not hold"} {
+		if !slices.Contains(r.errorsOf(), want) {
+			t.Errorf("problems %q lack %q", r.errorsOf(), want)
+		}
+	}
+
+	// A self-check that does not finish in time is a problem, and so is its exit.
+	r, _ = livePolicyRun(t, "", 0, 300*time.Millisecond)
+	if !slices.Contains(r.errorsOf(), "the self-check did not finish in time") {
+		t.Errorf("a self-check that ran out of time: %q", r.events)
+	}
+
+	// A binary that cannot be started is fatal, not a pass of nothing.
+	r = &recorder{}
+	checkLivePolicy(r, filepath.Join(t.TempDir(), "absent"), stubEnv, "/captures/observed", time.Minute)
+	if !slices.Contains(r.events, "fatal") || len(r.events) != 1 {
+		t.Errorf("a binary that cannot start: %q", r.events)
+	}
+}
+
+// TestLivePolicy runs only for a live run, so no test can run it: this one reads its body and
+// holds it to the one thing it is for, to hand the tagged binary, the owner's environment and
+// the committed captures to checkLivePolicy. The captures are the files the shapes are
+// compared with, one for each shape the probe checks.
+func TestTheLivePolicyTestRunsTheSelfCheckOnTheCommittedCaptures(t *testing.T) {
+	f, err := parser.ParseFile(token.NewFileSet(), "live_policy_test.go", nil, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var calls []*ast.CallExpr
+	for _, d := range f.Decls {
+		fn, ok := d.(*ast.FuncDecl)
+		if !ok || fn.Name.Name != "TestLivePolicy" {
+			continue
+		}
+		ast.Inspect(fn.Body, func(n ast.Node) bool {
+			if c, ok := n.(*ast.CallExpr); ok {
+				if id, ok := c.Fun.(*ast.Ident); ok && id.Name == "checkLivePolicy" {
+					calls = append(calls, c)
+				}
+			}
+			return true
+		})
+	}
+	if len(calls) != 1 || len(calls[0].Args) != 5 {
+		t.Fatalf("TestLivePolicy makes %d calls of checkLivePolicy", len(calls))
+	}
+	args := calls[0].Args
+	if id, ok := args[1].(*ast.Ident); !ok || id.Name != "probeBin" {
+		t.Errorf("TestLivePolicy does not run the tagged binary")
+	}
+	if c, ok := args[2].(*ast.CallExpr); !ok || fmt.Sprint(c.Fun) != "liveEnv" {
+		t.Errorf("TestLivePolicy does not run it in the owner's environment")
+	}
+	if id, ok := args[3].(*ast.Ident); !ok || id.Name != "against" {
+		t.Errorf("TestLivePolicy does not compare the shapes with captures")
+	}
+	dir, err := capturesDir()
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, id := range []string{"A-1", "A-8", "A-9", "A-10", "H-1"} {
+		if _, err := os.Stat(filepath.Join(dir, id+".json")); err != nil {
+			t.Errorf("the capture of %s is not in the captures directory: %v", id, err)
+		}
+	}
+}
+
+func TestVersionPairDiffsTheLastRowOfThePageWithItself(t *testing.T) {
+	log := filepath.Join(t.TempDir(), "calls")
+	stub := stubBinary(t, `echo "$*" >> "$STUB_LOG"
+printf '%s\n' '{"status":"equal"}'
+`)
+	l := newLiveRun(stub, append([]string{"STUB_LOG=" + log}, stubEnv...), nil)
+	l.results = append(l.results, liveOutcome{tool: "acl_history", outcome: outcomeOK}, liveOutcome{tool: "acl_diff", outcome: outcomeOK})
+	l.versionPair(map[string]any{"versions": []any{
+		map[string]any{"version": "v-first.example"}, map[string]any{"version": "v-middle.example"}, map[string]any{"version": "v-last.example"},
+	}})
+	b, err := os.ReadFile(log)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if want := "--json acl diff --from-version v-last.example --to-version v-last.example\n"; string(b) != want {
+		t.Errorf("calls %q, want %q", b, want)
+	}
+	if len(l.problems) != 0 {
+		t.Errorf("problems %q", l.problems)
+	}
+	if got := lastVersion(map[string]any{"versions": []any{map[string]any{"version": "a"}, map[string]any{"version": "b"}}}); got != "b" {
+		t.Errorf("lastVersion %q, want the last row of the page", got)
+	}
+	// An empty history names nothing: none, not a failure, and no call.
+	empty := newLiveRun(stub, append([]string{"STUB_LOG=" + filepath.Join(t.TempDir(), "none")}, stubEnv...), nil)
+	empty.results = append(empty.results, liveOutcome{tool: "acl_history", outcome: outcomeOK})
+	empty.versionPair(map[string]any{"versions": []any{}})
+	if !slices.Contains(empty.notes, "acl_diff: version pair none") || empty.calls != 0 {
+		t.Errorf("notes %q, calls %d", empty.notes, empty.calls)
+	}
+}
+
+// A version compared with itself must come back equal: a pair that comes back changed, or
+// as anything else, fails the run, and the problem names the field, not what was found.
+func TestAVersionPairThatIsNotEqualIsAProblem(t *testing.T) {
+	for _, status := range []string{"changed", "invalid", "unknown", ""} {
+		stub := stubBinary(t, "printf '%s\\n' \"$STUB_DIFF\"\n")
+		l := newLiveRun(stub, append([]string{`STUB_DIFF={"status":"` + status + `"}`}, stubEnv...), nil)
+		l.results = append(l.results, liveOutcome{tool: "acl_history", outcome: outcomeOK})
+		l.versionPair(map[string]any{"versions": []any{map[string]any{"version": "v-one.example"}}})
+		if !slices.Contains(l.problems, "acl_diff: field status is not equal") {
+			t.Errorf("status %q: problems %q", status, l.problems)
+		}
+		for _, line := range append(l.notes, l.problems...) {
+			if status != "" && strings.Contains(line, status) || strings.Contains(line, "v-one.example") {
+				t.Errorf("status %q: a line repeats what was found: %q", status, line)
+			}
+		}
+	}
+}
+
+// dnsAndPseudonymRun runs every tool against a stand-in that answers dns get with dns and
+// acl test with test, exiting exit, and logs each call to log.
+func dnsAndPseudonymRun(t *testing.T, log, dns, test string, exit int) *liveRun {
+	t.Helper()
+	stub := stubBinary(t, `echo "$*" >> "$STUB_LOG"
+case "$*" in
+*"dns get"*) printf '%s\n' "$STUB_DNS" ;;
+*"acl test"*) printf '%s\n' "$STUB_TEST"; exit "$STUB_EXIT" ;;
+*"acl get"*) printf '{"warnings":[]}\n' ;;
+*"users list"*) printf '%s\n' '{"users":[{"id":"u1","loginName":"a…@example.com [p:abcdefghij]"}]}' ;;
+*) printf '{}\n' ;;
+esac
+`)
+	l := newLiveRun(stub, append([]string{"STUB_LOG=" + log, "STUB_DNS=" + dns, "STUB_TEST=" + test, "STUB_EXIT=" + strconv.Itoa(exit)}, stubEnv...), nil)
+	l.all()
+	return l
+}
+
+func TestTheDNSAndPseudonymChecksAreMadeOnTheAnswer(t *testing.T) {
+	const passing = `{"status":"pass","evaluatedAt":"2026-10-13T00:00:00Z","note":"n"}`
+	log := filepath.Join(t.TempDir(), "calls")
+	good := dnsAndPseudonymRun(t, log, `{"policyOverridesAnalysed":true}`, passing, 0)
+	if slices.Contains(good.problems, "dns_get: field policyOverridesAnalysed is not true") || slices.Contains(good.problems, "acl_test: field status is not a typed status") {
+		t.Errorf("a good run has problems %q", good.problems)
+	}
+	if b, _ := os.ReadFile(log); !strings.Contains(string(b), "--json acl test p:abcdefghij --deny 192.0.2.1:1\n") {
+		t.Errorf("acl_test was not asked about the pseudonym users_list showed:\n%s", b)
+	}
+	bad := dnsAndPseudonymRun(t, filepath.Join(t.TempDir(), "calls"), `{"policyOverridesAnalysed":false}`, passing, 0)
+	if !slices.Contains(bad.problems, "dns_get: field policyOverridesAnalysed is not true") {
+		t.Errorf("a policy that was not analysed passed: %q", bad.problems)
+	}
+	// The status acl_test answers for a user is one of four; anything else is a problem.
+	odd := dnsAndPseudonymRun(t, filepath.Join(t.TempDir(), "calls"), `{"policyOverridesAnalysed":true}`, `{"status":"bogus","evaluatedAt":"2026-10-13T00:00:00Z","note":"n"}`, 1)
+	if !slices.Contains(odd.problems, "acl_test: field status is not a typed status") {
+		t.Errorf("an untyped status passed: %q", odd.problems)
 	}
 }

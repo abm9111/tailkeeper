@@ -21,6 +21,8 @@ import (
 
 const validateDepthChildEnv = "TAILKEEPER_VALIDATE_DEPTH_CHILD"
 
+const dnsDepthChildEnv = "TAILKEEPER_DNS_DEPTH_CHILD"
+
 func TestValidateDepthChild(t *testing.T) {
 	if os.Getenv(validateDepthChildEnv) == "" {
 		return // the parent test runs this one in a child; on its own it has nothing to do
@@ -51,6 +53,30 @@ func TestValidateDepthChild(t *testing.T) {
 		t.Fatalf("over MCP: %+v, want a typed invalid result", out)
 	}
 	fmt.Println("DEPTH-OK acl_validate")
+}
+
+func TestDNSGetDepthChild(t *testing.T) {
+	if os.Getenv(dnsDepthChildEnv) == "" {
+		return
+	}
+	f, reg, env := apiEnv(t)
+	f.JSON("GET", tailnetPath+"/dns/configuration", 200, `{"nameservers":[{"address":"192.0.2.53"}]}`)
+	servePolicy(f, strings.Repeat("[", 1<<20), `"e1"`)
+	var out tools.DNSOutput
+	mustCall(t, reg, env, "dns_get", `{}`, &out)
+	if out.PolicyOverridesAnalysed || !strings.Contains(out.PolicyNote, "nests too deeply") || len(out.Nameservers) != 1 || out.Nameservers[0].Address != "192.0.2.53" {
+		t.Fatalf("dns_get: %+v, want the API half and a note that the text nests too deeply", out)
+	}
+	fmt.Println("DEPTH-OK dns_get")
+}
+
+func TestAMillionLevelsOfNestingLeavesDNSGetWithANote(t *testing.T) {
+	cmd := exec.Command(os.Args[0], "-test.run=^TestDNSGetDepthChild$", "-test.count=1")
+	cmd.Env = append(os.Environ(), dnsDepthChildEnv+"=1")
+	out, err := cmd.CombinedOutput()
+	if err != nil || !strings.Contains(string(out), "DEPTH-OK dns_get") {
+		t.Fatalf("the child did not finish cleanly: %v\n%s", err, tailOf(string(out), 1500))
+	}
 }
 
 func TestAMillionLevelsOfNestingIsAnInvalidResult(t *testing.T) {
@@ -85,6 +111,33 @@ func TestTheSSHPathSurvivesAMillionLevelsOfNestingInTheLivePolicy(t *testing.T) 
 	cmd.Env = append(os.Environ(), sshDepthChildEnv+"=1")
 	out, err := cmd.CombinedOutput()
 	if err != nil || !strings.Contains(string(out), "DEPTH-OK acl_test_ssh") {
+		t.Fatalf("the child did not finish cleanly: %v\n%s", err, tailOf(string(out), 1500))
+	}
+}
+
+const diffVersionDepthChildEnv = "TAILKEEPER_DIFF_VERSION_DEPTH_CHILD"
+
+func TestACLDiffVersionDepthChild(t *testing.T) {
+	if os.Getenv(diffVersionDepthChildEnv) == "" {
+		return
+	}
+	f, reg, env := apiEnv(t)
+	when := "2026-10-08T00:00:00Z"
+	deep := strings.Repeat("[", 1<<20)
+	serveHistory(f, historyLogs(historyLine(when, "g", "ADMIN_CONSOLE", "amy@example.com", `{"tagOwners":{"tag:a":[]}}`, deep)))
+	var out tools.ACLDiffOutput
+	mustCall(t, reg, env, "acl_diff", `{"fromVersion":"`+diffVersionID(when, "g", "new", 0)+`","policy":"{\"tagOwners\":{\"tag:a\":[]}}"}`, &out)
+	if out.Status != "invalid" || out.Old.Source != "version" || len(out.Old.Findings) != 1 || out.Old.Findings[0].Kind != "structure" || !strings.Contains(out.Old.Findings[0].Message, "nests deeper") {
+		t.Fatalf("err none, out = %+v, want an invalid version side from the depth guard", out)
+	}
+	fmt.Println("DEPTH-OK acl_diff version")
+}
+
+func TestAVersionTextThatNestsAMillionLevelsIsAnInvalidSideNotACrash(t *testing.T) {
+	cmd := exec.Command(os.Args[0], "-test.run=^TestACLDiffVersionDepthChild$", "-test.count=1")
+	cmd.Env = append(os.Environ(), diffVersionDepthChildEnv+"=1")
+	out, err := cmd.CombinedOutput()
+	if err != nil || !strings.Contains(string(out), "DEPTH-OK acl_diff version") {
 		t.Fatalf("the child did not finish cleanly: %v\n%s", err, tailOf(string(out), 1500))
 	}
 }

@@ -6,6 +6,7 @@ import (
 	"encoding/hex"
 	"fmt"
 	"io"
+	"strings"
 
 	"github.com/abm9111/tailkeeper/internal/acl"
 	"github.com/abm9111/tailkeeper/internal/registry"
@@ -47,6 +48,15 @@ func maskedPolicy(env *registry.Env, text string) (shown []string, masked []bool
 		return shown, masked, len(text), hex.EncodeToString(sum[:])
 	}
 	return shown, masked, size, hex.EncodeToString(h.Sum(nil))
+}
+
+// shownPolicy is a policy text as acl_get shows it: the lines as they would be masked,
+// concatenated, with the size and the hex SHA-256 of that concatenation. With personalData
+// show, the size and the digest describe the text as it came. The concatenation is what
+// policySha256 covers, so two logins that mask to one form share one digest.
+func shownPolicy(env *registry.Env, text string) (shown string, size int, sha string) {
+	lines, _, size, sha := maskedPolicy(env, text)
+	return strings.Join(lines, ""), size, sha
 }
 
 // policyVersion is the token that names the version of a policy a result describes. The ETag

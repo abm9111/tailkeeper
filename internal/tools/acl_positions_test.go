@@ -228,22 +228,31 @@ func TestAPointerIsCutAfterItIsMasked(t *testing.T) {
 // shows nothing of it: the name is masked before it is cut, so the cut cannot leave the local
 // part without the at sign that makes the masker read it.
 func TestASectionNamedByALongLoginShowsNothingOfIt(t *testing.T) {
-	login := "a" + strings.Repeat("bcdefghij", 10) + "@example.com"
+	// Two logins whose local parts are longer than the 128-byte cut of a pointer, of different
+	// lengths: the results are one and the same, and hold no run of the local part.
 	for _, tool := range []string{"acl_diff", "acl_validate"} {
-		f, reg, env := apiEnv(t)
-		serveLive(f, "{\n\""+login+"\": {}\n}\n", nil, nil)
-		f.ServeValidate(apitest.TestsPassEmptyObject())
-		args := `{"against":"{}"}`
-		if tool == "acl_validate" {
-			args = `{}`
+		results := map[int]string{}
+		for _, local := range []int{150, 200} {
+			login := "a" + strings.Repeat("bcdefghij", local/9) + "@example.com"
+			f, reg, env := apiEnv(t)
+			serveLive(f, "{\n\""+login+"\": {}\n}\n", nil, nil)
+			f.ServeValidate(apitest.TestsPassEmptyObject())
+			args := `{"against":"{}"}`
+			if tool == "acl_validate" {
+				args = `{}`
+			}
+			s, err := call(t, reg, env, tool, args)
+			if err != nil {
+				t.Fatalf("%s: %v", tool, err)
+			}
+			absent(t, s, "bcdefghij")
+			if !strings.Contains(s, "unknown_section") || !strings.Contains(s, "a…@example.com") {
+				t.Errorf("%s: no finding names the unknown section by its masked login, so the test checked nothing: %.600s", tool, s)
+			}
+			results[local] = s
 		}
-		s, err := call(t, reg, env, tool, args)
-		if err != nil {
-			t.Fatalf("%s: %v", tool, err)
-		}
-		absent(t, s, "bcdefghij")
-		if !strings.Contains(s, "unknown_section") {
-			t.Errorf("%s: no finding names the unknown section, so the test checked nothing: %.600s", tool, s)
+		if results[150] != results[200] {
+			t.Errorf("%s: the result tells the length of the login:\n%.700s\n%.700s", tool, results[150], results[200])
 		}
 	}
 }

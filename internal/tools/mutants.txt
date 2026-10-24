@@ -720,9 +720,15 @@ kill: TestADiffResultStaysUnderTheCharactersItDeclares
 
 mutant: a position in the live policy keeps its column
 file: acl_validate_patch.go
-old: case sourceLive:\n\t\treturn line, 0
-new: case sourceLive:\n\t\treturn line, col
+old: case sourceLive, sourceVersion:
+new: case sourceVersion:
 kill: TestAColumnInTheLivePolicyIsLeftOutAndItsLineIsKept
+
+mutant: a position in a stored version keeps its column
+file: acl_validate_patch.go
+old: case sourceLive, sourceVersion:
+new: case sourceLive:
+kill: TestAFindingOnAStoredVersionHasNoColumnSoTwoLoginLengthsGiveOneResult
 
 mutant: a position in a patch is not mapped back to the caller's patch
 file: acl_validate.go
@@ -754,10 +760,10 @@ old: const maxLoginSize = 320
 new: const maxLoginSize = 1
 kill: TestTheSizeLimitTellsNothingOfTheLengthOfALogin
 
-mutant: the names of unknown sections are cut before they are shown
+mutant: the names of unknown sections are cut before they are hidden
 file: acl_validate.go
-old: for _, name := range d.UnknownSectionsShown() {
-new: for _, name := range d.UnknownSections() {
+old: for _, name := range d.UnknownSectionsShown() {\n\t\t\tshown := v.hide(name)
+new: for _, name := range d.UnknownSections() {\n\t\t\tshown := v.hide(cutRunes(name, 128))
 kill: TestASectionNamedByALongLoginShowsNothingOfIt
 
 mutant: the verdict of a live policy with stored errors says Tailscale refused the text
@@ -798,6 +804,144 @@ file: acl_subjects_hide.go
 old: len(out) >= need || limit >= maxRead {
 new: len(out) >= need || limit >= firstRead {
 kill: TestHideShowsTheSameWhateverTheLengthOfTheLoginsInTheText|TestAMessageThatEchoesTheMembersSentShowsTheSameWhateverTheLengthOfTheirLogins
+
+mutant: a version id names the old text
+file: acl_history.go
+old: ref.Side = "new"
+new: ref.Side = "old"
+kill: TestAVersionIdNamesTheNewTextAndPreviousNamesTheOldOne
+
+mutant: the history window is allowed past 90 days
+file: acl_history.go
+old: 90 * 24 * time.Hour
+new: 180 * 24 * time.Hour
+kill: TestTheWindowIsAtMostNinetyDaysAndIsReadInRequestsOfAtMostThirtyOneDays
+
+mutant: an entry that two slices return is listed twice
+file: acl_history.go
+old: if seen[key] {
+new: if false {
+kill: TestAnEntryThatEverySliceOfALongWindowReturnsIsListedOnce
+
+mutant: the history digest is taken over the raw text
+file: acl_history.go
+old: b, _ := json.Marshal(shown)
+new: b, _ := json.Marshal(raw)
+kill: TestTheDigestVersionAndShaCoverTheTextAsShownNotTheTextAsItCame
+
+mutant: the history policy version is taken over the raw text
+file: acl_history.go
+old: return env.Privacy.Digest([]byte(shownSHA))
+new: return env.Privacy.Digest([]byte(raw))
+kill: TestTheDigestVersionAndShaCoverTheTextAsShownNotTheTextAsItCame
+
+mutant: a history cursor is good for another page size
+file: acl_history.go
+old: json.Marshal([]any{"acl_history", limit, mode})
+new: json.Marshal([]any{"acl_history", 0, mode})
+kill: TestAHistoryCursorIsRefusedByAnotherPageSizeAndByAuditLog
+
+mutant: a history cursor is good for another privacy setting
+file: acl_history.go
+old: json.Marshal([]any{"acl_history", limit, mode})
+new: json.Marshal([]any{"acl_history", limit, "show"})
+kill: TestAHistoryCursorIsRefusedByAnotherPageSizeAndByAuditLog
+
+mutant: a second page of entries with one time repeats the first
+file: acl_history.go
+old: next.Skip += cur.Skip
+new: _ = cur
+kill: TestTheCursorPagesWithoutRepeatOrSkipAcrossEntriesWithTheSameTime
+
+mutant: a version side goes through the caller-text screen
+file: acl_diff.go
+old: \td, err := v.parse(ctx, text)\n\tif err != nil {\n\t\tp, perr := v.parseProblem(text, err, sourceVersion)
+new: \tif err := screenMCPText(v.env, text, "a proposal"); err != nil {\n\t\treturn nil, nil, 0, err\n\t}\n\td, err := v.parse(ctx, text)\n\tif err != nil {\n\t\tp, perr := v.parseProblem(text, err, sourceVersion)
+kill: TestAVersionSideIsNotCallerTextSoALoginInItIsNotRefusedAndShowsWithAPseudonym
+
+mutant: a comparison offline accepts a version
+file: acl_diff.go
+old: case in.Offline && (in.FromVersion != "" || in.ToVersion != ""):
+new: case false && (in.FromVersion != "" || in.ToVersion != ""):
+kill: TestOfflineRefusesAVersionOnEitherSide
+
+mutant: a change located in a version is named for the file flag
+file: acl_diff.go
+old: case side == sideVersion:
+new: case false:
+kill: TestAChangeBetweenTwoVersionsIsLocatedInAVersionSide
+
+mutant: a DNS attribute outside the table is listed as DNS
+file: dns_attrs.go
+old: return -1
+new: return 0
+kill: TestOtherAttributesAreListedByNameWithNoDNSClaim
+
+mutant: the profile id is shown whole
+file: dns.go
+old: ID           string   `json:"id" tk:"untrusted,personal"`
+new: ID           string   `json:"id" tk:"untrusted"`
+kill: TestDNSGetListsNextDNSAndControlDAttributesAndMasksTheIdentifiersWhole
+
+mutant: an unparsed profile attribute is listed raw
+file: dns_policy.go
+old: return "controld:(unparsed)", true
+new: return attr, true
+kill: TestAnUnparsedProfileAttributeIsAFixedLabel
+
+mutant: an extra record's value is shown as the policy wrote it
+file: dns_policy.go
+old: Value: policyDisplay(env, rec.Value),
+new: Value: rec.Value,
+kill: TestAnExtraRecordsValueIsCutLikeEveryOtherNameOfThePolicy
+
+mutant: an extra record's type is shown without the policy-name cut
+file: dns_policy.go
+old: Type:  policyDisplay(env, rec.Type),
+new: Type:  rec.Type,
+kill: TestAnExtraRecordsTypeIsCutLikeEveryOtherNameOfThePolicy
+
+mutant: a resolver list takes more than one hundred entries
+file: dns_policy.go
+old: if len(dst) >= dnsListCap {
+new: if false {
+kill: TestEachListThatDNSGetDrawsFromThePolicyIsCappedAtOneHundredAndSaysSo
+
+mutant: a list of targets takes more than one hundred entries
+file: dns_policy.go
+old: if len(in) <= dnsListCap {
+new: if true {
+kill: TestEachListThatDNSGetDrawsFromThePolicyIsCappedAtOneHundredAndSaysSo
+
+mutant: the other attributes take more than one hundred entries
+file: dns_policy.go
+old: if len(out) >= dnsListCap {
+new: if false {
+kill: TestEachListThatDNSGetDrawsFromThePolicyIsCappedAtOneHundredAndSaysSo
+
+mutant: a repeated other attribute is counted again
+file: dns_policy.go
+old: if seen[name] {
+new: if false {
+kill: TestADuplicateOtherAttributeDoesNotUseUpTheCap
+
+mutant: a text over the byte cap is called a work budget
+file: dns_policy.go
+old: if strings.Contains(e.Message, "more than the") {
+new: if false {
+kill: TestThePolicyEnginesRefusalsEachGetTheirOwnFixedSentence
+
+mutant: a text past the value budget is called something else
+file: dns_policy.go
+old: return dnsNoteComplex
+new: return dnsNoteNotPolicy
+kill: TestAPolicyPastTheValueBudgetLeavesTheAPIHalfAndTheComplexityNote
+
+mutant: a signed Control D priority is read as a number
+file: dns_policy.go
+old: if !ok || n == "" || strings.Trim(n, "0123456789") != "" {
+new: if !ok || n == "" {
+kill: TestAControlDPriorityIsAnUnsignedNumberOrTheAttributeIsUnparsed
 
 mutant: a space in a test source is still refused
 file: acl_test_input.go
@@ -908,6 +1052,36 @@ file: acl_canary.go
 old: f.Dst != canaryDestination
 new: false
 kill: TestACanaryWithTheWrongDestinationOrDirectionIsNotTheCanary
+
+mutant: a document the server accepts is read as a rejected one
+file: acl_probe.go
+old: \t\treturn PolicyProbe{Name: probeRejection, Status: ProbeWarn, Called: true,\n\t\t\tDetail: "the server accepted a document with an unknown field, so this probe no longer proves that a rejection is read as one",
+new: \t\treturn PolicyProbe{Name: probeRejection, Status: ProbeOK, Called: true,\n\t\t\tDetail: "the server accepted a document with an unknown field, so this probe no longer proves that a rejection is read as one",
+kill: TestThePolicyRejectionProbeIsOKWhenAMalformedDocumentIsRejectedAndWarnsWhenItIsAccepted
+
+mutant: a missing canary is proof the tests ran
+file: acl_probe.go
+old: if !ok || rest.Status != api.PolicyPass {
+new: if false && (!ok || rest.Status != api.PolicyPass) {
+kill: TestTheInBandCanaryProbeIsOKWhenTheCanaryFailsOnceFailsWhenItPassesAndWarnsWhenItIsMissing
+
+mutant: a passing sshTests answer is proof they ran
+file: acl_probe.go
+old: return PolicyProbe{Name: probeSSH, Status: ProbeFail,
+new: return PolicyProbe{Name: probeSSH, Status: ProbeOK,
+kill: TestTheSSHProbeIsOKWhenSSHTestsRunAndFailsWhenTheyAreSilentlyNotEvaluated
+
+mutant: an unknown verdict is a reading of the destination kind
+file: acl_probe.go
+old: if v != verdictAllowed && v != verdictDenied {
+new: if v != verdictAllowed && v != verdictDenied && v != verdictUnknown {
+kill: TestClassifyKindReadsUnknownAndUnresolvedAsWarnings
+
+mutant: a details answer the reader refuses names no tool
+file: acl_probe.go
+old: if strings.Contains(e.Message, "unrecognised") {
+new: if false && strings.Contains(e.Message, "unrecognised") {
+kill: TestTheDetailsProbeWarnsWithTheRemedyWhenTheReaderRefusesTheAnswer
 
 mutant: an entry for another spelling of the source is another test
 file: acl_test_verdicts.go
@@ -1460,3 +1634,395 @@ file: acl_test_messages.go
 old: \tif l.place >= 0 {
 new: \tif false {
 kill: TestAnSSHLineShowsTheTestItWasPlacedAt
+
+mutant: a probe error shows its hint unmasked
+file: acl_probe.go
+old: hint := sanitize.String(sanitize.MaskText(e.Hint), sanitize.DefaultMax)
+new: hint := sanitize.String(e.Hint, sanitize.DefaultMax)
+kill: TestProbeErrMasksTheMessageAndTheHintBeforeItCutsThem
+
+mutant: a probe error cuts its hint before masking it
+file: acl_probe.go
+old: hint := sanitize.String(sanitize.MaskText(e.Hint), sanitize.DefaultMax)
+new: hint := sanitize.MaskText(sanitize.String(e.Hint, sanitize.DefaultMax))
+kill: TestProbeErrMasksTheMessageAndTheHintBeforeItCutsThem
+
+mutant: a probe error shows its message unmasked
+file: acl_probe.go
+old: msg := sanitize.String(sanitize.MaskText(e.Message), sanitize.DefaultMax)
+new: msg := sanitize.String(e.Message, sanitize.DefaultMax)
+kill: TestProbeErrMasksTheMessageAndTheHintBeforeItCutsThem
+
+mutant: a probe error cuts its message before masking it
+file: acl_probe.go
+old: msg := sanitize.String(sanitize.MaskText(e.Message), sanitize.DefaultMax)
+new: msg := sanitize.MaskText(sanitize.String(e.Message, sanitize.DefaultMax))
+kill: TestProbeErrMasksTheMessageAndTheHintBeforeItCutsThem
+
+mutant: a failed probe drops the code of its call
+file: acl_probe.go
+old: Fix: hint, Called: true, Code: e.Code}
+new: Fix: hint, Called: true}
+kill: TestAProbeCarriesTheCodeOfItsFailedCallAndASkippedCanaryIsNotACall
+
+mutant: a canary that could not be built is counted as a call
+file: acl_probe.go
+old: row := probeErr(probeCanary, err)\n\t\trow.Called, row.Code = false, ""
+new: row := probeErr(probeCanary, err)\n\t\trow.Called = true
+kill: TestACanaryThatCannotBeBuiltIsNotACall
+
+mutant: the probes of a run with no credential are counted as calls
+file: acl_probe.go
+old: rows[i].Called = false
+new: rows[i].Called = true
+kill: TestProbesOfARunWithNoCredentialMakeNoCall
+
+mutant: a kind probe with no verdict is read as established
+file: acl_probe.go
+old: if len(verdicts) == 0 {
+new: if false {
+kill: TestClassifyKindReadsUnknownAndUnresolvedAsWarnings
+
+# The results that tailnet text can fill are bounded: an actor's tags, the page of acl_history, the lists of dns_get, and the ids that name a version.
+
+mutant: an actor shows as many tags as the log holds
+file: logs.go
+old: if kept == actorTagsMax || cost > left {
+new: if cost > left {
+kill: TestTheTagsAnActorShowsAreTheFirstOnesInOrder
+
+mutant: an actor's tags are cut by their count and not by what they cost
+file: logs.go
+old: if kept == actorTagsMax || cost > left {
+new: if kept == actorTagsMax {
+kill: TestTheTagsAnActorShowsAreTheFirstOnesInOrder
+
+mutant: the room for an actor's tags is not spent as they are shown
+file: logs.go
+old: left -= cost\n\t\tkept++
+new: kept++
+kill: TestTheTagsAnActorShowsAreTheFirstOnesInOrder
+
+mutant: an actor's id and type are shown as long as the log wrote them
+file: logs.go
+old: a.ID, a.Type = sanitize.String(a.ID, actorIDMax), sanitize.String(a.Type, actorTypeMax)
+new: a.ID, a.Type = a.ID, a.Type
+kill: TestAVersionOfLongStringsIsBoundedByItsCaps
+
+mutant: the room for an actor's tags is spent on a tag's length before it is masked
+file: logs.go
+old: cost := shownJSONLen(env, AuditActor{Tags: []string{tag}}) - empty + 3
+new: cost := shownCost(tag) + empty*0
+kill: TestTheTagsAnActorShowsDoNotDependOnTheLengthOfAMaskedLogin
+
+mutant: a tag of an actor costs the three characters of its quotes and comma as nothing
+file: logs.go
+old: cost := shownJSONLen(env, AuditActor{Tags: []string{tag}}) - empty + 3
+new: cost := shownJSONLen(env, AuditActor{Tags: []string{tag}}) - empty
+kill: TestTheTagsOfAnActorFillTheirRoomToTheCharacter
+
+mutant: a tag of an actor costs the frame of an actor around it
+file: logs.go
+old: cost := shownJSONLen(env, AuditActor{Tags: []string{tag}}) - empty + 3
+new: cost := shownJSONLen(env, AuditActor{Tags: []string{tag}}) + 3 + empty*0
+kill: TestTheTagsOfAnActorFillTheirRoomToTheCharacter|TestTheTagsAnActorShowsAreTheFirstOnesInOrder
+
+mutant: a tag that fills the room exactly is not shown
+file: logs.go
+old: if kept == actorTagsMax || cost > left {
+new: if kept == actorTagsMax || cost >= left {
+kill: TestTheTagsOfAnActorFillTheirRoomToTheCharacter
+
+mutant: audit_log does not say that tags were left out
+file: logs.go
+old: out.Note += actorTagsNote\n\t\t\tbreak
+new: break
+kill: TestAnActorsTagsAreCutToTheFirstThatFitAndTheRestIsCounted
+
+mutant: audit_log shows an actor's tags as the log holds them
+file: logs.go
+old: e.Actor = boundActor(env, e.Actor)
+new: e.Actor = e.Actor
+kill: TestAnActorsTagsAreCutToTheFirstThatFitAndTheRestIsCounted
+
+mutant: acl_history shows an actor as the log holds it
+file: acl_history.go
+old: Actor:         boundActor(env, l.Actor),
+new: Actor:         l.Actor,
+kill: TestAnActorsTagsAreCutToTheFirstThatFitAndTheRestIsCounted|TestAVersionOfLongStringsIsBoundedByItsCaps
+
+mutant: an acl_history page ignores the budget of its versions
+file: acl_history.go
+old: if n > 0 && spent+cost > historyPageBudget {
+new: if false {
+kill: TestAHistoryPageEndsWhereItsVersionsFillTheBudgetAndTheNextPageContinues
+
+mutant: an acl_history page counts its versions as nothing
+file: acl_history.go
+old: cost := shownJSONLen(env, items[n].version)
+new: cost := 0
+kill: TestAHistoryPageEndsWhereItsVersionsFillTheBudgetAndTheNextPageContinues
+
+mutant: an acl_history page that ends early does not say so
+file: acl_history.go
+old: if n < limit {\n\t\t\tout.Note += historyNoteCut
+new: if false {\n\t\t\tout.Note += historyNoteCut
+kill: TestAHistoryPageEndsWhereItsVersionsFillTheBudgetAndTheNextPageContinues
+
+mutant: acl_history does not say that tags were left out
+file: acl_history.go
+old: if actorTagsCut(it.version.Actor) && !strings.Contains(out.Note, actorTagsNote) {
+new: if false && actorTagsCut(it.version.Actor) && !strings.Contains(out.Note, actorTagsNote) {
+kill: TestAnActorsTagsAreCutToTheFirstThatFitAndTheRestIsCounted
+
+mutant: a version id carries the event group as the log wrote it
+file: acl_history.go
+old: group := versionGroup(l.EventGroupID)
+new: group := l.EventGroupID
+kill: TestEveryVersionIdTheHistoryWritesIsOneTheDiffAccepts
+
+mutant: a version shows and names a time as the log wrote it, however long
+file: acl_history.go
+old: EventTime:     versionEventTime(l.EventTime, t),
+new: EventTime:     l.EventTime,
+kill: TestEveryVersionIdTheHistoryWritesIsOneTheDiffAccepts
+
+mutant: an event group may make an id longer than the diff reads
+file: acl_version.go
+old: len(b) <= versionGroupMax
+new: len(b) <= 400
+kill: TestEveryVersionIdTheHistoryWritesIsOneTheDiffAccepts
+
+mutant: a time is carried as the log wrote it, however long
+file: acl_version.go
+old: if len(raw) <= versionTimeMax {
+new: if true {
+kill: TestEveryVersionIdTheHistoryWritesIsOneTheDiffAccepts
+
+mutant: two long event groups share a digest
+file: acl_version.go
+old: sum := sha256.Sum256([]byte(group))
+new: sum := sha256.Sum256(nil)
+kill: TestTwoLongGroupsKeepTheirOwnVersionIds
+
+mutant: acl_diff reads a version that is no id
+file: acl_diff.go
+old: if _, err := decodeVersionID(id); err != nil {
+new: if _, err := decodeVersionID(id); err != nil && false {
+kill: TestAMalformedVersionIsRefusedWhateverTheOtherSideHoldsAndIsNeverEchoed
+
+mutant: a version is counted as nothing against the budget
+file: result_budget.go
+old: \treturn len(b)\n}
+new: \treturn 0\n}
+kill: TestAHistoryPageEndsWhereItsVersionsFillTheBudgetAndTheNextPageContinues
+
+mutant: dns_get lists a short entry after one that did not fit
+file: dns_policy.go
+old: if b.cut || cost > b.left {
+new: if cost > b.left {
+kill: TestDNSGetCutsEachListOfThePolicyAndKeepsAStart
+
+mutant: dns_get never refuses a string for the budget
+file: dns_policy.go
+old: if b.cut || cost > b.left {
+new: if b.cut {
+kill: TestDNSGetCutsItsListsToOneBudgetAndSaysSo|TestDNSGetCutsEachListOfThePolicyAndKeepsAStart
+
+mutant: the budget of the lists of dns_get is ten million characters
+file: dns_policy.go
+old: const dnsResultBudget = 100000
+new: const dnsResultBudget = 10000000
+kill: TestDNSGetCutsItsListsToOneBudgetAndSaysSo
+
+mutant: dns_get lists every extra record
+file: dns_policy.go
+old: if !budget.take(shown.Name, shownText(env, shown.Type), shown.Value) {
+new: if !budget.take(shown.Name, shownText(env, shown.Type), shown.Value) && false {
+kill: TestDNSGetCutsEachListOfThePolicyAndKeepsAStart
+
+mutant: dns_get lists every other attribute
+file: dns_policy.go
+old: if !budget.take(shown) {
+new: if !budget.take(shown) && false {
+kill: TestDNSGetCutsEachListOfThePolicyAndKeepsAStart
+
+mutant: dns_get lists every target of a node attribute
+file: dns_policy.go
+old: kept, ok := budget.prefix(capped, name)
+new: kept, ok := capped, true
+kill: TestDNSGetCutsEachListOfThePolicyAndKeepsAStart
+
+mutant: dns_get lists every target of a profile
+file: dns_policy.go
+old: targets, ok := budget.prefix(item.Targets, shownWhole(env, item.ID))
+new: targets, ok := item.Targets, true
+kill: TestDNSGetCutsEachListOfThePolicyAndKeepsAStart|TestDNSGetCutsItsListsToOneBudgetAndSaysSo
+
+mutant: dns_get drops a whole list that does not fit in place of its start
+file: dns_policy.go
+old: return in[:i:i], true
+new: _ = i; return in[:0:0], true
+kill: TestDNSGetCutsEachListOfThePolicyAndKeepsAStart
+
+mutant: dns_get lists every nameserver
+file: dns.go
+old: if !b.take(r.Address) {
+new: if !b.take(r.Address) && false {
+kill: TestDNSGetCutsTheConfigurationItReadsToTheSameBudget
+
+mutant: dns_get lists every split-DNS domain
+file: dns.go
+old: if !budget.take(shownText(env, domain)) {
+new: if !budget.take(shownText(env, domain)) && false {
+kill: TestDNSGetCutsTheConfigurationItReadsToTheSameBudget
+
+mutant: dns_get lists every search path
+file: dns.go
+old: out.SearchPaths, _ = budget.prefixShown(r.SearchPaths, func(s string) string { return shownText(env, s) })
+new: out.SearchPaths = r.SearchPaths
+kill: TestDNSGetCutsTheConfigurationItReadsToTheSameBudget
+
+mutant: dns_get counts a profile id by its length before it is masked
+file: dns_policy.go
+old: budget.prefix(item.Targets, shownWhole(env, item.ID))
+new: budget.prefix(item.Targets, item.ID)
+kill: TestWhereDNSGetCutsItsListsDoesNotDependOnTheLengthOfAMaskedValue
+
+mutant: dns_get counts a record's type before it is masked
+file: dns_policy.go
+old: budget.take(shown.Name, shownText(env, shown.Type), shown.Value)
+new: budget.take(shown.Name, shown.Type, shown.Value)
+kill: TestWhereDNSGetCutsItsListsDoesNotDependOnTheLengthOfAMaskedValue
+
+mutant: dns_get counts a split-DNS domain before it is masked
+file: dns.go
+old: budget.take(shownText(env, domain))
+new: budget.take(domain)
+kill: TestWhereDNSGetCutsItsListsDoesNotDependOnTheLengthOfAMaskedValue
+
+mutant: dns_get counts a search path before it is masked
+file: dns.go
+old: func(s string) string { return shownText(env, s) }
+new: func(s string) string { return s }
+kill: TestWhereDNSGetCutsItsListsDoesNotDependOnTheLengthOfAMaskedValue
+
+mutant: dns_get counts a value as masked while the owner sees personal data (text)
+file: result_budget.go
+old: if env.ShowPersonalData() {\n\t\treturn s\n\t}\n\treturn env.Masker().Text(s)
+new: return env.Masker().Text(s)
+kill: TestWhileTheOwnerSeesPersonalDataDNSGetCountsAValueAsItIs
+
+mutant: dns_get counts a value as masked while the owner sees personal data (whole)
+file: result_budget.go
+old: if env.ShowPersonalData() {\n\t\treturn s\n\t}\n\treturn env.Masker().Identifier(s)
+new: return env.Masker().Identifier(s)
+kill: TestWhileTheOwnerSeesPersonalDataDNSGetCountsAProfileIDAsItIs
+
+mutant: dns_get does not say its lists were cut
+file: dns.go
+old: if budget.cut {
+new: if false {
+kill: TestDNSGetCutsTheConfigurationItReadsToTheSameBudget|TestDNSGetCutsEachListOfThePolicyAndKeepsAStart
+
+mutant: dns_get replaces the note of the policy part with the sentence of the cut
+file: dns.go
+old: out.PolicyNote += dnsNoteCut
+new: out.PolicyNote = dnsNoteCut
+kill: TestADNSGetResultCutToItsSizeLimitAlwaysSaysSoInThePolicyNote
+
+mutant: dns_get puts a separator before the sentence of the cut when the note is empty
+file: dns.go
+old: if out.PolicyNote != "" {
+new: if true {
+kill: TestADNSGetResultCutToItsSizeLimitAlwaysSaysSoInThePolicyNote
+
+mutant: an audit_log page ignores the budget of its entries
+file: logs.go
+old: if n > 0 && spent+cost > auditPageBudget {
+new: if false {
+kill: TestAnAuditLogPageEndsWhereItsEntriesFillTheBudgetAndTheNextPageContinues
+
+mutant: an audit_log page counts its entries as nothing
+file: logs.go
+old: cost := shownJSONLen(env, all[n].e)
+new: cost := 0
+kill: TestAnAuditLogPageEndsWhereItsEntriesFillTheBudgetAndTheNextPageContinues
+
+mutant: an audit_log page that ends early does not say so
+file: logs.go
+old: if n < limit {\n\t\t\tout.Note += auditNoteCut
+new: if false {\n\t\t\tout.Note += auditNoteCut
+kill: TestAnAuditLogPageEndsWhereItsEntriesFillTheBudgetAndTheNextPageContinues
+
+mutant: an acl_history cursor skips as many versions of an instant as the limit allowed, not as the page held
+file: acl_history.go
+old: for _, it := range items[:n] {
+new: for _, it := range items[:min(limit, len(items))] {
+kill: TestPagesThatEndEarlyOnTheirBudgetListEveryEntryOfOneInstantOnce
+
+mutant: an audit_log cursor skips as many entries of an instant as the limit allowed, not as the page held
+file: logs.go
+old: for _, te := range all[:n] {
+new: for _, te := range all[:min(limit, len(all))] {
+kill: TestPagesThatEndEarlyOnTheirBudgetListEveryEntryOfOneInstantOnce
+
+mutant: audit_log shows an event group as long as the log wrote it
+file: logs.go
+old: e.EventGroupID = sanitize.String(e.EventGroupID, 256)
+new: e.EventGroupID = e.EventGroupID
+kill: TestAnAuditLogPageEndsWhereItsEntriesFillTheBudgetAndTheNextPageContinues
+
+mutant: audit_log shows an origin as long as the log wrote it
+file: logs.go
+old: e.Origin = sanitize.String(e.Origin, 128)
+new: e.Origin = e.Origin
+kill: TestNoStringOfAnAuditEntryOrAVersionIsLongerThanTheRegistryAllows
+
+mutant: audit_log shows an action as long as the log wrote it
+file: logs.go
+old: e.Action = sanitize.String(e.Action, 128)
+new: e.Action = e.Action
+kill: TestNoStringOfAnAuditEntryOrAVersionIsLongerThanTheRegistryAllows
+
+mutant: audit_log shows the time a change was deferred to as long as the log wrote it
+file: logs.go
+old: e.DeferredAt = sanitize.String(e.DeferredAt, versionTimeMax)
+new: e.DeferredAt = e.DeferredAt
+kill: TestNoStringOfAnAuditEntryOrAVersionIsLongerThanTheRegistryAllows
+
+mutant: audit_log shows a target's id as long as the log wrote it
+file: logs.go
+old: e.Target.ID = sanitize.String(e.Target.ID, 256)
+new: e.Target.ID = e.Target.ID
+kill: TestNoStringOfAnAuditEntryOrAVersionIsLongerThanTheRegistryAllows
+
+mutant: audit_log shows a target's type as long as the log wrote it
+file: logs.go
+old: e.Target.Type = sanitize.String(e.Target.Type, 128)
+new: e.Target.Type = e.Target.Type
+kill: TestNoStringOfAnAuditEntryOrAVersionIsLongerThanTheRegistryAllows
+
+mutant: audit_log shows a time as long as the log wrote it
+file: logs.go
+old: EventTime: versionEventTime(l.EventTime, t),
+new: EventTime: l.EventTime,
+kill: TestAnAuditLogPageEndsWhereItsEntriesFillTheBudgetAndTheNextPageContinues
+
+mutant: a send the validation limit refused is recorded as a call
+file: acl_probe.go
+old: if e.Code == tkerr.ValidateRateLimited {
+new: if false {
+kill: TestAProbeTheValidationLimitRefusedIsNotACall
+
+mutant: the SSH known positive accepts two entries
+file: acl_probe.go
+old: len(pv.Results) != 1
+new: len(pv.Results) < 1
+kill: TestTheSSHProbeNeedsExactlyOneFailureInTheSSHForm
+
+mutant: the SSH known positive accepts two errors in one entry
+file: acl_probe.go
+old: len(pv.Results[0].Errors) != 1
+new: len(pv.Results[0].Errors) < 1
+kill: TestTheSSHProbeNeedsExactlyOneFailureInTheSSHForm

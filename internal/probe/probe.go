@@ -18,6 +18,7 @@ import (
 	"fmt"
 	"net/url"
 	"regexp"
+	"sort"
 	"strings"
 	"time"
 
@@ -111,6 +112,9 @@ type Options struct {
 	// OnStart, when set, is called with a probe's ID as the probe starts, before its first
 	// request. A probe that is not run because the run stopped is not announced.
 	OnStart func(id string)
+	// Against is the directory of committed captures a self-check compares with.
+	// Empty means the run is not a self-check.
+	Against string
 }
 
 // Exec is what a probe runs against. It paces and counts requests, records every one,
@@ -124,13 +128,15 @@ type Exec struct {
 	live    *Live
 	liveErr error
 	skOpts  skeleton.Options
+	shapes  []Result // the shape probes of the last self-check, for --out
 }
 
 // Run runs the probes in order and returns one Result per probe selected, in order. A
 // probe that fails (a transport error) is recorded and the next one runs; a 429, the
 // request ceiling or a cancelled ctx stops the run, and the probes after that are marked
 // NotRun.
-func Run(ctx context.Context, a API, probes []Probe, o Options) []Result {
+// newExec applies the defaults a run and a self-check share.
+func newExec(a API, o Options) *Exec {
 	if o.Sleep == nil {
 		o.Sleep = sleep
 	}
@@ -142,7 +148,11 @@ func Run(ctx context.Context, a API, probes []Probe, o Options) []Result {
 	}
 	opts := skeleton.DefaultOptions()
 	opts.TemplateText = true
-	x := &Exec{api: a, o: o, skOpts: opts}
+	return &Exec{api: a, o: o, skOpts: opts}
+}
+
+func Run(ctx context.Context, a API, probes []Probe, o Options) []Result {
+	x := newExec(a, o)
 	var out []Result
 	for _, p := range probes {
 		if len(o.Only) > 0 && !contains(o.Only, p.ID) {
@@ -467,4 +477,52 @@ func sameSet(a, b []string) bool {
 func isJSONObject(b []byte) bool {
 	t := bytes.TrimSpace(b)
 	return len(t) > 0 && t[0] == '{' && json.Valid(t)
+}
+
+// Compare reports how two observations differ in status and in the set of (path, type)
+// pairs. Texts are templates and are not compared, and nothing returned is a text from
+// an answer: a status difference is the word "status", and a path difference is the path.
+func Compare(committed, now Observation) []string {
+	var out []string
+	if statusOf(committed.Result) != statusOf(now.Result) {
+		out = append(out, "status")
+	}
+	cp, np := pathTypes(committed.Result), pathTypes(now.Result)
+	names := make([]string, 0, len(cp)+len(np))
+	seen := map[string]bool{}
+	for _, m := range []map[string]string{cp, np} {
+		for k := range m {
+			if !seen[k] {
+				seen[k] = true
+				names = append(names, k)
+			}
+		}
+	}
+	sort.Strings(names)
+	for _, k := range names {
+		ct, cok := cp[k]
+		nt, nok := np[k]
+		if !cok || !nok || ct != nt {
+			out = append(out, k)
+		}
+	}
+	return out
+}
+
+func statusOf(sk *skeleton.Skeleton) int {
+	if sk == nil {
+		return -1
+	}
+	return sk.Status
+}
+
+func pathTypes(sk *skeleton.Skeleton) map[string]string {
+	out := map[string]string{}
+	if sk == nil {
+		return out
+	}
+	for _, p := range sk.Paths {
+		out[p.Path] = p.Type
+	}
+	return out
 }

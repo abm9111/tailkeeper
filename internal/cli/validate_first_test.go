@@ -86,7 +86,7 @@ func TestBadArgumentsNeverStartTheWrapper(t *testing.T) {
 // The control: the same harness does start the wrapper for a valid command line,
 // so the test above would notice a wrapper that started.
 func TestValidArgumentsStartTheWrapper(t *testing.T) {
-	for _, args := range [][]string{{"acl", "test", "tag:ci", "--accept", "tag:prod:22"}, {"acl", "get", "--view", "summary"}, {"acl", "diff", "--section", "groups"}, {"devices", "list", "--stale-days", "30"},
+	for _, args := range [][]string{{"acl", "test", "tag:ci", "--accept", "tag:prod:22"}, {"acl", "get", "--view", "summary"}, {"acl", "diff", "--section", "groups"}, {"acl", "diff", "--from-version", "v1.x"}, {"devices", "list", "--stale-days", "30"},
 		{"logs", "audit", "--limit", "10"}, {"keys", "get", "kABC123CNTRL"}} {
 		h, builds := execHarness(t)
 		h.run(args...)

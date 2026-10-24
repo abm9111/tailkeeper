@@ -11,13 +11,15 @@ import (
 	"github.com/abm9111/tailkeeper/internal/registry"
 )
 
-// acl_diff compares two policies by what they mean. The old side is the policy in against, or
-// the live one; the new side is the policy in policy, or the live one with the patch applied,
-// or the live one; they are never both the live one. Nothing is sent to Tailscale for
-// validation: a diff reads the live policy (and who manages it) and changes nothing, so the
-// tool is not open-world. The texts are prepared as acl_validate prepares them, by the same
+// acl_diff compares two policies by what they mean. The old side is the policy in against, a
+// stored version, or the live one; the new side is the policy in policy, the live one with the
+// patch applied, a stored version, or the live one; they are never both the live one. Nothing
+// is sent to Tailscale for validation: a diff reads the live policy (and who manages it) and,
+// when a side is a version, the configuration audit log, and changes nothing, so the tool is
+// not open-world. A text the caller wrote is prepared as acl_validate prepares it, by the same
 // code: the subject rule, the credential tripwire and the pseudonyms of an MCP caller, the
-// operator's own files as they are.
+// operator's own files as they are. A stored version is tailnet data, and is shown as the live
+// policy is.
 
 // The statuses of an ACLDiffOutput, besides invalid (shared with acl_validate).
 const (
@@ -28,10 +30,11 @@ const (
 // The sources of a side, as ACLDiffSide.Source says them. A text is MCP text; a file is what
 // the operator named on the command line.
 const (
-	sideLive  = "live"
-	sideText  = "text"
-	sideFile  = "file"
-	sidePatch = "patch"
+	sideLive    = "live"
+	sideText    = "text"
+	sideFile    = "file"
+	sidePatch   = "patch"
+	sideVersion = "version"
 )
 
 // maxSideFindings is how many findings a side lists, and sideFindingsCost the most characters
@@ -47,6 +50,8 @@ type ACLDiffInput struct {
 	Policy                 string `json:"policy,omitempty" cli:"file:from,stdin,group=new,arg=2,as=NEW" jsonschema:"the new policy as HuJSON text, a top-level object; leave it and patch out to make the live policy the new side"`
 	Patch                  string `json:"patch,omitempty" cli:"file:patch,stdin,group=new" jsonschema:"RFC 6902 operations, as JSON text, applied to the live policy to make the new side; over MCP a user is named by pseudonym, in a file by login"`
 	Against                string `json:"against,omitempty" cli:"file:against,stdin,live,arg=1,as=OLD" jsonschema:"the old policy as HuJSON text; leave it out to make the live policy the old side"`
+	FromVersion            string `json:"fromVersion,omitempty" tk:"short" jsonschema:"the old side is the policy of this version id from acl_history"`
+	ToVersion              string `json:"toVersion,omitempty" tk:"short" jsonschema:"the new side is the policy of this version id from acl_history"`
 	Section                string `json:"section,omitempty" tk:"short" jsonschema:"list only the changes in one section: a section name in any case, or unknown for the sections this version does not know"`
 	FromChange             string `json:"fromChange,omitempty" tk:"short" jsonschema:"continue a listing: the nextChange of the previous result for the same two policies"`
 	IgnoreTailscaleWritten bool   `json:"ignoreTailscaleWritten,omitempty" jsonschema:"leave the constructs Tailscale writes itself out of the list and out of equal; they are still counted"`
@@ -60,12 +65,21 @@ func (in ACLDiffInput) RunsOffline(g registry.Given) bool {
 	return g["offline"] || g["from"] && g["against"]
 }
 
-// Check refuses a policy and a patch together, and a section that is no section, before
-// anything is read. That both sides are the live policy is told by the tool, since on the
-// command line the files are not read yet.
+// Check refuses a policy and a patch together, a version and a text for the same side, and a
+// section that is no section, before anything is read. That both sides are the live policy is
+// told by the tool, since on the command line the files are not read yet.
 func (in ACLDiffInput) Check() error {
 	if in.Policy != "" && in.Patch != "" {
 		return validationf("give a policy or a patch for the new side, not both: the policy is the whole new side, the patch is applied to the live policy")
+	}
+	if in.FromVersion != "" && in.Against != "" {
+		return validationf("give fromVersion or against for the old side, not both: fromVersion names a stored policy, against is the policy you give")
+	}
+	if in.ToVersion != "" && in.Policy != "" {
+		return validationf("give toVersion or a policy for the new side, not both: toVersion names a stored policy")
+	}
+	if in.ToVersion != "" && in.Patch != "" {
+		return validationf("give toVersion or a patch for the new side, not both: toVersion names a stored policy, the patch is applied to the live policy")
 	}
 	if s := in.Section; s != "" && !strings.EqualFold(s, "unknown") {
 		if _, ok := acl.SectionByName(s); !ok {
@@ -103,7 +117,8 @@ type ACLDiffOutput struct {
 
 // ACLDiffSide describes one side of the comparison.
 type ACLDiffSide struct {
-	Source        string       `json:"source" jsonschema:"live, text (the text of an MCP call), file (named on the command line) or patch (the live policy with the patch applied)"`
+	Source        string       `json:"source" jsonschema:"live, text (the text of an MCP call), file (named on the command line), patch (the live policy with the patch applied) or version (a stored policy)"`
+	Version       string       `json:"version,omitempty" jsonschema:"the version id, when source is version"`
 	PolicyVersion string       `json:"policyVersion,omitempty" jsonschema:"for the live policy: a keyed digest of its ETag, or the ETag with personalData show; absent otherwise"`
 	PolicySHA256  string       `json:"policySha256,omitempty" jsonschema:"SHA-256 of the policy as acl_get shows it"`
 	Findings      []ACLProblem `json:"findings,omitempty" jsonschema:"what was found in this side by itself: a text that is not a policy, a key written twice, a section this version does not know"`
@@ -184,10 +199,29 @@ func (ACLDiffOutput) FailOnKinds() []string {
 
 // aclDiff compares the two sides the input names.
 func aclDiff(ctx context.Context, env *registry.Env, in ACLDiffInput) (out ACLDiffOutput, err error) {
-	liveOld, liveNew := in.Against == "", in.Policy == "" && in.Patch == ""
+	// Check already refuses these pairs. The command line reads a file after Check, so the
+	// tool repeats the refusal once the file is in the input.
+	if err := in.Check(); err != nil {
+		return ACLDiffOutput{}, err
+	}
+	// A version is looked at before either side is read: a text that is no policy ends the
+	// call as a result, and that result would hold the version as the caller wrote it. The
+	// refusal names no id.
+	for _, id := range []string{in.FromVersion, in.ToVersion} {
+		if id == "" {
+			continue
+		}
+		if _, err := decodeVersionID(id); err != nil {
+			return ACLDiffOutput{}, err
+		}
+	}
+	liveOld := in.Against == "" && in.FromVersion == ""
+	liveNew := in.Policy == "" && in.Patch == "" && in.ToVersion == ""
 	switch {
 	case in.Offline && in.Patch != "":
 		return ACLDiffOutput{}, validationf("a patch is applied to the live policy, so it cannot be compared offline: give the whole new policy (--from FILE)")
+	case in.Offline && (in.FromVersion != "" || in.ToVersion != ""):
+		return ACLDiffOutput{}, validationf("--offline compares two files here and reads nothing from Tailscale: a version is read from the audit log")
 	case liveOld && liveNew:
 		return ACLDiffOutput{}, validationf("both sides would be the live policy: give a new policy (--from FILE) or a patch (--patch FILE), or an old policy (--against FILE)")
 	case in.Offline && (liveOld || liveNew):
@@ -214,9 +248,11 @@ func aclDiff(ctx context.Context, env *registry.Env, in ACLDiffInput) (out ACLDi
 		CheckedAt:               env.Clock().UTC().Format("2006-01-02T15:04:05Z"),
 	}
 	out.Old.Source, out.New.Source = sideSource(in, false), sideSource(in, true)
+	out.Old.Version, out.New.Version = in.FromVersion, in.ToVersion
 
 	// The local phase reads and screens the texts before any request: a literal login or a
-	// credential shape is refused here, and a text that is no policy is a result.
+	// credential shape is refused here, and a text that is no policy is a result. A version
+	// is not a text the caller wrote, so this phase does not read it.
 	if err := ov.checkLocally(ctx); err != nil {
 		return ACLDiffOutput{}, err
 	}
@@ -225,6 +261,41 @@ func aclDiff(ctx context.Context, env *registry.Env, in ACLDiffInput) (out ACLDi
 	}
 	oldFound, newFound := relabel(ov.found(), sourceFrom, sourceAgainst), nv.found()
 	if hasError(oldFound) || hasError(newFound) {
+		return out.invalid(oldFound, newFound, ov.out.Omitted, nv.out.Omitted), nil
+	}
+
+	var oldProp, newProp *proposal
+	if in.FromVersion != "" {
+		text, verr := readVersionText(ctx, env, in.FromVersion)
+		if verr != nil {
+			return ACLDiffOutput{}, verr
+		}
+		d, found, omitted, verr := ov.readVersionSide(ctx, text.b)
+		if verr != nil {
+			return ACLDiffOutput{}, verr
+		}
+		oldFound = append(oldFound, found...)
+		ov.out.Omitted += omitted
+		if d != nil && !hasError(found) {
+			oldProp = &proposal{Sent: text.b, Doc: d, Source: sourceVersion}
+		}
+	}
+	if in.ToVersion != "" {
+		text, verr := readVersionText(ctx, env, in.ToVersion)
+		if verr != nil {
+			return ACLDiffOutput{}, verr
+		}
+		d, found, omitted, verr := nv.readVersionSide(ctx, text.b)
+		if verr != nil {
+			return ACLDiffOutput{}, verr
+		}
+		newFound = append(newFound, found...)
+		nv.out.Omitted += omitted
+		if d != nil && !hasError(found) {
+			newProp = &proposal{Sent: text.b, Doc: d, Source: sourceVersion}
+		}
+	}
+	if (in.FromVersion != "" && oldProp == nil) || (in.ToVersion != "" && newProp == nil) {
 		return out.invalid(oldFound, newFound, ov.out.Omitted, nv.out.Omitted), nil
 	}
 
@@ -264,13 +335,20 @@ func aclDiff(ctx context.Context, env *registry.Env, in ACLDiffInput) (out ACLDi
 		}
 	}
 
-	oldProp, oldMore, err := ov.prepare(ctx, live, liveDoc)
-	if err != nil {
-		return ACLDiffOutput{}, err
+	var oldMore, newMore []ACLProblem
+	if in.FromVersion == "" {
+		var perr error
+		oldProp, oldMore, perr = ov.prepare(ctx, live, liveDoc)
+		if perr != nil {
+			return ACLDiffOutput{}, perr
+		}
 	}
-	newProp, newMore, err := nv.prepare(ctx, live, liveDoc)
-	if err != nil {
-		return ACLDiffOutput{}, err
+	if in.ToVersion == "" {
+		var perr error
+		newProp, newMore, perr = nv.prepare(ctx, live, liveDoc)
+		if perr != nil {
+			return ACLDiffOutput{}, perr
+		}
 	}
 	oldFound, newFound = append(oldFound, relabel(oldMore, sourceFrom, sourceAgainst)...), append(newFound, newMore...)
 	if oldProp == nil || newProp == nil {
@@ -319,7 +397,13 @@ func sideSource(in ACLDiffInput, newSide bool) string {
 		return sideText
 	}
 	if !newSide {
+		if in.FromVersion != "" {
+			return sideVersion
+		}
 		return text(in.Against)
+	}
+	if in.ToVersion != "" {
+		return sideVersion
 	}
 	if in.Patch != "" {
 		return sidePatch
@@ -371,6 +455,24 @@ func (v *validation) readLiveSide(ctx context.Context, live api.PolicyDetails) (
 		return nil, []ACLProblem{p}, 0, nil
 	}
 	ps, omitted := v.structureProblems(d, sourceLive, true)
+	return d, ps, omitted, nil
+}
+
+// readVersionSide parses a policy the audit log stored, by the same guards as the live
+// side. Structural findings are notices: Tailscale stored the text. A text this version
+// cannot read is one error finding, and the comparison does not run. The subject rule does
+// not read the text: it is tailnet data, not a caller's text.
+func (v *validation) readVersionSide(ctx context.Context, text []byte) (*acl.Doc, []ACLProblem, int, error) {
+	d, err := v.parse(ctx, text)
+	if err != nil {
+		p, perr := v.parseProblem(text, err, sourceVersion)
+		if perr != nil {
+			return nil, nil, 0, perr
+		}
+		p.Message = "this version of tailkeeper cannot read the stored policy: " + p.Message
+		return nil, []ACLProblem{p}, 0, nil
+	}
+	ps, omitted := v.structureProblems(d, sourceVersion, true)
 	return d, ps, omitted, nil
 }
 
@@ -539,6 +641,8 @@ func reportSource(side string, newSide bool) string {
 	switch {
 	case side == sideLive:
 		return sourceLive
+	case side == sideVersion:
+		return sourceVersion
 	case side == sidePatch:
 		return sourcePatch
 	case newSide:
