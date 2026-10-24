@@ -23,12 +23,73 @@
         ]
       },
       "proto": {
-        "description": "IP protocol, a name such as tcp, udp or icmp, or a number from 1 to 255; icmp needs port 0",
+        "description": "IP protocol, a name such as tcp, udp or icmp, or a number from 1 to 255; icmp needs port 0. Needs accept or deny destinations: an SSH-only call refuses it",
         "type": "string"
       },
       "src": {
-        "description": "the source: a user's login, group:name, tag:name, a host alias or a tailnet address; never a masked value",
+        "description": "the source: a tag, a group (a synced group may contain spaces), a host alias, a tailnet address, or a user named by the pseudonym users_list shows",
         "type": "string"
+      },
+      "srcPostureAttrs": {
+        "additionalProperties": true,
+        "description": "posture attributes passed through to the test, at most 16: a name such as node:tsVersion or custom:my_attr (a lower-case letter, then letters, digits and : . - _) with a string, number or bool value. Refused together with ssh",
+        "type": "object"
+      },
+      "ssh": {
+        "description": "SSH tests of this source, at most 8: each names up to 32 destinations with no port and up to 16 users in accept, check or deny",
+        "items": {
+          "additionalProperties": false,
+          "properties": {
+            "accept": {
+              "description": "SSH users that must be accepted",
+              "items": {
+                "type": "string"
+              },
+              "type": [
+                "null",
+                "array"
+              ]
+            },
+            "check": {
+              "description": "SSH users that must be checked",
+              "items": {
+                "type": "string"
+              },
+              "type": [
+                "null",
+                "array"
+              ]
+            },
+            "deny": {
+              "description": "SSH users that must be denied",
+              "items": {
+                "type": "string"
+              },
+              "type": [
+                "null",
+                "array"
+              ]
+            },
+            "dst": {
+              "description": "destinations of this SSH test, with no port (tag:prod, 100.64.0.5)",
+              "items": {
+                "type": "string"
+              },
+              "type": [
+                "null",
+                "array"
+              ]
+            }
+          },
+          "required": [
+            "dst"
+          ],
+          "type": "object"
+        },
+        "type": [
+          "null",
+          "array"
+        ]
       }
     },
     "required": [
@@ -39,6 +100,16 @@
   "output": {
     "additionalProperties": false,
     "properties": {
+      "caveats": {
+        "description": "fixed sentences about how a verdict was read",
+        "items": {
+          "type": "string"
+        },
+        "type": [
+          "null",
+          "array"
+        ]
+      },
       "evaluatedAt": {
         "type": "string"
       },
@@ -76,9 +147,174 @@
       "note": {
         "type": "string"
       },
-      "status": {
-        "description": "pass: every destination matched as asked; fail: at least one did not",
+      "omitted": {
+        "description": "SSH verdicts left out past the cap; the status counts them, and the ones not as asked are listed first",
+        "type": "integer"
+      },
+      "omittedLines": {
+        "description": "lines of Tailscale's text left out of failures, unmatched, warnings and otherTests past their caps; none of them changes the status",
+        "type": "integer"
+      },
+      "otherTests": {
+        "items": {
+          "additionalProperties": false,
+          "properties": {
+            "errors": {
+              "items": {
+                "type": "string",
+                "x-tailkeeper-untrusted": true
+              },
+              "type": [
+                "null",
+                "array"
+              ],
+              "x-tailkeeper-untrusted": true
+            },
+            "src": {
+              "type": "string",
+              "x-tailkeeper-untrusted": true
+            }
+          },
+          "required": [
+            "src",
+            "errors"
+          ],
+          "type": "object"
+        },
+        "type": [
+          "null",
+          "array"
+        ]
+      },
+      "posture": {
+        "description": "none when the live policy does not gate on posture, gated when it does, unknown when the policy could not be read",
         "type": "string"
+      },
+      "postureNote": {
+        "description": "set when the live policy could not be read, or when it names more attributes than this result lists",
+        "type": "string"
+      },
+      "posturesNeeded": {
+        "description": "the posture attributes the live policy names",
+        "items": {
+          "type": "string",
+          "x-tailkeeper-untrusted": true
+        },
+        "type": [
+          "null",
+          "array"
+        ],
+        "x-tailkeeper-untrusted": true
+      },
+      "sshError": {
+        "description": "set when the SSH half of a call that also had destinations did not run: the error. The tests half is kept and the SSH verdicts are unknown",
+        "type": "string",
+        "x-tailkeeper-untrusted": true
+      },
+      "sshNotAsked": {
+        "description": "SSH verdicts that are not what their test asked for, counting those left out of the list",
+        "type": "integer"
+      },
+      "sshVerdicts": {
+        "items": {
+          "additionalProperties": false,
+          "properties": {
+            "dst": {
+              "description": "the destination as the caller wrote it",
+              "type": "string",
+              "x-tailkeeper-untrusted": true
+            },
+            "expect": {
+              "description": "accept, check or deny",
+              "type": "string"
+            },
+            "user": {
+              "description": "the SSH user as the caller wrote it",
+              "type": "string",
+              "x-tailkeeper-untrusted": true
+            },
+            "verdict": {
+              "description": "allowed, denied, unresolved or unknown",
+              "type": "string"
+            },
+            "why": {
+              "description": "a fixed sentence, when the line alone is not the whole reason",
+              "type": "string"
+            }
+          },
+          "required": [
+            "dst",
+            "user",
+            "expect",
+            "verdict"
+          ],
+          "type": "object"
+        },
+        "type": [
+          "null",
+          "array"
+        ]
+      },
+      "status": {
+        "description": "pass: every destination matched as asked; fail: an assertion failed; unresolved: a name could not be evaluated; unknown: a line could not be paired, which is not a pass",
+        "type": "string"
+      },
+      "unmatched": {
+        "items": {
+          "type": "string",
+          "x-tailkeeper-untrusted": true
+        },
+        "type": [
+          "null",
+          "array"
+        ],
+        "x-tailkeeper-untrusted": true
+      },
+      "verdicts": {
+        "items": {
+          "additionalProperties": false,
+          "properties": {
+            "dst": {
+              "description": "the destination as the caller wrote it",
+              "type": "string",
+              "x-tailkeeper-untrusted": true
+            },
+            "expect": {
+              "description": "accept, deny or accept+deny",
+              "type": "string"
+            },
+            "protocols": {
+              "description": "the protocol names of the lines that speak for this destination",
+              "items": {
+                "type": "string",
+                "x-tailkeeper-untrusted": true
+              },
+              "type": [
+                "null",
+                "array"
+              ],
+              "x-tailkeeper-untrusted": true
+            },
+            "verdict": {
+              "description": "allowed, denied, unresolved or unknown",
+              "type": "string"
+            },
+            "why": {
+              "description": "a fixed sentence, when the line alone is not the whole reason",
+              "type": "string"
+            }
+          },
+          "required": [
+            "dst",
+            "expect",
+            "verdict"
+          ],
+          "type": "object"
+        },
+        "type": [
+          "null",
+          "array"
+        ]
       },
       "warnings": {
         "items": {
@@ -94,6 +330,7 @@
     },
     "required": [
       "status",
+      "posture",
       "evaluatedAt",
       "note"
     ],

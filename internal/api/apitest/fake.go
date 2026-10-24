@@ -36,6 +36,7 @@ type Request struct {
 	Query       url.Values
 	Auth        string
 	Accept      string
+	AcceptSent  bool // the request carried an Accept header, empty or not
 	ContentType string
 	IfNoneMatch string
 	Body        []byte
@@ -216,7 +217,7 @@ func (f *Fake) serve(w http.ResponseWriter, r *http.Request) {
 	}
 	f.mu.Lock()
 	f.requests = append(f.requests, Request{Method: r.Method, Path: r.URL.EscapedPath(), Query: r.URL.Query(), Auth: r.Header.Get("Authorization"),
-		Accept: r.Header.Get("Accept"), ContentType: r.Header.Get("Content-Type"), IfNoneMatch: r.Header.Get("If-None-Match"), Body: body})
+		Accept: r.Header.Get("Accept"), AcceptSent: len(r.Header.Values("Accept")) > 0, ContentType: r.Header.Get("Content-Type"), IfNoneMatch: r.Header.Get("If-None-Match"), Body: body})
 	h := f.routes[r.Method+" "+r.URL.EscapedPath()]
 	if h == nil {
 		h = f.fallback
@@ -234,6 +235,15 @@ func (f *Fake) serve(w http.ResponseWriter, r *http.Request) {
 	if r.Method == http.MethodPost && r.URL.EscapedPath() == ValidatePath && !permit {
 		if msg := validateMismatch(r.Header.Get("Content-Type"), body); msg != "" {
 			f.t.Errorf("%s", msg)
+		}
+	}
+	// A third spy on the details read: Tailscale's answer was observed with no Accept
+	// header and with application/hujson only, and a live read that sent
+	// application/json got an acl field that is not base64.
+	if r.Method == http.MethodGet && r.URL.EscapedPath() == aclPath && r.URL.Query().Get("details") == "true" {
+		// An empty Accept is a header too: Header.Get cannot tell it from none.
+		if a := r.Header.Values("Accept"); len(a) > 0 && !(len(a) == 1 && a[0] == "application/hujson") {
+			f.t.Errorf("tailkeeper read the policy with details=true and Accept %q: the observed answers are for no Accept and application/hujson only", a)
 		}
 	}
 	if r.Header.Get("Authorization") != want {

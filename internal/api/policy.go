@@ -99,7 +99,10 @@ type PolicyDetails struct {
 func (c *Client) GetPolicyDetails(ctx context.Context) (PolicyDetails, error) {
 	var d PolicyDetails
 	err := c.retry(ctx, func() error {
-		return c.do(ctx, http.MethodGet, c.base.String()+c.TailnetPath("/acl")+"?details=true", nil, "", "application/json", false, func(r io.Reader, resp *http.Response) error {
+		// No Accept header. The OpenAPI document says not to send one with details, and
+		// the observed answers are for none and for application/hujson; a live read on
+		// 24 Oct 2026 that sent application/json got an acl field that is not base64.
+		return c.do(ctx, http.MethodGet, c.base.String()+c.TailnetPath("/acl")+"?details=true", nil, "", "", false, func(r io.Reader, resp *http.Response) error {
 			b, err := c.readAll(r)
 			if err != nil {
 				return err

@@ -37,7 +37,7 @@ From a clone, `make install` runs the gate (`make verify`), then installs the bi
 Every release is built by `.github/workflows/release.yml` from a signed tag. `checksums.txt` lists the SHA-256 of every archive and SBOM. A [cosign](https://docs.sigstore.dev/) keyless signature over it (`checksums.txt.sigstore.json`) proves that file came from that workflow, and a GitHub build-provenance attestation covers each file it lists; a second attestation step covers `checksums.txt` itself, which cannot list its own hash. Download the archive, `checksums.txt` and `checksums.txt.sigstore.json`, then run these lines in order and stop at the first one that fails (a shell does not stop for you when you paste them, so a later line can succeed after an earlier one failed):
 
 ```
-VERSION=v0.5.0
+VERSION=v0.6.0
 ARCHIVE=tailkeeper_${VERSION#v}_darwin_arm64.tar.gz   # the archive you downloaded
 IDENTITY="https://github.com/abm9111/tailkeeper/.github/workflows/release.yml@refs/tags/$VERSION"
 
@@ -89,7 +89,7 @@ tar -xzOf /path/to/"$ARCHIVE" tailkeeper | cmp - dist/tailkeeper_darwin_arm64*/t
 }
 ```
 
-`docs/recipes/` shows wrappers for two secret managers. A wrapper is any program that puts the two variables (and `TAILKEEPER_PRIVACY_KEY`, below) in the environment of the command it runs, without printing them.
+`docs/recipes/` shows wrappers for two secret managers, a GitHub Actions check of a policy change, and a scheduled policy check. A wrapper is any program that puts the two variables (and `TAILKEEPER_PRIVACY_KEY`, below) in the environment of the command it runs, without printing them.
 
 tailkeeper refuses a key it does not know, a key written twice and a key whose letter case differs, so a typo is an error, not a setting that does nothing.
 
@@ -121,6 +121,8 @@ tailkeeper refuses a key it does not know, a key written twice and a key whose l
 {"contexts": {"ci": {"tailnetId": "T1234CNTRL", "credentials": {"read": {"provider": "oidc", "clientId": "kFED1CNTRL"}}}}}
 ```
 
+The `oidc` identity of a GitHub Actions job is a read-all-policy credential, because masking happens in tailkeeper: a job that holds it reads the policy, the devices and their posture attributes whole. The recipe in `docs/recipes/github-actions.md` runs the job that holds it in a named GitHub environment, with `id-token: write` on that job only. Every step of that job, including the pinned `actions/checkout` and `sigstore/cosign-installer` and the downloaded binary, can request the OIDC token; the SHA pins and the environment's reviewer are the controls. With a required reviewer on the environment and the federated credential's subject bound to that environment, only an approved run gets the identity; without the binding, a job that names no environment gets a token with no approval, and without a reviewer, anyone who can push a branch to the repository can edit the workflow and use it. Under `pull_request` the workflow that runs is the pull request's own, so add the workflow file to CODEOWNERS beside the policy and invariants files and require code-owner review on the default branch. A pull request from a fork gets no OIDC token. The tailnet ID and the client ID are environment secrets of `tailkeeper-policy`, not repository secrets, so only an approved job receives them and no log shows them. On a public repository the log of a run on a branch of the repository is public, and it carries text taken from the live policy (annotations and a step summary), masked for personal data but not for tag names, host names or the shape of a rule.
+
 ### Privacy key
 
 Put `TAILKEEPER_PRIVACY_KEY`, 64 hexadecimal characters (`openssl rand -hex 32`), where the read credential is kept: the environment for the `env` provider, the wrapper's secret store for `exec`, the credential file for `file`. The `oidc` provider stores no secret, so it has no privacy key, and masked values there carry no pseudonym. tailkeeper derives two keys from it and never shows it. Pseudonyms appear in results only: the error messages of tool calls are masked without them, because an error echoes what the caller typed. Without it, masking still works, but masked values carry no pseudonym, a pseudonym filter fails with `privacy_key_unavailable` (exit 5), and `audit_log` leaves out its digests. Replacing the key changes every pseudonym. `tailkeeper doctor` reports whether it is loaded.
@@ -133,9 +135,9 @@ Put `TAILKEEPER_PRIVACY_KEY`, 64 hexadecimal characters (`openssl rand -hex 32`)
 | `contexts.<name>.tailnetId` | the tailnet ID from the admin console's General settings (never `-`) |
 | `contexts.<name>.credentials.read` | a provider block, above |
 | `contexts.<name>.credentials.read.provider` | `env`, `file`, `exec` or `oidc` |
-| `contexts.<name>.credentials.read.command` | `exec`: the wrapper and its arguments. tailkeeper checks that the list is not empty and that its first element is an absolute path, and nothing else; it runs the list followed by its own binary and arguments. A last element `--`, which ends the wrapper's own options so that it takes the rest as the command to run, is the convention of the recipes in `docs/recipes/`: their test checks it, tailkeeper does not check it in your configuration |
+| `contexts.<name>.credentials.read.command` | `exec`: the wrapper and its arguments. tailkeeper checks that the list is not empty and that its first element is an absolute path, and nothing else; it runs the list followed by its own binary and arguments. A last element `--`, which ends the wrapper's own options so that it takes the rest as the command to run, is the convention of the two wrapper recipes in `docs/recipes/` (`1password.md` and `proton-pass.md`): their test checks it, tailkeeper does not check it in your configuration |
 | `contexts.<name>.credentials.read.path` | `file`: the absolute path of the credential file |
-| `contexts.<name>.credentials.read.clientId` | `oidc`: the federated identity's client ID (not a secret) |
+| `contexts.<name>.credentials.read.clientId` | `oidc`: the federated identity's client ID (not a credential; the GitHub Actions recipe keeps it in an environment secret anyway, so that no log shows it) |
 | `contexts.<name>.credentials.read.audience` | `oidc`: the token's audience; `api.tailscale.com/<clientId>` when left out |
 | `contexts.<name>.credentials.read.tokenFile` | `oidc`: the absolute path of a file that holds the identity token |
 | `defaultContext` | the context to use when none is named |
@@ -205,18 +207,47 @@ Other MCP hosts start the same stdio server. Give them the absolute path of the 
 | 5 | The read credential is unavailable or was rejected, a scope is missing, or the privacy key is unavailable. |
 | 6 | The configuration is missing, invalid or unsafe. |
 | 7 | The audit log is unavailable or damaged (`audit verify` found a break). |
-| 8 | `doctor` found a failing check, or a policy command's `--fail-on` named a kind that its result has. |
-| 9 | `acl test` ran, and at least one destination or SSH user did not behave as asked (an `--accept` it cannot reach, or a `--deny` it can); or `acl validate` ran, and a test of the policy or of the invariants failed. |
+| 8 | A check you asked for found something (`findings_present`): `doctor` found a failing check, or a policy command's `--fail-on` named a kind that its result has. |
+| 9 | `acl test` ran, and at least one destination or SSH user did not behave as asked (an `--accept` it cannot reach, or a `--deny` it can); or `acl validate` ran, and a test of the policy or of the invariants failed. That is a failed assertion. |
 
 The design reserves 3, 4, 10 and 11 (denied, precondition failed, approval required, outcome unknown) for the write tools; nothing returns them yet.
+
+### Not shown by a live run
+
+These three paths cannot be exercised on a tailnet, so a live run does not cover them:
+
+- a pass with new warnings when the tailnet has none
+- Tailscale's 429, not provoked
+- a console save on a scratch tailnet
+
+### Live acceptance of 0.6.0
+
+On 24 Oct 2026 the owner ran `make live LIVE_UNAVAILABLE=log_streaming_get,user_invites_list,oauth_apps_list` from the release branch against their own tailnet. These are its closing lines, copied as printed; they hold counts, tool names and fixed words, and no value from the tailnet:
+
+```
+self-check: 9 checks, all held
+tools allowed to be unavailable (make live LIVE_UNAVAILABLE=…): 3: log_streaming_get, oauth_apps_list, user_invites_list
+acl_validate: invariants not run: no test is known to hold on the live policy, and an empty file proves nothing
+GitOps oracle: not requested
+doctor: 0 failing checks
+user_invites_list            unavailable not_found                   192 bytes  0 personal paths     0 personal values examined
+oauth_apps_list              unavailable not_found                   192 bytes  0 personal paths     0 personal values examined
+log_streaming_get            unavailable scope_missing               275 bytes  0 personal paths     0 personal values examined
+summary: 46 tools: 37 ok, 3 unavailable, 6 none, 0 fail
+none, so nothing was called for: device_invite_get, oauth_app_get, posture_integration_get, service_get, user_invite_get, webhook_get
+mcp: 44 tools advertised
+```
+
+The three tools listed as unavailable were not exercised: `user_invites_list` and `oauth_apps_list` answered `not_found` on that tailnet, and `log_streaming_get` answered `scope_missing`. The six tools of the `none` line were not called either: each reads one item, and the list it is named from was empty. The invariants check and the GitOps oracle did not run, as the lines say. The headless MCP check in `CLAUDE.md`, which runs the binary `make install` writes, is not part of this record.
 
 ## Reference
 
 - `docs/tools.md`: every tool, its CLI command, scopes, parameters and untrusted fields, and a map from each read operation in Tailscale's OpenAPI document to the tools that call it, or the reason none does (generated; `make docs-check` keeps it current). The map is checked against two pinned files, not against a copy of the document: `internal/api/openapi/operations.txt` lists the document's operations, and `fingerprint.txt` lists, for every read operation and the validate call, their parameters, the content types of their request bodies and the fields of their responses (for the validate call, its error responses too). A weekly job compares the pins with the live document. To move the pin, download the document, run `go test ./internal/api/openapi -run 'TestOperationsMatchTheDocument|TestLiveDocumentMatchesThePin' -update` with `TAILKEEPER_OPENAPI_LIVE` set to its path, review the diff, and commit both files.
 - `docs/design.md`: the design and roadmap. `docs/threat-model.md`: what tailkeeper protects, against whom, and what it does not stop.
-- `docs/scopes.md`: every OAuth scope and the tools that need it (generated; `tailkeeper scopes` prints it).
+- `docs/acl.md`: how an agent checks a policy, and what the owner does after a pass.
+- `docs/scopes.md`: every OAuth scope and the tools that need it (generated; `tailkeeper scopes` prints it). The third column is the tools that read part of a result with that scope, and the fourth is the tools that use it optionally. `tailkeeper scopes --json` names those in `optionalTools`.
 - `docs/dependencies.md`: every package the binary links (generated; `make deps-check` fails on any change until it is reviewed).
-- `docs/recipes/`: credential wrappers for secret managers.
+- `docs/recipes/`: credential wrappers for two secret managers, a GitHub Actions check of a policy change, and a scheduled policy check.
 - `CHANGELOG.md`: what each release changed. `SECURITY.md`: how to report a vulnerability. `CONTRIBUTING.md`: how to work on the code.
 - `CLAUDE.md`: the rules for agents working in this repository.
 

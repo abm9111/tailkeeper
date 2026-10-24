@@ -39,8 +39,8 @@ func TestGetPolicyDetailsReadsTheObservedShape(t *testing.T) {
 			t.Errorf("%s: warnings %#v", c.name, d.Warnings)
 		}
 		reqs := f.Requests()
-		if len(reqs) != 1 || reqs[0].Query.Get("details") != "true" || reqs[0].IfNoneMatch != "" || reqs[0].Accept != "application/json" {
-			t.Errorf("%s: requests %+v, want one details read with no If-None-Match (A-8: it is never honoured)", c.name, reqs)
+		if len(reqs) != 1 || reqs[0].Query.Get("details") != "true" || reqs[0].IfNoneMatch != "" || reqs[0].AcceptSent {
+			t.Errorf("%s: requests %+v, want one details read with no If-None-Match (A-8: it is never honoured) and no Accept header (the observed answers)", c.name, reqs)
 		}
 	}
 }

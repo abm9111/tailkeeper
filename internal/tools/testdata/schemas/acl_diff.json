@@ -1,0 +1,464 @@
+{
+  "input": {
+    "additionalProperties": false,
+    "properties": {
+      "against": {
+        "description": "the old policy as HuJSON text; leave it out to make the live policy the old side",
+        "type": "string"
+      },
+      "fromChange": {
+        "description": "continue a listing: the nextChange of the previous result for the same two policies",
+        "type": "string"
+      },
+      "fromVersion": {
+        "description": "the old side is the policy of this version id from acl_history",
+        "type": "string"
+      },
+      "ignoreTailscaleWritten": {
+        "description": "leave the constructs Tailscale writes itself out of the list and out of equal; they are still counted",
+        "type": "boolean"
+      },
+      "patch": {
+        "description": "RFC 6902 operations, as JSON text, applied to the live policy to make the new side; over MCP a user is named by pseudonym, in a file by login",
+        "type": "string"
+      },
+      "policy": {
+        "description": "the new policy as HuJSON text, a top-level object; leave it and patch out to make the live policy the new side",
+        "type": "string"
+      },
+      "section": {
+        "description": "list only the changes in one section: a section name in any case, or unknown for the sections this version does not know",
+        "type": "string"
+      },
+      "toVersion": {
+        "description": "the new side is the policy of this version id from acl_history",
+        "type": "string"
+      }
+    },
+    "type": "object"
+  },
+  "output": {
+    "additionalProperties": false,
+    "properties": {
+      "changes": {
+        "description": "one page of the changes, defaults, testsReduced and widening first",
+        "items": {
+          "additionalProperties": false,
+          "properties": {
+            "class": {
+              "description": "defaults, testsReduced, widening, tailscaleWritten or semantic",
+              "type": "string"
+            },
+            "entry": {
+              "description": "the entry's key, or a summary of the rule or assertion",
+              "type": "string",
+              "x-tailkeeper-untrusted": true
+            },
+            "fields": {
+              "description": "what a changed entry gained and lost, field by field",
+              "items": {
+                "additionalProperties": false,
+                "properties": {
+                  "added": {
+                    "items": {
+                      "type": "string",
+                      "x-tailkeeper-untrusted": true
+                    },
+                    "type": [
+                      "null",
+                      "array"
+                    ],
+                    "x-tailkeeper-untrusted": true
+                  },
+                  "addedMore": {
+                    "description": "gained, not listed",
+                    "type": "integer"
+                  },
+                  "field": {
+                    "type": "string",
+                    "x-tailkeeper-untrusted": true
+                  },
+                  "removed": {
+                    "items": {
+                      "type": "string",
+                      "x-tailkeeper-untrusted": true
+                    },
+                    "type": [
+                      "null",
+                      "array"
+                    ],
+                    "x-tailkeeper-untrusted": true
+                  },
+                  "removedMore": {
+                    "description": "lost, not listed",
+                    "type": "integer"
+                  }
+                },
+                "required": [
+                  "field"
+                ],
+                "type": "object"
+              },
+              "type": [
+                "null",
+                "array"
+              ]
+            },
+            "new": {
+              "description": "the entry on the new side, in canonical form",
+              "type": "string",
+              "x-tailkeeper-untrusted": true
+            },
+            "newCount": {
+              "type": "integer"
+            },
+            "newLine": {
+              "description": "in the new side's text, from 1; never for a patch: the caller wrote operations, not that text",
+              "type": "integer"
+            },
+            "newPointer": {
+              "description": "JSON pointer into the new side",
+              "type": "string",
+              "x-tailkeeper-untrusted": true
+            },
+            "note": {
+              "description": "a fixed sentence that qualifies the change; it never quotes the policy: what a note is about is in fields",
+              "type": "string"
+            },
+            "old": {
+              "description": "the entry on the old side, in canonical form",
+              "type": "string",
+              "x-tailkeeper-untrusted": true
+            },
+            "oldCount": {
+              "description": "how many times a repeated entry (a test) is on the old side",
+              "type": "integer"
+            },
+            "oldLine": {
+              "description": "in the old side's text, from 1",
+              "type": "integer"
+            },
+            "oldPointer": {
+              "description": "JSON pointer into the old side",
+              "type": "string",
+              "x-tailkeeper-untrusted": true
+            },
+            "op": {
+              "description": "added, removed or changed",
+              "type": "string"
+            },
+            "section": {
+              "description": "acls, grants, acls+grants (a rule in both), another section, or the name of a section this version does not know",
+              "type": "string",
+              "x-tailkeeper-untrusted": true
+            },
+            "truncated": {
+              "description": "old or new was cut at 1 KiB",
+              "type": "boolean"
+            }
+          },
+          "required": [
+            "class",
+            "op",
+            "section"
+          ],
+          "type": "object"
+        },
+        "type": [
+          "null",
+          "array"
+        ]
+      },
+      "checkedAt": {
+        "type": "string"
+      },
+      "counts": {
+        "additionalProperties": false,
+        "description": "the changes of every page, by class; commentOnly and formatOnly are counts only",
+        "properties": {
+          "commentOnly": {
+            "type": "integer"
+          },
+          "defaults": {
+            "type": "integer"
+          },
+          "formatOnly": {
+            "type": "integer"
+          },
+          "semantic": {
+            "type": "integer"
+          },
+          "tailscaleWritten": {
+            "type": "integer"
+          },
+          "testsReduced": {
+            "type": "integer"
+          },
+          "widening": {
+            "type": "integer"
+          }
+        },
+        "required": [
+          "defaults",
+          "testsReduced",
+          "widening",
+          "tailscaleWritten",
+          "semantic",
+          "commentOnly",
+          "formatOnly"
+        ],
+        "type": "object"
+      },
+      "externalLink": {
+        "type": "string",
+        "x-tailkeeper-untrusted": true
+      },
+      "externallyManaged": {
+        "description": "true, false or unknown: the live policy is managed outside the admin console; absent when no side is live",
+        "type": "string"
+      },
+      "externallyManagedNote": {
+        "description": "why it is unknown",
+        "type": "string"
+      },
+      "matched": {
+        "description": "the changes the section filter and the options select, over every page",
+        "type": "integer"
+      },
+      "new": {
+        "additionalProperties": false,
+        "properties": {
+          "findings": {
+            "description": "what was found in this side by itself: a text that is not a policy, a key written twice, a section this version does not know",
+            "items": {
+              "additionalProperties": false,
+              "properties": {
+                "column": {
+                  "description": "in bytes, from 1",
+                  "type": "integer"
+                },
+                "fromTailscale": {
+                  "description": "Tailscale's own text",
+                  "type": "boolean"
+                },
+                "kind": {
+                  "description": "the kind of finding, as the tool's description lists",
+                  "type": "string"
+                },
+                "line": {
+                  "description": "from 1, counting line feeds as Tailscale does; absent when unknown",
+                  "type": "integer"
+                },
+                "message": {
+                  "type": "string",
+                  "x-tailkeeper-untrusted": true
+                },
+                "moreCandidates": {
+                  "description": "more places match, past the cap",
+                  "type": "integer"
+                },
+                "pointer": {
+                  "description": "JSON pointer, when the line is not known",
+                  "type": "string",
+                  "x-tailkeeper-untrusted": true
+                },
+                "severity": {
+                  "description": "error, warning or notice",
+                  "type": "string"
+                },
+                "source": {
+                  "description": "where the position is: from, against, patch (the patch, or the policy it makes: a pointer), invariants, live or version; empty for a message about the text as a whole",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "kind",
+                "severity",
+                "source",
+                "message",
+                "fromTailscale"
+              ],
+              "type": "object"
+            },
+            "type": [
+              "null",
+              "array"
+            ]
+          },
+          "omitted": {
+            "description": "findings left out past the cap",
+            "type": "integer"
+          },
+          "policySha256": {
+            "description": "SHA-256 of the policy as acl_get shows it",
+            "type": "string"
+          },
+          "policyVersion": {
+            "description": "for the live policy: a keyed digest of its ETag, or the ETag with personalData show; absent otherwise",
+            "type": "string"
+          },
+          "source": {
+            "description": "live, text (the text of an MCP call), file (named on the command line), patch (the live policy with the patch applied) or version (a stored policy)",
+            "type": "string"
+          },
+          "version": {
+            "description": "the version id, when source is version",
+            "type": "string"
+          }
+        },
+        "required": [
+          "source"
+        ],
+        "type": "object"
+      },
+      "nextChange": {
+        "type": "string"
+      },
+      "normalFormLimits": {
+        "description": "why a changed may be false",
+        "items": {
+          "type": "string"
+        },
+        "type": [
+          "null",
+          "array"
+        ]
+      },
+      "notChecked": {
+        "description": "what a comparison does not establish: a small change to an alias or a group can widen access",
+        "items": {
+          "type": "string"
+        },
+        "type": [
+          "null",
+          "array"
+        ]
+      },
+      "old": {
+        "additionalProperties": false,
+        "properties": {
+          "findings": {
+            "description": "what was found in this side by itself: a text that is not a policy, a key written twice, a section this version does not know",
+            "items": {
+              "additionalProperties": false,
+              "properties": {
+                "column": {
+                  "description": "in bytes, from 1",
+                  "type": "integer"
+                },
+                "fromTailscale": {
+                  "description": "Tailscale's own text",
+                  "type": "boolean"
+                },
+                "kind": {
+                  "description": "the kind of finding, as the tool's description lists",
+                  "type": "string"
+                },
+                "line": {
+                  "description": "from 1, counting line feeds as Tailscale does; absent when unknown",
+                  "type": "integer"
+                },
+                "message": {
+                  "type": "string",
+                  "x-tailkeeper-untrusted": true
+                },
+                "moreCandidates": {
+                  "description": "more places match, past the cap",
+                  "type": "integer"
+                },
+                "pointer": {
+                  "description": "JSON pointer, when the line is not known",
+                  "type": "string",
+                  "x-tailkeeper-untrusted": true
+                },
+                "severity": {
+                  "description": "error, warning or notice",
+                  "type": "string"
+                },
+                "source": {
+                  "description": "where the position is: from, against, patch (the patch, or the policy it makes: a pointer), invariants, live or version; empty for a message about the text as a whole",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "kind",
+                "severity",
+                "source",
+                "message",
+                "fromTailscale"
+              ],
+              "type": "object"
+            },
+            "type": [
+              "null",
+              "array"
+            ]
+          },
+          "omitted": {
+            "description": "findings left out past the cap",
+            "type": "integer"
+          },
+          "policySha256": {
+            "description": "SHA-256 of the policy as acl_get shows it",
+            "type": "string"
+          },
+          "policyVersion": {
+            "description": "for the live policy: a keyed digest of its ETag, or the ETag with personalData show; absent otherwise",
+            "type": "string"
+          },
+          "source": {
+            "description": "live, text (the text of an MCP call), file (named on the command line), patch (the live policy with the patch applied) or version (a stored policy)",
+            "type": "string"
+          },
+          "version": {
+            "description": "the version id, when source is version",
+            "type": "string"
+          }
+        },
+        "required": [
+          "source"
+        ],
+        "type": "object"
+      },
+      "section": {
+        "description": "the section filter this result applied, in the engine's spelling; the counts are of every section, matched and changes are of this one",
+        "type": "string"
+      },
+      "semanticallyEqual": {
+        "description": "the two mean the same: exact when true; false can be a false changed for a rewrite the normal form does not reduce (see normalFormLimits)",
+        "type": "boolean"
+      },
+      "status": {
+        "description": "equal, changed or invalid (a side is not a policy, and nothing was compared)",
+        "type": "string"
+      },
+      "tailscaleWrittenAsOf": {
+        "description": "the date of the list of constructs Tailscale writes itself",
+        "type": "string"
+      },
+      "tailscaleWrittenIgnored": {
+        "description": "ignoreTailscaleWritten was set: they are counted and not listed, and they do not make the result changed",
+        "type": "boolean"
+      },
+      "truncated": {
+        "description": "more changes follow this page: call again with fromChange set to nextChange",
+        "type": "boolean"
+      }
+    },
+    "required": [
+      "status",
+      "semanticallyEqual",
+      "old",
+      "new",
+      "counts",
+      "matched",
+      "truncated",
+      "notChecked",
+      "tailscaleWrittenAsOf",
+      "tailscaleWrittenIgnored",
+      "checkedAt"
+    ],
+    "type": "object"
+  },
+  "tool": "acl_diff"
+}

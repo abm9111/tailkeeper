@@ -56,6 +56,9 @@ func TestOutcomeOf(t *testing.T) {
 		{"scope error, listed", "network_flow_logs", "scope_missing", listed, outcomeUnavailable},
 		{"plan error, listed", "network_flow_logs", "feature_unavailable", listed, outcomeUnavailable},
 		{"payment error, listed", "network_flow_logs", "payment_required", listed, outcomeUnavailable},
+		{"not found, listed", "network_flow_logs", "not_found", listed, outcomeUnavailable},
+		{"not found, not listed", "devices_list", "not_found", listed, outcomeFail},
+		{"not found, nothing listed", "network_flow_logs", "not_found", nil, outcomeFail},
 		{"scope error, not listed", "devices_list", "scope_missing", listed, outcomeFail},
 		{"scope error, nothing listed", "network_flow_logs", "scope_missing", nil, outcomeFail},
 		{"scope error, empty list", "network_flow_logs", "scope_missing", map[string]bool{}, outcomeFail},
@@ -973,13 +976,61 @@ esac
 
 func doctorRun(t *testing.T, out string, exit, lines int) *liveRun {
 	t.Helper()
+	return doctorRunListing(t, out, exit, lines, nil)
+}
+
+// doctorRunListing is doctorRun for a run whose owner listed the tools in uncovered as
+// unavailable, and whose rows for the tools in outcomes came out as given.
+func doctorRunListing(t *testing.T, out string, exit, lines int, uncovered map[string]bool, outcomes ...liveOutcome) *liveRun {
+	t.Helper()
 	env := append([]string{
 		"STUB_AUDIT=" + filepath.Join(t.TempDir(), "audit"),
 		"STUB_OUT=" + out, "STUB_EXIT=" + strconv.Itoa(exit), "STUB_LINES=" + strconv.Itoa(lines),
 	}, stubEnv...)
-	l := newLiveRun(doctorStub(t), env, nil)
+	l := newLiveRun(doctorStub(t), env, uncovered)
+	l.results = append(l.results, outcomes...)
 	l.doctorProbe()
 	return l
+}
+
+// The read probe of a tool whose own row came out unavailable may warn: that is a note. A
+// listed tool whose row failed another way (an api_error) is not excused, any other probe that
+// warns is still a problem, a listed tool's probe that fails is one too, and listing acl_test
+// does not excuse the canary test, whose row is named after it.
+func TestTheDoctorJudgeExcusesOnlyTheReadProbeOfAListedTool(t *testing.T) {
+	listed := map[string]bool{"user_invites_list": true, "acl_test": true}
+	covered := []liveOutcome{
+		{tool: "user_invites_list", outcome: outcomeUnavailable, code: "not_found"},
+		{tool: "acl_test", outcome: outcomeUnavailable, code: "scope_missing"},
+	}
+	broken := []liveOutcome{{tool: "user_invites_list", outcome: outcomeFail, code: "api_error"}}
+	cases := []struct {
+		name, row, status string
+		exit, failed      int
+		rows              []liveOutcome
+		problem, note     string
+	}{
+		{"a listed tool's probe warns", "probe user_invites_list", "warn", 0, 0, covered, "", "doctor: probe user_invites_list reads warn: the tool is listed as unavailable"},
+		{"a listed tool that failed with api_error", "probe user_invites_list", "warn", 0, 0, broken, "doctor: probe user_invites_list reads warn", ""},
+		{"a listed tool with no row", "probe user_invites_list", "warn", 0, 0, nil, "doctor: probe user_invites_list reads warn", ""},
+		{"an unlisted tool's probe warns", "probe devices_list", "warn", 0, 0, covered, "doctor: probe devices_list reads warn", ""},
+		{"a listed tool's probe fails", "probe user_invites_list", "fail", 8, 1, covered, "doctor: probe user_invites_list reads fail", ""},
+		{"the canary test warns though acl_test is listed", canaryTestRow, "warn", 0, 0, covered, "doctor: probe acl_test reads warn", ""},
+	}
+	for _, c := range cases {
+		l := doctorRunListing(t, doctorReportJSON(c.failed, map[string]string{c.row: c.status}), c.exit, 1, listed, c.rows...)
+		if c.problem != "" && !slices.Contains(l.problems, c.problem) {
+			t.Errorf("%s: problems %q lack %q", c.name, l.problems, c.problem)
+		}
+		if c.note != "" {
+			if !slices.Contains(l.notes, c.note) {
+				t.Errorf("%s: notes %q lack %q", c.name, l.notes, c.note)
+			}
+			if len(l.problems) != 0 {
+				t.Errorf("%s: problems %q", c.name, l.problems)
+			}
+		}
+	}
 }
 
 // doctorReportJSON is a report of doctor --probe --json in which every probe row reads ok, the
