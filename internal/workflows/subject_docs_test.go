@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 )
@@ -370,6 +371,10 @@ func TestAgentRulesDocumentImportKeepsThePostingCheckEffective(t *testing.T) {
 			path := filepath.Join(root, tt.doc)
 			if tt.link {
 				if err := os.Symlink("AGENTS.md", path); err != nil {
+					if runtime.GOOS == "windows" && os.Getenv("CI") == "" {
+						t.Logf("this account cannot make a symbolic link: %v", err)
+						return
+					}
 					t.Fatal(err)
 				}
 			} else if err := os.WriteFile(path, []byte(tt.body), 0o600); err != nil {
