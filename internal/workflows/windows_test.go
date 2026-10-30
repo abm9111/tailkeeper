@@ -350,9 +350,9 @@ func TestWindowsSkipCheckJudgesALog(t *testing.T) {
 	log.WriteString(pass)
 	for _, pkg := range pkgs {
 		for _, name := range byPkg[pkg] {
-			log.WriteString("--- SKIP: " + name + " (0.00s)\n")
+			fmt.Fprintf(&log, "--- SKIP: %s (0.00s)\n", name)
 		}
-		log.WriteString("ok  \tgithub.com/abm9111/tailkeeper/" + pkg + "\t0.1s\n")
+		fmt.Fprintf(&log, "ok  \tgithub.com/abm9111/tailkeeper/%s\t0.1s\n", pkg)
 	}
 	realDoc, err := filepath.Abs(windowsDoc)
 	if err != nil {

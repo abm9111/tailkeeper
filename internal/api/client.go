@@ -723,8 +723,7 @@ func classify(status int) (tkerr.Code, string) {
 }
 
 func transportError(err error) error {
-	var re *oauth2.RetrieveError
-	if errors.As(err, &re) {
+	if re, ok := errors.AsType[*oauth2.RetrieveError](err); ok {
 		if re.Response != nil && (re.Response.StatusCode == 400 || re.Response.StatusCode == 401) {
 			return tkerr.Wrap(tkerr.TokenRejected, err, "the token endpoint rejected the OAuth client",
 				"check the client ID and secret; the client may have been deleted or revoked")
@@ -768,7 +767,7 @@ func noRedirect(*http.Request, []*http.Request) error { return http.ErrUseLastRe
 // "." or ".." segment, or a segment whose escaped text decodes to a slash.
 // url.PathEscape leaves dots alone, so Path and TailnetPath alone cannot.
 func checkPath(p string) error {
-	for _, seg := range strings.Split(strings.TrimPrefix(p, "/"), "/") {
+	for seg := range strings.SplitSeq(strings.TrimPrefix(p, "/"), "/") {
 		dec, err := url.PathUnescape(seg)
 		if err != nil || dec == "" || dec == "." || dec == ".." || strings.ContainsAny(dec, "/\\") {
 			return tkerr.New(tkerr.ValidationFailed, "the request path has an empty, \".\" or \"..\" segment, or an encoded slash", "")
