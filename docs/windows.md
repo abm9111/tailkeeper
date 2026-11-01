@@ -35,6 +35,8 @@ The same name check applies to a credential file: the `file` provider's path, a 
 
 The suite runs on Windows in CI (the `test-os` job). These tests do not run there, each for the reason given. `scripts/windows-skips.sh` compares the first list with the tests that report SKIP in that job, by package and test name, and the job fails when they differ, so the list is kept true; a test that stops skipping, or a new one that skips, must change it. A test in the second list is not compiled on Windows, which `internal/workflows/windows_test.go` checks against the source.
 
+One subtest skips outside CI only, so it is in neither list: the `symlink` case of `TestAgentRulesDocumentImportKeepsThePostingCheckEffective` (`internal/workflows`) skips on a Windows account that lacks the symbolic-link privilege. In CI that error fails it, as does any other error anywhere.
+
 ### Skipped when the tests run on Windows
 
 <!-- windows-skipped:begin -->

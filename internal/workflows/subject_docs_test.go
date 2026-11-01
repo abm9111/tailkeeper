@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"runtime"
 	"strings"
 	"testing"
 )
@@ -368,9 +367,11 @@ func TestAgentRulesDocumentImportKeepsThePostingCheckEffective(t *testing.T) {
 			path := filepath.Join(root, tt.doc)
 			if tt.link {
 				if err := os.Symlink("AGENTS.md", path); err != nil {
-					if runtime.GOOS == "windows" && os.Getenv("CI") == "" {
-						t.Logf("this account cannot make a symbolic link: %v", err)
-						return
+					// Outside CI a Windows account may lack the symbolic-link privilege; the
+					// case then checks nothing, so it says SKIP rather than PASS. Any other
+					// error, and every error in CI, fails.
+					if os.Getenv("CI") == "" && symlinkPrivilegeMissing(err) {
+						t.Skipf("this account lacks the symbolic-link privilege: %v", err)
 					}
 					t.Fatal(err)
 				}
