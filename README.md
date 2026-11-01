@@ -16,7 +16,7 @@ See [security coverage](docs/security/coverage.md) for evidence and deployment l
 
 ## Quick start
 
-Tailkeeper lets you inspect your Tailscale network from the command line or an MCP client. For example, after setup, ask your assistant to list your tailnet's devices. Tailkeeper is read-only; review the privacy limits above and below before connecting an agent.
+Tailkeeper lets you inspect your Tailscale network from the command line or an MCP client. For example, after setup, ask your assistant to list your tailnet's devices. Tailkeeper only reads: apart from the credential's token request, its only request other than GET asks Tailscale to validate a policy, which changes nothing (see the status line above). Review the privacy limits above and below before connecting an agent.
 
 1. **Install.** With Go 1.27.3 or later, run:
 
@@ -300,7 +300,7 @@ The three tools listed as unavailable were not exercised: `user_invites_list` an
 - `docs/dependencies.md`: every package the binary links (generated; `make deps-check` fails on any change until it is reviewed).
 - `docs/recipes/`: credential wrappers for two secret managers, a GitHub Actions check of a policy change, and a scheduled policy check.
 - `CHANGELOG.md`: what each release changed. `SECURITY.md`: how to report a vulnerability. `CONTRIBUTING.md`: how to work on the code.
-- `CLAUDE.md`: the rules for agents working in this repository.
+- `AGENTS.md`: the rules for agents working in this repository. `CLAUDE.md` imports it and adds the Claude-specific MCP smoke test.
 
 ## License
 

@@ -1,6 +1,6 @@
 # tailkeeper: rules for agents
 
-tailkeeper is a read-only Tailscale CLI and stdio MCP server in Go. Read `docs/design.md` and `docs/threat-model.md`. Machine-private `*.local.md` files remain outside cloud-agent context under estate governance.
+tailkeeper is a read-only Tailscale CLI and stdio MCP server in Go. Read `docs/design.md` and `docs/threat-model.md`. A `*.local.md` file holds one machine's private notes: it is never committed, and agents keep it out of their context.
 
 ## The gate
 
