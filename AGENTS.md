@@ -8,6 +8,7 @@ tailkeeper is a read-only Tailscale CLI and stdio MCP server in Go. Read `docs/d
 - `docs/tools.md`, `docs/scopes.md`, `docs/dependencies.md` and `THIRD_PARTY_LICENSES` are generated. After changing a tool, run `make docs`; after changing dependencies, review the diff of `make deps`; commit the results.
 - Commit messages are `type: description`. Stage files by name, never `git add <directory>`.
 - Never `--no-verify`. If a hook blocks, report what it says and stop.
+- Agents do not push, tag or sign. The owner signs every commit and tag and pushes.
 
 ## Credentials and identifiers
 
