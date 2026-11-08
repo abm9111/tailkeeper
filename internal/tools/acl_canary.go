@@ -6,6 +6,8 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"encoding/json"
+	"net/netip"
+	"strings"
 
 	"github.com/tailscale/hujson"
 
@@ -34,6 +36,45 @@ const (
 	sshCanaryUser      = "canary"
 	sshCanaryDst       = "192.0.2.1"
 )
+
+// canaryAddr is the address both canaries ask about: the tests canary on port 1, the SSH canary
+// as the destination of the user canary.
+var canaryAddr = netip.MustParseAddr("192.0.2.1")
+
+// namesCanaryHost says that a host written in a destination is the canary's address: that
+// address as written in any spelling that parses to it, or a host alias that is exactly it.
+func namesCanaryHost(host string, hosts map[string]string) bool {
+	if v, ok := hosts[host]; ok {
+		host = v
+	}
+	p, ok := prefixOf(host)
+	return ok && p.Bits() == p.Addr().BitLen() && p.Addr().Unmap() == canaryAddr
+}
+
+// namesTheTestsCanary says that a network destination (host:port) is one the tests canary asks
+// about: the canary's address on a port spec that holds port 1, or that cannot be read. A
+// reply's line for such a destination cannot be told from the canary's own, whoever it is for.
+func namesTheTestsCanary(dst string, hosts map[string]string) bool {
+	i := strings.LastIndexByte(dst, ':')
+	if i <= 0 {
+		return false
+	}
+	host, spec := dst[:i], dst[i+1:]
+	if len(host) > 2 && host[0] == '[' && host[len(host)-1] == ']' {
+		host = host[1 : len(host)-1]
+	}
+	if !namesCanaryHost(host, hosts) {
+		return false
+	}
+	in, readable := acl.PortsContain(spec, 1)
+	return in || !readable
+}
+
+// namesTheSSHCanary says that an SSH user on a destination is the one the SSH canary asks about:
+// the user canary on the canary's address.
+func namesTheSSHCanary(dst, user string, hosts map[string]string) bool {
+	return user == sshCanaryUser && namesCanaryHost(dst, hosts)
+}
 
 // sshCanaryEntry is an sshTests element that must fail in the SSH form. It uses
 // its own tag, so it is not the tests-mode canary, and it accepts and denies the

@@ -602,6 +602,32 @@ func scalingCases(t testing.TB) map[string]func(n int) func() {
 		}
 		return func() { Fields(&out, 64) }
 	}
+	// The rewriting of unusual spellings (normalizeForms) reads each number and each
+	// character reference once, however long the run it sits in: a run of digits, of dotted
+	// parts, of 0x prefixes, of references, and of hosts after slashes, none quadratic.
+	for name, unit := range map[string]string{
+		"digits":                  "1",
+		"dotted parts":            "1.",
+		"hexadecimal prefixes":    "0x",
+		"hexadecimal addresses":   "0x08080808 ",
+		"zero-padded addresses":   "010.010.010.010 ",
+		"full-width digits":       "８",
+		"full-width dotted parts": "８．",
+		"character references":    "&#",
+		"zeros in a reference":    "&#0",
+		"at signs and domains":    "a&#64;b ",
+		"URL hosts":               "//134744072 ",
+		"slashes":                 "//",
+	} {
+		cases["normalizeForms "+name] = func(n int) func() {
+			s := strings.Repeat(unit, n/len(unit))
+			return func() { normalizeForms(s) }
+		}
+	}
+	cases["Text unusual spellings"] = func(n int) func() {
+		s := strings.Repeat("0x08080808 alice&#64;example.com 010.010.010.010 http://134744072/ ", n/68)
+		return func() { keyed.Text(s) }
+	}
 	cases["Mask rows"] = func(n int) func() {
 		rows := n / 64
 		return func() {

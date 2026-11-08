@@ -61,12 +61,18 @@ func ownedFileAndDirectory(path string, fi os.FileInfo, allowOwners []int) error
 
 // CheckSecretFile is stricter: owner-only permissions (no group or other access at all).
 func CheckSecretFile(path string) error {
-	if err := CheckOwnership(path, os.Getuid(), 0); err != nil {
-		return err
-	}
-	fi, err := os.Stat(path)
+	fi, err := os.Lstat(path)
 	if err != nil {
 		return tkerr.Wrap(tkerr.ConfigUnsafe, err, "cannot inspect "+path, "")
+	}
+	return checkSecretFileInfo(path, fi)
+}
+
+// checkSecretFileInfo enforces the secret-file policy on the descriptor metadata
+// used for identity comparison, not a separately resolved pathname's metadata.
+func checkSecretFileInfo(path string, fi os.FileInfo) error {
+	if err := OwnedBy(os.Getuid(), 0)(path, fi); err != nil {
+		return err
 	}
 	if fi.Mode().Perm()&0o077 != 0 {
 		return unsafe(path, fmt.Sprintf("has mode %04o", fi.Mode().Perm()), "run: chmod 600 "+shellQuote(path))

@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"net/netip"
 
+	"github.com/abm9111/tailkeeper/internal/acl"
 	"github.com/abm9111/tailkeeper/internal/api"
 	"github.com/abm9111/tailkeeper/internal/tkerr"
 )
@@ -28,6 +29,7 @@ const (
 	whySSHNotRun      = "the SSH tests were not shown to have run"
 	whySSHUnpaired    = "an SSH line matches no single user"
 	whySSHDisagree    = "the lines for this SSH user do not agree"
+	whySSHCanaryUser  = "it names the user and destination of the SSH canary tailkeeper adds, so no reply can show it apart from the canary"
 	caveatLiveInvalid = "the live policy does not validate"
 	caveatSSHRefused  = "your SSH tests were refused"
 	expectCheck       = "check"
@@ -61,12 +63,19 @@ func sshTestEntry(src string, t ACLSSHTestInput) ([]byte, error) {
 }
 
 // takeSSHCanary removes the SSH canary. A missing, doubled or unevaluable SSH
-// canary is not proof that sshTests ran, so the caller reads the result as unknown.
+// canary is not proof that sshTests ran, so the caller reads the result as unknown. The line
+// must also quote the canary's own tag as its source: the entry it sits in is the canary's, and a
+// failure of another source filed there is that source's, not proof that the canary test ran.
+// Taking such a line as the canary would leave the source it belongs to with no failure, which
+// reads as a pass. This is the check of a line's attribution, made before the entry is removed.
 func takeSSHCanary(pv api.PolicyValidation, src string) (api.PolicyValidation, bool) {
 	if src == "" {
 		return pv, false
 	}
 	return api.RemoveCanary(pv, src, func(line string) bool {
+		if quoted, _ := SSHLineSource(line); quoted != src { // a line outside the SSH form quotes no source
+			return false
+		}
 		f := ParseFailureLine(line)
 		return f.Kind == AssertionFailed && f.SSH && f.User == sshCanaryUser && f.Dst == sshCanaryDst
 	})
@@ -111,6 +120,7 @@ func runSSHTests(ctx context.Context, res *SubjectResolver, c *api.Client, in AC
 	if err != nil {
 		return sshReading{}, err
 	}
+	sent.hosts, sent.hostsKnown = liveHostAliases(ctx, live.Text)
 	entries := make([][]byte, len(sent.tests))
 	for i, t := range sent.tests {
 		entries[i], err = sshTestEntry(sent.src, t)
@@ -179,6 +189,24 @@ type sshSent struct {
 	src   string
 	tests []ACLSSHTestInput
 	shown map[string]string
+	// hosts are the aliases of the live policy's hosts section, and hostsKnown says that the
+	// policy was read: when it was not, a destination that is no address may be an alias.
+	hosts      map[string]string
+	hostsKnown bool
+}
+
+// liveHostAliases reads the hosts section of the live policy text, for the destinations that may
+// be written as an alias. ok is false when the text could not be read that far.
+func liveHostAliases(ctx context.Context, text []byte) (hosts map[string]string, ok bool) {
+	doc, err := acl.Parse(ctx, text)
+	if err != nil {
+		return nil, false
+	}
+	access, err := acl.ReadAccess(ctx, doc)
+	if err != nil {
+		return nil, false // a document it cannot read whole is a policy it has not read
+	}
+	return access.Hosts, true
 }
 
 func sentSSHTests(ctx context.Context, res *SubjectResolver, in ACLTestInput) (sshSent, error) {
@@ -200,6 +228,30 @@ func sentSSHTests(ctx context.Context, res *SubjectResolver, in ACLTestInput) (s
 	return out, nil
 }
 
+// setAsideSSHCanaryUser makes unknown the verdict of a user that is the SSH canary's own, the user
+// canary on the canary's destination, whatever the reply says: at those coordinates a reply that
+// proves the canary and holds nothing for the caller's source reads as the canary's line does, and
+// silence would be a verdict. The destination may be written as an alias of the live policy's hosts
+// section; when the policy could not be read (hostsKnown false) the canary user on any destination
+// that is not a literal address is set aside too, for it may be an alias. It says whether it
+// changed one.
+func setAsideSSHCanaryUser(v []ACLSSHVerdict, hosts map[string]string, hostsKnown bool) bool {
+	changed := false
+	for i := range v {
+		if namesTheSSHCanary(v[i].Dst, v[i].User, hosts) || (!hostsKnown && v[i].User == sshCanaryUser && !isLiteralAddress(v[i].Dst)) {
+			v[i].Verdict, v[i].Why = verdictUnknown, whySSHCanaryUser
+			changed = true
+		}
+	}
+	return changed
+}
+
+// isLiteralAddress says that a destination is written as an IP address, which no alias can be.
+func isLiteralAddress(d string) bool {
+	_, err := netip.ParseAddr(d)
+	return err == nil
+}
+
 func (s sshSent) unknown() sshReading {
 	v, _, _, _ := deriveSSHVerdicts(s.src, s.tests, nil)
 	for i := range v {
@@ -216,6 +268,9 @@ func (s sshSent) unknown() sshReading {
 // they came in, each with the caller's test it was paired with.
 func (s sshSent) reading(results []api.TestResult) sshReading {
 	v, unmatched, status, placed := deriveSSHVerdicts(s.src, s.tests, results)
+	if setAsideSSHCanaryUser(v, s.hosts, s.hostsKnown) {
+		status = worse(status, statusUnknown)
+	}
 	notAsked := 0
 	for i := range v {
 		if sshNotAsked(v[i]) {

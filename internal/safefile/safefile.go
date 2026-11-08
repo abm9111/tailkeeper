@@ -88,10 +88,8 @@ func Check(path string, o Options) error {
 }
 
 func inspect(path string, o Options) (os.FileInfo, error) {
-	if runtime.GOOS == "windows" {
-		if why := windowsNameProblem(path); why != "" {
-			return nil, o.refuse(path+": "+why, "name a regular local file")
-		}
+	if why := NameProblem(path); why != "" {
+		return nil, o.refuse(path+": "+why, "name a regular local file")
 	}
 	fi, err := os.Lstat(path)
 	if err != nil {
@@ -165,6 +163,21 @@ func readCapped(r io.Reader, name string, o Options) ([]byte, error) {
 		return nil, o.refuse(fmt.Sprintf("%s is more than the %d bytes tailkeeper reads", name, o.limit()), "")
 	}
 	return data, nil
+}
+
+// NameProblem says why a path is refused by its name on this platform, or "": on Windows,
+// a UNC path, a \\?\, \\.\ or \??\ path, a device name or an alternate data stream (see
+// windowsNameProblem); on every other platform no name is refused. A reader of credentials
+// calls it before it touches the path, as Read does for a policy file.
+func NameProblem(path string) string { return nameProblemFor(runtime.GOOS, path) }
+
+// nameProblemFor is NameProblem on the platform goos, so that the Windows rules are tested
+// on every platform.
+func nameProblemFor(goos, path string) string {
+	if goos != "windows" {
+		return ""
+	}
+	return windowsNameProblem(path)
 }
 
 // reserved are the Windows device names, which open a device whatever extension

@@ -84,7 +84,7 @@ cover: cover-pkg
 # aggregate figure above would hide. Each package is measured on its own, with only its own
 # tests. Fails closed: a package with no statements in its profile, or whose tests fail,
 # fails the target.
-COVER_PKGS    ?= ./internal/acl ./internal/guard
+COVER_PKGS    ?= ./internal/acl ./internal/guard ./internal/securitypack ./internal/releasebundle
 COVER_PKG_MIN ?= 95
 
 cover-pkg:
@@ -110,14 +110,14 @@ bench:
 # input is written to testdata/fuzz/<target>/ and fails the run. Fails closed: each
 # package's listing is captured on its own, so a listing that fails (a compile error)
 # fails the run instead of reading as "no targets", and the run fails unless it ran at
-# least FUZZ_MIN targets (eleven exist today). A package with no fuzz target is fine. Not
+# least FUZZ_MIN targets (nineteen exist today). A package with no fuzz target is fine. Not
 # part of verify: it takes minutes and its inputs are random.
 #
 # FUZZ_PKG limits the run to some packages (go list patterns, such as ./internal/acl); the
 # nightly workflow runs one package for each of its jobs and sets FUZZ_MIN to the number
 # of targets that package holds.
 FUZZTIME ?= 20s
-FUZZ_MIN ?= 11
+FUZZ_MIN ?= 19
 FUZZ_PKG ?= ./...
 
 fuzz:
@@ -167,9 +167,9 @@ mutate:
 # scripts/live-check.sh fails the run if a live test skipped (it checked nothing) or
 # did not reach its closing line, and prints only the lines that hold no tailnet value.
 #
-# The go test timeout is 1500s. Each of the 53 calls may take up to 90s (live_test.go),
+# The go test timeout is 1500s. Each of the 55 calls may take up to 90s (live_test.go),
 # so a run in which most calls time out needs longer; a run that runs out of time ends
-# without a pass line, which fails, and the log is withheld. 53 is the most processes a
+# without a pass line, which fails, and the log is withheld. 55 is the most processes a
 # run starts: one for each tool; the calls made on their answers (the version pair's diff,
 # the pseudonym test, an empty patch and a baseline patch); doctor --probe; and two that
 # happen only when they apply: the GitOps oracle's diff (the policy is managed outside the
@@ -218,8 +218,10 @@ vet:
 	GOOS=windows $(GO) vet ./...
 	$(GO) vet scripts/mutate.go
 	$(GO) vet scripts/recipes.go
+	$(GO) vet scripts/mcpb.go
 	GOOS=windows $(GO) vet scripts/mutate.go
 	GOOS=windows $(GO) vet scripts/recipes.go
+	GOOS=windows $(GO) vet scripts/mcpb.go
 
 fmt-check:
 	@out="$$(gofmt -l .)" || exit 1; if [ -n "$$out" ]; then echo "gofmt needed:"; echo "$$out"; exit 1; fi
@@ -236,6 +238,7 @@ lint-extra:
 	$(GO) run $(GOLANGCI) run ./...
 	$(GO) run $(GOLANGCI) run scripts/mutate.go
 	$(GO) run $(GOLANGCI) run scripts/recipes.go
+	$(GO) run $(GOLANGCI) run scripts/mcpb.go
 
 # Checks the workflow files: syntax, expressions, permissions and the shell in run:
 # steps; and, with shellcheck itself, the scripts in scripts/. The fenced yaml, sh and

@@ -41,8 +41,9 @@ func TestHelperProcess(t *testing.T) {
 	reg := fixtureRegistry(&ran)
 	a := &app.App{Registry: reg, Env: &registry.Env{Now: time.Now}, Context: "helper", Tailnet: apitest.Tailnet, AuditReads: "none"}
 	r := &Runner{Stdout: os.Stdout, Stderr: os.Stderr, Stdin: os.Stdin,
-		Registry: func() *registry.Registry { return reg },
-		Build:    func(context.Context, string) (*app.App, error) { return a, nil }}
+		Registry:          func() *registry.Registry { return reg },
+		Build:             func(context.Context, string) (*app.App, error) { return a, nil },
+		BuildNoCredential: func(context.Context, string) (*app.App, error) { return a, nil }}
 	os.Exit(r.Run(context.Background(), args))
 }
 
@@ -71,8 +72,9 @@ func TestHelperACLProcess(t *testing.T) {
 	a := &app.App{Registry: reg, Context: "helper", Tailnet: apitest.Tailnet, AuditReads: "none",
 		Env: &registry.Env{Now: time.Now, API: client, LocalErr: tkerr.New(tkerr.LocalBinaryMissing, "no tailscale CLI found", "")}}
 	r := &Runner{Stdout: os.Stdout, Stderr: os.Stderr, Stdin: os.Stdin,
-		Registry: func() *registry.Registry { return reg },
-		Build:    func(context.Context, string) (*app.App, error) { return a, nil }}
+		Registry:          func() *registry.Registry { return reg },
+		Build:             func(context.Context, string) (*app.App, error) { return a, nil },
+		BuildNoCredential: func(context.Context, string) (*app.App, error) { return a, nil }}
 	os.Exit(r.Run(context.Background(), args))
 }
 

@@ -239,22 +239,34 @@ jobs:
           (cd released && sha256sum -c checksums.txt)
           work="$RUNNER_TEMP/extracted"
           rm -rf "$work"
-          n=0
-          while IFS= read -r f; do
-            target="$(basename "$(dirname "$f")" | cut -d_ -f2,3)" # dist/tailkeeper_linux_amd64_v1/tailkeeper -> linux_amd64
+          version="${GITHUB_REF_NAME#v}"
+          all_archives=(released/tailkeeper_*.tar.gz released/tailkeeper_*.zip)
+          bundles=(released/*.mcpb)
+          test "${#all_archives[@]}" = 5 || { echo "::error::expected five archives"; exit 1; }
+          test "${#bundles[@]}" = 1 || { echo "::error::expected one bundle"; exit 1; }
+          test "${bundles[0]}" = "released/tailkeeper_${version}_darwin_universal.mcpb"
+          for target in darwin_amd64 darwin_arm64 linux_amd64 linux_arm64 windows_amd64; do
+            binary=tailkeeper
+            if [ "$target" = windows_amd64 ]; then binary=tailkeeper.exe; fi
+            builds=(dist/tailkeeper_"$target"_*/"$binary")
             archives=(released/tailkeeper_*_"$target".tar.gz released/tailkeeper_*_"$target".zip)
+            test "${#builds[@]}" = 1 || { echo "::error::$target: expected one build, found ${#builds[@]}"; exit 1; }
             test "${#archives[@]}" = 1 || { echo "::error::$target: expected one archive, found ${#archives[@]}"; exit 1; }
+            ext=tar.gz
+            if [ "$target" = windows_amd64 ]; then ext=zip; fi
+            test "${archives[0]}" = "released/tailkeeper_${version}_${target}.${ext}"
             mkdir -p "$work/$target"
             case "${archives[0]}" in
-              *.tar.gz) tar -xzf "${archives[0]}" -C "$work/$target" "$(basename "$f")" ;;
-              *.zip) unzip -q "${archives[0]}" "$(basename "$f")" -d "$work/$target" ;;
+              *.tar.gz) tar -xzf "${archives[0]}" -C "$work/$target" "$binary" ;;
+              *.zip) unzip -q "${archives[0]}" "$binary" -d "$work/$target" ;;
             esac
-            cmp "$f" "$work/$target/$(basename "$f")" || { echo "::error::$target: the rebuilt binary differs from the one in ${archives[0]}"; exit 1; }
-            n=$((n + 1))
-          done < <(find dist -type f \( -name tailkeeper -o -name tailkeeper.exe \) | sort)
-          want="$(find released -maxdepth 1 -type f \( -name '*.tar.gz' -o -name '*.zip' \) | wc -l | tr -d ' ')"
-          if [ "$n" -eq 0 ] || [ "$n" != "$want" ]; then echo "::error::compared $n binaries, the release has $want archives"; exit 1; fi
-          echo "all $n binaries reproduce"
+            cmp "${builds[0]}" "$work/$target/$binary" || { echo "::error::$target: rebuilt binary differs"; exit 1; }
+          done
+          go run ./scripts/mcpb.go verify -bundle "${bundles[0]}" -dist dist -version "$version"
+          rebuilt="dist/tailkeeper_${version}_darwin_universal.mcpb"
+          test -f "$rebuilt"
+          cmp "${bundles[0]}" "$rebuilt" || { echo "::error::rebuilt bundle differs"; exit 1; }
+          echo "all five binaries and the full bundle reproduce"
 
   publish:
     needs: [verify, release, reproduce]
@@ -281,6 +293,20 @@ jobs:
           sums="$PWD/released/checksums.txt"
           test -s "$sums" || { echo "::error::no checksums.txt in the dist artifact"; exit 1; }
           if grep -qvE '^[0-9a-f]{64}  [A-Za-z0-9._+-]+$' "$sums"; then echo "::error::checksums.txt has a line that is not '<sha256>  <file name>'"; exit 1; fi
+          # The signed set must contain every expected archive and SBOM, and the bundle and its SBOM.
+          version="${TAG#v}"
+          {
+            for target in darwin_amd64 darwin_arm64 linux_amd64 linux_arm64 windows_amd64; do
+              ext=tar.gz
+              if [ "$target" = windows_amd64 ]; then ext=zip; fi
+              name="tailkeeper_${version}_${target}.${ext}"
+              printf '%s\n' "$name" "$name.sbom.cdx.json"
+            done
+            name="tailkeeper_${version}_darwin_universal.mcpb"
+            printf '%s\n' "$name" "$name.sbom.cdx.json"
+          } | LC_ALL=C sort > "$RUNNER_TEMP/expected-subjects.txt"
+          awk '{ print $2 }' "$sums" | LC_ALL=C sort > "$RUNNER_TEMP/actual-subjects.txt"
+          diff -u "$RUNNER_TEMP/expected-subjects.txt" "$RUNNER_TEMP/actual-subjects.txt" || { echo "::error::unexpected checksum subjects"; exit 1; }
           # The draft's assets as GitHub holds them.
           draft="$RUNNER_TEMP/draft"
           rm -rf "$draft"

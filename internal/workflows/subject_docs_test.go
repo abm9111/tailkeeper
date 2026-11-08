@@ -3,6 +3,7 @@ package workflows
 import (
 	"fmt"
 	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 )
@@ -257,7 +258,14 @@ func readRepoFile(t *testing.T, path string) string {
 	if err != nil {
 		t.Fatal(err)
 	}
-	return string(b)
+	text := string(b)
+	if filepath.Base(path) == "CLAUDE.md" {
+		first, tail, _ := strings.Cut(text, "\n")
+		if strings.TrimSpace(first) == "@AGENTS.md" {
+			return readRepoFile(t, filepath.Join(filepath.Dir(path), "AGENTS.md")) + "\n" + tail
+		}
+	}
+	return text
 }
 
 func lineStarting(page, prefix string) string {
@@ -313,7 +321,7 @@ func postingSentenceProblems(doc, text string) (problems []string, checked int) 
 }
 
 func TestEveryDocumentThatListsWhatPostsToValidateNamesDoctorProbe(t *testing.T) {
-	for _, doc := range []string{"README.md", "CLAUDE.md", "SECURITY.md", "docs/threat-model.md"} {
+	for _, doc := range []string{"README.md", "AGENTS.md", "CLAUDE.md", "SECURITY.md", "docs/threat-model.md"} {
 		problems, checked := postingSentenceProblems(doc, readRepoFile(t, "../../"+doc))
 		if checked == 0 {
 			t.Errorf("%s has no line that lists what posts to the validate endpoint", doc)
@@ -331,5 +339,50 @@ func TestThePostingCheckRefusesALineWithoutDoctorProbe(t *testing.T) {
 	}
 	if problems, _ := postingSentenceProblems("x", strings.Replace(line, "send", "and doctor --probe send", 1)); len(problems) != 0 {
 		t.Errorf("a line that names doctor --probe is refused: %v", problems)
+	}
+}
+
+// A first-line rules import must keep both common policy and Claude-only text in the
+// posting detector. Missing doctor --probe in either part must still be caught.
+func TestAgentRulesDocumentImportKeepsThePostingCheckEffective(t *testing.T) {
+	good := "- `acl_test` and `doctor --probe` send documents to `POST .../acl/validate`.\n"
+	bad := "- `acl_test` sends a test to `POST .../acl/validate`.\n"
+	for _, tt := range []struct {
+		name, doc, body, shared string
+		link                    bool
+		wantChecked, wantBad    int
+	}{
+		{name: "literal", doc: "CLAUDE.md", body: good, shared: bad, wantChecked: 1},
+		{name: "common import", doc: "CLAUDE.md", body: "@AGENTS.md\n\nClaude-only tail remains.\n", shared: good, wantChecked: 1},
+		{name: "whitespace import", doc: "CLAUDE.md", body: "  @AGENTS.md  \n\nClaude-only tail remains.\n", shared: good, wantChecked: 1},
+		{name: "bad common policy", doc: "CLAUDE.md", body: "@AGENTS.md\n\nClaude-only tail remains.\n", shared: bad, wantChecked: 1, wantBad: 1},
+		{name: "bad Claude tail", doc: "CLAUDE.md", body: "@AGENTS.md\n\n" + bad, shared: good, wantChecked: 2, wantBad: 1},
+		{name: "inline reference is literal", doc: "CLAUDE.md", body: "Mention `@AGENTS.md` in prose.\n", shared: good},
+		{name: "fenced example is literal", doc: "CLAUDE.md", body: "```markdown\n@AGENTS.md\n```\n", shared: good},
+		{name: "other document is literal", doc: "README.md", body: "@AGENTS.md\n", shared: good},
+		{name: "symlink", doc: "CLAUDE.md", shared: good, link: true, wantChecked: 1},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			root := t.TempDir()
+			if err := os.WriteFile(filepath.Join(root, "AGENTS.md"), []byte(tt.shared), 0o600); err != nil {
+				t.Fatal(err)
+			}
+			path := filepath.Join(root, tt.doc)
+			if tt.link {
+				if err := os.Symlink("AGENTS.md", path); err != nil {
+					t.Fatal(err)
+				}
+			} else if err := os.WriteFile(path, []byte(tt.body), 0o600); err != nil {
+				t.Fatal(err)
+			}
+			resolved := readRepoFile(t, path)
+			problems, checked := postingSentenceProblems(tt.doc, resolved)
+			if checked != tt.wantChecked || len(problems) != tt.wantBad {
+				t.Errorf("%d problems over %d posting lines, want %d over %d", len(problems), checked, tt.wantBad, tt.wantChecked)
+			}
+			if strings.Contains(tt.body, "Claude-only tail remains.") && !strings.Contains(resolved, "Claude-only tail remains.") {
+				t.Error("rules import dropped the Claude-only tail")
+			}
+		})
 	}
 }

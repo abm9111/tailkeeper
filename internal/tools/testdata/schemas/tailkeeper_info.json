@@ -1,0 +1,68 @@
+{
+  "input": {
+    "additionalProperties": false,
+    "type": "object"
+  },
+  "output": {
+    "additionalProperties": false,
+    "properties": {
+      "arch": {
+        "description": "Processor architecture this binary targets.",
+        "type": "string"
+      },
+      "assessmentCapabilities": {
+        "description": "Assessment capabilities this build exposes publicly; empty until an assessor ships.",
+        "items": {
+          "type": "string"
+        },
+        "type": [
+          "null",
+          "array"
+        ]
+      },
+      "catalogSchemas": {
+        "description": "Schema versions this build exposes publicly; empty until an assessor ships.",
+        "items": {
+          "type": "string"
+        },
+        "type": [
+          "null",
+          "array"
+        ]
+      },
+      "name": {
+        "description": "The product this build identifies.",
+        "type": "string"
+      },
+      "os": {
+        "description": "Operating system this binary targets.",
+        "type": "string"
+      },
+      "reportSchemas": {
+        "description": "Schema versions this build exposes publicly; empty until an assessor ships.",
+        "items": {
+          "type": "string"
+        },
+        "type": [
+          "null",
+          "array"
+        ]
+      },
+      "version": {
+        "description": "Tailkeeper build version; dev is an unreleased build.",
+        "type": "string"
+      }
+    },
+    "required": [
+      "name",
+      "version",
+      "os",
+      "arch",
+      "reportSchemas",
+      "catalogSchemas",
+      "assessmentCapabilities"
+    ],
+    "type": "object"
+  },
+  "tool": "tailkeeper_info"
+}

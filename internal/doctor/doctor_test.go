@@ -636,3 +636,30 @@ func TestChecksAreEscaped(t *testing.T) {
 		t.Error("no check shows the escaped text")
 	}
 }
+
+// The check says why the key is none when something looks set and did not load, in the
+// words of the start-up warning; with nothing to say it says what it always has.
+func TestThePrivacyCheckSaysWhyTheKeyIsNone(t *testing.T) {
+	for name, note := range map[string]string{"no note": "", "a note": "TAILKEEPER_PRIVACY_KEY is set but empty"} {
+		f, a := newApp(t, allReadScopes(t))
+		f.JSON("GET", keyPath, 200, `{"id":"test-client-id","keyType":"client","expires":"2027-01-01T00:00:00Z"}`)
+		a.PrivacyNote = note
+		r := Run(context.Background(), Input{App: a, Now: now})
+		want := "none: " + app.NoPrivacyKey
+		if note != "" {
+			want = "none (" + note + "): " + app.NoPrivacyKey
+		}
+		found := false
+		for _, c := range r.Checks {
+			if c.Name == "privacy key" {
+				found = true
+				if c.Status != Warn || c.Detail != want {
+					t.Errorf("%s: %s %q, want warn %q", name, c.Status, c.Detail, want)
+				}
+			}
+		}
+		if !found {
+			t.Errorf("%s: no privacy key check", name)
+		}
+	}
+}

@@ -43,6 +43,8 @@ type Runner struct {
 	Stdout, Stderr io.Writer
 	// Build loads configuration for the named context (app.Build in production).
 	Build func(ctx context.Context, contextName string) (*app.App, error)
+	// BuildNoCredential loads configuration without accessing any credential.
+	BuildNoCredential func(ctx context.Context, contextName string) (*app.App, error)
 	// Reexec replaces the process with the exec provider's wrapper; it returns only on failure.
 	Reexec func(p config.Provider) error
 	// ServeMCP serves srv until the client goes away (stdio in production).
@@ -64,6 +66,17 @@ type Runner struct {
 	// is a terminal (a character device when nil).
 	Getenv     func(string) string
 	IsTerminal func(io.Writer) bool
+}
+
+func (r *Runner) buildTool(ctx context.Context, name string, credential registry.Credential) (*app.App, error) {
+	build := r.Build
+	if credential == registry.CredNone {
+		build = r.BuildNoCredential
+	}
+	if build == nil {
+		return nil, tkerr.New(tkerr.Internal, "the command has no configured application builder", "")
+	}
+	return build(ctx, name)
 }
 
 // flagOutput is where a FlagSet writes its errors and usage text. The flag
@@ -336,7 +349,7 @@ func (r *Runner) tools() *registry.Registry {
 	if r.Registry != nil {
 		return r.Registry()
 	}
-	return newRegistry()
+	return cliRegistry()
 }
 
 // stdin returns standard input for a file flag; empty when none was given.
@@ -347,9 +360,19 @@ func (r *Runner) stdin() io.Reader {
 	return strings.NewReader("")
 }
 
+// newRegistry is the registry of the MCP server and of the generated documents: the tools every
+// surface has.
 func newRegistry() *registry.Registry {
 	reg := registry.New()
 	tools.Register(reg)
+	return reg
+}
+
+// cliRegistry is the registry the commands run: the tools of every surface and the ones that
+// exist on the owner's command line alone. The MCP server is never built from it.
+func cliRegistry() *registry.Registry {
+	reg := newRegistry()
+	tools.RegisterOwnerOnly(reg)
 	return reg
 }
 
@@ -369,7 +392,7 @@ Areas and verbs:
 `)
 	tw := map[string][]string{}
 	var areas []string
-	for _, t := range newRegistry().All() {
+	for _, t := range cliRegistry().All() {
 		if _, ok := tw[t.Meta.Area]; !ok {
 			areas = append(areas, t.Meta.Area)
 		}
@@ -437,7 +460,15 @@ func (r *Runner) tool(ctx context.Context, g globals, args []string) int {
 	}
 	fs := newFlags("tailkeeper " + area + " " + args[1])
 	jsonOut := fs.Bool("json", g.json, "print JSON instead of a table")
-	ctxName := fs.String("context", g.context, "configuration context to use")
+	// A tool that reads no configuration and needs no credential has no context to select, so
+	// it takes no --context: the flag is refused like any other the command does not know,
+	// instead of being accepted and ignored. The global --context, given before the command,
+	// is ignored by it, as by version and scopes.
+	usesConfig := t.Meta.Tier != registry.TierOffline || t.Meta.Credential != registry.CredNone
+	ctxName := &g.context
+	if usesConfig {
+		ctxName = fs.String("context", g.context, "configuration context to use")
+	}
 	// A command whose result carries a verdict takes --quiet; one whose result can
 	// be gated takes --fail-on. The flags follow the output type, so a command that
 	// cannot honour them does not offer them.
@@ -469,7 +500,7 @@ func (r *Runner) tool(ctx context.Context, g globals, args []string) int {
 		return r.fail(tkerr.Wrap(tkerr.Internal, err, "cannot build flags for "+t.Meta.Name+": "+err.Error(), ""), routeJSON)
 	}
 	usage := func() {
-		fs.printUsage(r.Stderr, fmt.Sprintf("Usage: tailkeeper %s %s [flags]%s\n\n%s\nMCP tool: %s\n\nFlags:\n", area, args[1], b.usageArgs(), t.Meta.Summary, t.Meta.Name))
+		fs.printUsage(r.Stderr, fmt.Sprintf("Usage: tailkeeper %s %s [flags]%s\n\n%s\n%s\n\nFlags:\n", area, args[1], b.usageArgs(), t.Meta.Summary, surfaceLine(t)))
 	}
 	var positional []string
 	asJSON := func() bool { return g.json || *jsonOut || jsonRequested(args[2:]) }
@@ -512,14 +543,27 @@ func (r *Runner) tool(ctx context.Context, g globals, args []string) int {
 	}
 	in := reflect.ValueOf(p.Input()).Elem()
 	b.setSwitches(in)
-	a, err := r.Build(ctx, *ctxName)
-	if err != nil {
-		return r.fail(err, *jsonOut)
+	// Pure offline tools have no need to load configuration, unlock providers,
+	// discover Tailscale or open a context audit log. In particular, self info
+	// must work even when configuration is unsafe or a secret manager is locked.
+	a := &app.App{Env: &registry.Env{}}
+	if usesConfig {
+		a, err = r.buildTool(ctx, *ctxName, t.Meta.Credential)
+		if err != nil {
+			return r.fail(err, *jsonOut)
+		}
 	}
-	if p.NeedsCredential(b.given()) {
+	if p.NeedsCredentialIn(a.Env, b.given()) {
 		if code, done := r.reexecIfNeeded(a, *jsonOut); done {
 			return code
 		}
+	}
+	// A privacy key that is malformed or unreadable, or that looks set and did not load,
+	// leaves masking without pseudonyms, and nothing in the result says so. This is the
+	// process that holds the credential: the one
+	// that re-executes under a wrapper never gets here, so the line is printed once.
+	if n := a.PrivacyNotice(); n != "" {
+		_, _ = fmt.Fprintln(r.Stderr, n)
 	}
 	names, err := b.load(in, r.stdin())
 	if err != nil {
@@ -528,8 +572,8 @@ func (r *Runner) tool(ctx context.Context, g globals, args []string) int {
 	// Whatever reaches the tool from a command line is the operator's own.
 	b.setOperator(in)
 	start := r.now()
-	out, err := p.Run(ctx, a.Env)
-	r.record(a, t, start, out, err)
+	out, err := p.Run(registry.WithCaller(ctx, registry.Caller{Kind: "cli"}), a.Env)
+	r.record(a, t, start, out, err, p.CallID())
 	if err != nil {
 		return r.fail(err, *jsonOut)
 	}
@@ -557,10 +601,32 @@ func (r *Runner) tool(ctx context.Context, g globals, args []string) int {
 			return c
 		}
 	}
-	if code == 8 {
-		_, _ = fmt.Fprintf(r.Stderr, "tailkeeper: %s: --fail-on matched %s\n", tkerr.FindingsPresent, strings.Join(matched, ", "))
-	}
+	r.sayFindingsPresent(code, matched, out)
 	return code
+}
+
+// surfaceLine is the line of a command's help that says where else the tool is: its MCP name, or,
+// for a tool of the owner's command line alone, that it has none.
+func surfaceLine(t registry.Tool) string {
+	if _, onMCP := newRegistry().Get(t.Meta.Name); !onMCP {
+		return "Owner command line only: not an MCP tool"
+	}
+	return "MCP tool: " + t.Meta.Name
+}
+
+// sayFindingsPresent explains exit 8 on standard error. A --fail-on gate names what matched;
+// a result whose own verdict is 8 (a scan with a finding at its threshold) was given no
+// --fail-on, and none is blamed.
+func (r *Runner) sayFindingsPresent(code int, matched []string, out any) {
+	switch note, noted := out.(registry.ExitNoter); {
+	case code != 8:
+	case len(matched) > 0:
+		_, _ = fmt.Fprintf(r.Stderr, "tailkeeper: %s: --fail-on matched %s\n", tkerr.FindingsPresent, strings.Join(matched, ", "))
+	case noted:
+		_, _ = fmt.Fprintf(r.Stderr, "tailkeeper: %s: %s\n", tkerr.FindingsPresent, note.ExitNote())
+	default:
+		_, _ = fmt.Fprintf(r.Stderr, "tailkeeper: %s: the result has findings at or above its threshold\n", tkerr.FindingsPresent)
+	}
 }
 
 func (r *Runner) areaUsage(reg *registry.Registry, area string, missingVerb, asJSON bool) int {
@@ -589,13 +655,21 @@ func (r *Runner) areaUsage(reg *registry.Registry, area string, missingVerb, asJ
 }
 
 // record appends the metadata-only read event; a failure is reported, not fatal.
-func (r *Runner) record(a *app.App, t registry.Tool, start time.Time, out any, err error) {
+func (r *Runner) record(a *app.App, t registry.Tool, start time.Time, out any, err error, callID string) {
 	f := map[string]any{"tool": t.Meta.Name, "tier": string(t.Meta.Tier), "requester": map[string]any{"kind": "cli"},
 		"ms": r.now().Sub(start).Milliseconds(), "status": "ok", "bytes": 0}
+	if callID != "" {
+		f["call"] = callID
+	}
 	if err != nil {
 		f["status"], f["code"] = "error", string(tkerr.From(err).Code)
 	} else if b, merr := json.Marshal(out); merr == nil {
 		f["bytes"] = len(b)
+	}
+	if au, ok := out.(registry.Audited); ok && err == nil {
+		for k, v := range au.AuditFields() {
+			f[k] = v
+		}
 	}
 	if aerr := a.Record(f); aerr != nil {
 		_, _ = fmt.Fprintf(r.Stderr, "tailkeeper: warning: this read was not audited: %s\n", sanitize.String(tkerr.From(aerr).Message, sanitize.DefaultMax))

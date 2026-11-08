@@ -239,3 +239,9 @@ file: bucket.go
 old: \tif tokens < posts {
 new: \tif false {
 kill: TestAChargedCallBiggerThanTheBucketIsRefusedAtOnceAndNamesTheCause
+
+mutant: SendOnce retries like Send
+file: bucket.go
+old: once.retries = 0
+new: once.retries = v.c.retries
+kill: TestSendOnceMakesOnePostWhateverTheEndpointAnswers

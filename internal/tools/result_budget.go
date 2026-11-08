@@ -5,7 +5,6 @@ import (
 
 	"github.com/abm9111/tailkeeper/internal/registry"
 	"github.com/abm9111/tailkeeper/internal/sanitize"
-	"github.com/abm9111/tailkeeper/internal/tripwire"
 )
 
 // A result goes to the host in one frame of at most 16 MiB, and the frame holds the result
@@ -17,7 +16,7 @@ import (
 // shownCost is what the string s takes in a result once the registry has made it safe and cut
 // it: its length as JSON text, with its quotes and the comma after it.
 func shownCost(s string) int {
-	return encodedLen(sanitize.String(tripwire.Redact(s), registry.ResultStringMax)) + 3
+	return encodedLen(sanitize.Shown(s, registry.ResultStringMax)) + 3
 }
 
 // shownJSONLen is the length, as JSON text, of v as a result will show it: masked, escaped and
@@ -46,7 +45,7 @@ func shownText(env *registry.Env, s string) string {
 	if env.ShowPersonalData() {
 		return s
 	}
-	return env.Masker().Text(s)
+	return env.Masker().TextCapped(s, registry.ResultStringMax)
 }
 
 // shownWhole is the string s as the registry shows a field masked whole (a profile id, a login):

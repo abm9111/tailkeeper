@@ -323,15 +323,16 @@ func why(err error) string {
 // liveRun runs every tool once through the binary bin and records what happened.
 // It never keeps or prints a tool's output, only the outcome.
 type liveRun struct {
-	bin       string
-	env       []string
-	reg       *registry.Registry
-	uncovered map[string]bool
-	results   []liveOutcome
-	problems  []string // "<tool>: <kind of problem>", fit to print
-	notes     []string // counts and fixed sentences, fit to print
-	calls     int      // tool processes started: each appends one line to the audit log
-	probeRuns int      // doctor --probe processes started: each appends at least one line
+	bin          string
+	env          []string
+	reg          *registry.Registry
+	uncovered    map[string]bool
+	results      []liveOutcome
+	problems     []string // "<tool>: <kind of problem>", fit to print
+	notes        []string // counts and fixed sentences, fit to print
+	calls        int      // tool processes started
+	offlineCalls int      // pure offline processes do not open a context audit log
+	probeRuns    int      // doctor --probe processes started: each appends at least one line
 	// probeLines is the lines the doctor probe added to the audit log, as the log counted them
 	// before and after it. They count toward the audit lower bound with calls.
 	probeLines int
@@ -340,7 +341,7 @@ type liveRun struct {
 
 // auditLowerBound is the audit lines the run is known to have written: one for each tool
 // call, and the lines the doctor probe wrote.
-func (l *liveRun) auditLowerBound() int { return l.calls + l.probeLines }
+func (l *liveRun) auditLowerBound() int { return l.calls - l.offlineCalls + l.probeLines }
 
 // maxProcesses is how many processes the run has started.
 func (l *liveRun) maxProcesses() int { return l.calls + l.probeRuns }
@@ -421,6 +422,9 @@ func (l *liveRun) invoke(name string, record bool, extra ...string) map[string]a
 	}
 	l.ran[name] = true
 	l.calls++
+	if tool.Meta.Tier == registry.TierOffline && tool.Meta.Credential == registry.CredNone {
+		l.offlineCalls++
+	}
 	ctx, cancel := context.WithTimeout(context.Background(), callTimeout)
 	defer cancel()
 	cmd := exec.CommandContext(ctx, l.bin, append([]string{"--json", tool.Meta.Area, tool.Meta.Verb}, extra...)...)
@@ -534,11 +538,15 @@ func (l *liveRun) all() {
 	l.call("acl_validate")
 	dns := l.call("dns_get")
 	settings := l.call("settings_get")
-	for _, name := range []string{"contacts_get", "audit_log", "network_flow_logs",
+	for _, name := range []string{"tailkeeper_info", "contacts_get", "audit_log", "network_flow_logs",
 		"local_dns_status", "local_funnel_status", "local_lock_status", "local_metrics", "local_netcheck", "local_prefs",
 		"local_serve_status", "local_syspolicy", "local_version", "local_whoami"} {
 		l.call(name)
 	}
+	// The scan reads the device list and this node, as the calls above did, and sends
+	// nothing. Its exit code is its own verdict (8 or 1 while the intent is not evaluated),
+	// which wantedExit reads from the result.
+	l.call("security_scan", "fleet")
 	// acl_diff needs a side that is not the live policy: an empty object is the smallest
 	// honest one, written to a file the command names.
 	l.callWithFile("acl_diff", "{}\n", "--against")

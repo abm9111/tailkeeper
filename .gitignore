@@ -4,9 +4,10 @@
 *.out
 coverage.*
 !/internal/docsgen/coverage.go
+!/docs/security/coverage.md
 
 # Machine-local files: never commit them.
-CLAUDE.local.md
+*.local.md
 .claude/
 .DS_Store
 .env

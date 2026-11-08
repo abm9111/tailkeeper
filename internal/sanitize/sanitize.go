@@ -150,7 +150,10 @@ func HasTag(tag reflect.StructTag, option string) bool {
 // Fields escapes, in place, every string reachable from ptr (a pointer). Strings
 // inside a field tagged `tk:"untrusted"` (text tailnet members choose) are also
 // capped at limit and have credential shapes replaced (tripwire.Redact); a tagged
-// struct, slice or map field has everything inside it treated as untrusted. A
+// struct, slice or map field has everything inside it treated as untrusted. Only a
+// window of such a string is read (headOf: the first 64 KiB, cut where no credential
+// shape runs across), so a hostile string of megabytes costs what the window does, and
+// a notice follows the part when the rest was dropped. A
 // string field tagged `tk:"untrusted,multiline"` keeps its line feeds and tabs
 // (Text) and is capped at MaxText. Map keys and values are rebuilt; keys that are
 // the same text once escaped and capped are all kept (see distinctKey). It panics
@@ -174,7 +177,7 @@ func walk(v reflect.Value, untrusted, multiline bool, limit int) {
 		case multiline:
 			v.SetString(Text(tripwire.Redact(v.String()), MaxText))
 		case untrusted:
-			v.SetString(String(tripwire.Redact(v.String()), limit))
+			v.SetString(shownUntrusted(v.String(), limit))
 		default:
 			v.SetString(String(v.String(), 0))
 		}

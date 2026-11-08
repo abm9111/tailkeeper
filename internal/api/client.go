@@ -217,9 +217,31 @@ func (c *Client) Get(ctx context.Context, path string, q url.Values, out any) er
 	}
 	return c.retry(ctx, func() error {
 		return c.do(ctx, http.MethodGet, full, nil, "", "application/json", false, func(body io.Reader, _ *http.Response) error {
-			return json.NewDecoder(body).Decode(out)
+			return decodeOne(body, out)
 		})
 	})
+}
+
+// errTrailingData is the error of a body that holds more than one JSON value.
+var errTrailingData = errors.New("the API response has more data after its JSON value")
+
+// decodeOne decodes the one JSON value body holds into out. Anything after it other than
+// white space is an error: a decoder reads a value and stops, so without this check a
+// response cut and joined to another, or followed by anything at all, would read as
+// complete.
+func decodeOne(body io.Reader, out any) error {
+	dec := json.NewDecoder(body)
+	if err := dec.Decode(out); err != nil {
+		return err
+	}
+	switch _, err := dec.Token(); {
+	case errors.Is(err, io.EOF):
+		return nil
+	case err != nil:
+		return err
+	default:
+		return errTrailingData
+	}
 }
 
 // Raw is a response body as the API sent it, and its ETag (verbatim, quotes
@@ -552,8 +574,17 @@ func (c *Client) do(ctx context.Context, method, rawURL string, body []byte, con
 
 // bodyTooLarge is the error for a response body over the client's limit.
 func (c *Client) bodyTooLarge() error {
-	return tkerr.New(tkerr.APIError, fmt.Sprintf("response exceeded %d bytes", c.maxBody), "narrow the request if it has filters or a time window; the CLI reads up to 64 MiB, an MCP call 8 MiB")
+	return tkerr.Wrap(tkerr.APIError, ErrBodyTooLarge, fmt.Sprintf("response exceeded %d bytes", c.maxBody), "narrow the request if it has filters or a time window; the CLI reads up to 64 MiB, an MCP call 8 MiB")
 }
+
+// ErrBodyTooLarge is the cause of the error for a response body over the client's limit
+// (its code is api_error). A caller that wants a code of its own tests for it with
+// errors.Is.
+var ErrBodyTooLarge = errors.New("the response body exceeded the client's limit")
+
+// MaxBody is the largest response body c reads: the lowest of the limits it was made with
+// (WithMaxBody never raises it).
+func (c *Client) MaxBody() int64 { return c.maxBody }
 
 // errTooLarge is what a reader that reads the whole body returns when it holds
 // more than maxBody bytes; do reports it with the limit.

@@ -35,7 +35,7 @@ kill: TestTheACLCommandsMatchTheirGoldens
 
 mutant: a command that needs no credential starts the exec provider's wrapper
 file: cli.go
-old: if p.NeedsCredential(b.given()) {
+old: if p.NeedsCredentialIn(a.Env, b.given()) {
 new: if true {
 kill: TestAnOfflineCommandReadsItsOwnStandardInputAndSkipsTheWrapper|TestADiffOfAPipedPolicyPassesThroughTheExecWrapperOnlyWhenItNeedsTheCredential
 

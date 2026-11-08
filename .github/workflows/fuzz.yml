@@ -57,6 +57,8 @@ jobs:
         include:
           - pkg: ./internal/acl
             min: 3
+          - pkg: ./internal/advisory
+            min: 1
           - pkg: ./internal/api
             min: 1
           - pkg: ./internal/cli
@@ -65,6 +67,10 @@ jobs:
             min: 1
           - pkg: ./internal/sanitize
             min: 5
+          - pkg: ./internal/security
+            min: 1
+          - pkg: ./internal/securitypack
+            min: 6
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:

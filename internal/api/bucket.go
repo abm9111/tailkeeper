@@ -222,6 +222,21 @@ func (v *ValidateCall) Send(body []byte) (PolicyValidation, error) {
 	return pv, v.deadlineError(err)
 }
 
+// SendOnce is Send with no retry: it makes one POST. A caller that promises a number of
+// validation requests on the wire (the access explanation promises at most two) uses it, because
+// the retries inside Send take no token and are POSTs all the same: a failing upstream sees up to
+// four for each token. A failure of the one attempt is returned as Send returns the failure of its
+// last: a 500 is policy_rejected_or_server_error (the one 500), a 429 or a 5xx another error.
+func (v *ValidateCall) SendOnce(body []byte) (PolicyValidation, error) {
+	if err := v.spend(); err != nil {
+		return PolicyValidation{}, err
+	}
+	once := *v.c // a copy shares the credential and the gate, and makes one attempt
+	once.retries = 0
+	pv, err := once.validatePolicy(v.ctx, body)
+	return pv, v.deadlineError(err)
+}
+
 // spend marks one of the reserved tokens as used: End gives back only the others.
 func (v *ValidateCall) spend() error {
 	if v.used >= v.posts {

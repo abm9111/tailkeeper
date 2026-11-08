@@ -32,6 +32,9 @@ func main() {
 		Build: func(ctx context.Context, contextName string) (*app.App, error) {
 			return app.Build(ctx, app.Options{Context: contextName})
 		},
+		BuildNoCredential: func(ctx context.Context, contextName string) (*app.App, error) {
+			return app.Build(ctx, app.Options{Context: contextName, NoCredential: true})
+		},
 		// The exec provider's wrapper injects the read credential and runs
 		// tailkeeper again with the same arguments (spec §7.3).
 		Reexec: func(p config.Provider) error {

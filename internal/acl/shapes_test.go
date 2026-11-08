@@ -410,3 +410,38 @@ func TestAWrongTypedSectionIsNotAnEntryNamedNothing(t *testing.T) {
 		differ(t, p[0], p[0], p[1])
 	}
 }
+
+// PolicyTestKeys is the one statement of which keys of a test the normal form reads as one
+// field. A reader of the policy's tests other than the normal form (the security scan's
+// adapter) takes the aliases from it. The test holds the table to the normal form it
+// describes: each spelling is read as its field, and the rule for two spellings of one field is
+// the one the table's doc says.
+func TestPolicyTestKeys(t *testing.T) {
+	want := map[bool]map[string][]string{
+		false: {"src": {"src", "user"}, "proto": {"proto"}, "srcPostureAttrs": {"srcPostureAttrs"}, "accept": {"accept", "allow"}, "deny": {"deny"}},
+		true:  {"src": {"src"}, "dst": {"dst"}, "accept": {"accept", "allow"}, "deny": {"deny"}, "check": {"check"}},
+	}
+	for ssh, w := range want {
+		got := PolicyTestKeys(ssh)
+		if fmt.Sprint(got) != fmt.Sprint(w) {
+			t.Errorf("ssh %v: %v, want %v", ssh, got, w)
+		}
+		// The table is the caller's own copy.
+		got["src"] = append(got["src"], "mutated")
+		delete(got, "accept")
+		if again := PolicyTestKeys(ssh); fmt.Sprint(again) != fmt.Sprint(w) {
+			t.Errorf("ssh %v: a caller changed the table: %v", ssh, again)
+		}
+	}
+	// Every alias in the table is read as the field it is an alias of.
+	same(t, "user is src", `{"tests": [{"src": "a", "accept": ["x:1"]}]}`, `{"tests": [{"user": "a", "accept": ["x:1"]}]}`)
+	same(t, "allow is accept", `{"tests": [{"src": "a", "accept": ["x:1"]}]}`, `{"tests": [{"src": "a", "allow": ["x:1"]}]}`)
+	same(t, "allow is accept in an ssh test", `{"sshTests": [{"src": "a", "dst": ["t"], "accept": ["root"]}]}`, `{"sshTests": [{"src": "a", "dst": ["t"], "allow": ["root"]}]}`)
+	// Both spellings of a list are read, and asserted together.
+	same(t, "accept and allow are one list", `{"tests": [{"src": "a", "accept": ["x:1", "x:2"]}]}`, `{"tests": [{"src": "a", "accept": ["x:1"], "allow": ["x:2"]}]}`)
+	// Of two spellings of the source, only the first is the source; the other is an unread field.
+	differ(t, "user beside src is not the source", `{"tests": [{"src": "a", "accept": ["x:1"]}]}`, `{"tests": [{"src": "a", "user": "b", "accept": ["x:1"]}]}`)
+	same(t, "the unread user is not the source", `{"tests": [{"src": "a", "user": "b", "accept": ["x:1"]}]}`, `{"tests": [{"user": "b", "src": "a", "accept": ["x:1"]}]}`)
+	// An SSH test's source is src alone.
+	differ(t, "user is nothing to an ssh test", `{"sshTests": [{"src": "a", "dst": ["t"], "accept": ["root"]}]}`, `{"sshTests": [{"user": "a", "dst": ["t"], "accept": ["root"]}]}`)
+}

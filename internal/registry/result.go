@@ -7,6 +7,32 @@ package registry
 // Gated), and MCP ignores it: an MCP caller reads the result's status field.
 type ExitCoder interface{ ExitCode() int }
 
+// ExitNoter is implemented by a typed result whose own verdict can be exit 8, and which has a
+// better sentence for the command line to say than the one for a threshold: ExitNote is one
+// line of the tool's own words, with nothing of the tailnet in it.
+type ExitNoter interface{ ExitNote() string }
+
+// Audited is implemented by a typed result that adds closed fields to the read line the audit
+// log keeps of its call. AuditFields returns counts, booleans and words of a closed set, never
+// text of the tailnet or of the caller's input, and the audit log keeps only the keys it lists.
+type Audited interface{ AuditFields() map[string]any }
+
+// PackRecord is the closed metadata of a required pack audit event. Empty
+// optional words and nil counts are omitted. The app validates every value.
+type PackRecord struct {
+	Pack       string
+	Seal       string
+	Outcome    string
+	Digest     string // twelve lowercase hexadecimal digits, or empty
+	Bytes      *int64
+	Findings   *int64
+	Devices    *int64
+	Fixed      *int64
+	NotFixed   *int64
+	Incomplete *int64
+	Regressed  *int64
+}
+
 // Findings counts what a result found, in the kinds the CLI's --fail-on names.
 // A tool computes every count over all of its changes, not over the page of them
 // that the result shows, so a gate cannot be passed by paging.

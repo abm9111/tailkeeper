@@ -144,17 +144,50 @@ func quotedFields(s string, seps ...string) (values []string, rest string, ok bo
 	return values, s, true
 }
 
-// parseSSHLine reads what follows "src " in the SSH form.
-func parseSSHLine(s string) (FailureLine, bool) {
+// sshFields reads the seven quoted fields of what follows "src " in the SSH form: the source,
+// its address, the destination, its address, the user and the two verdict words.
+func sshFields(s string) ([]string, bool) {
 	v, rest, ok := quotedFields(s, " at ", ", dst ", " at ", ", ssh user ", ": want: ", " got: ")
 	if !ok || rest != "" {
-		return FailureLine{}, false
+		return nil, false
 	}
 	want, got := v[5], v[6]
 	if !sshVerdictWords[want] || !sshVerdictWords[got] || want == got {
+		return nil, false
+	}
+	return v, true
+}
+
+// parseSSHLine reads what follows "src " in the SSH form.
+func parseSSHLine(s string) (FailureLine, bool) {
+	v, ok := sshFields(s)
+	if !ok {
 		return FailureLine{}, false
 	}
-	return FailureLine{Kind: AssertionFailed, SSH: true, Dst: v[2], User: v[4], Want: want, Got: got}, true
+	return FailureLine{Kind: AssertionFailed, SSH: true, Dst: v[2], User: v[4], Want: v[5], Got: v[6]}, true
+}
+
+// SSHLineSource is the source an SSH-form line quotes, read by the grammar ParseFailureLine
+// reads. ok is false for a line that is not an SSH line in that grammar. FailureLine does not
+// carry the source, so that what acl_test reads is what it always read; a caller that attributes
+// lines to sources (the access explanation, and the reading of the SSH canary) asks for it here
+// and compares it with the entry of the reply the line was found in.
+func SSHLineSource(line string) (src string, ok bool) {
+	s := line
+	if rest, ok := strings.CutPrefix(s, testHeading); ok {
+		s = rest
+	} else if rest, ok := strings.CutPrefix(s, sshHeading); ok {
+		s = rest
+	}
+	rest, ok := strings.CutPrefix(s, "src ")
+	if !ok {
+		return "", false
+	}
+	v, ok := sshFields(rest)
+	if !ok {
+		return "", false
+	}
+	return v[0], true
 }
 
 // maxQuotedToken is the longest token quotedToken returns.

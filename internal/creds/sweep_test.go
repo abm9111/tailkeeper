@@ -35,33 +35,26 @@ func TestTSVariablesAreIgnoredByTheFileProviderToo(t *testing.T) {
 	}
 }
 
-// A value of the form file:PATH inside a credential file is read by path, without the
-// ownership and mode check the credential file itself gets. That is by design: a
-// container secret mount (a directory of one file per secret, mode 0444 or root-owned)
-// is the use, and the credential file the configuration names is the one that is checked.
-// The test pins both halves, so a change to either is a decision.
-func TestAFileValueInsideACredentialFileIsReadWithoutACheck(t *testing.T) {
-	var checked, byPath []string
+// Every reference inside a credential file uses the checked reader as well.
+func TestAFileValueInsideACredentialFileUsesTheCheckedRead(t *testing.T) {
+	var checked []string
+	keyPath := absPath("/run/secrets/key")
 	s := System{
 		Getenv: func(string) string { return "" },
 		ReadSecretFile: func(p string) ([]byte, error) {
 			checked = append(checked, p)
-			return []byte(EnvAPIKey + "=file:/run/secrets/key\n"), nil
-		},
-		ReadFile: func(p string) ([]byte, error) {
-			byPath = append(byPath, p)
+			if p == "/etc/tk/read.env" {
+				return []byte(EnvAPIKey + "=file:" + keyPath + "\n"), nil
+			}
 			return []byte("test-api-key\n"), nil
 		},
 	}
 	r, err := Resolve(context.Background(), config.Provider{Provider: "file", Path: "/etc/tk/read.env"}, s)
-	if err != nil || r.Kind != KindAPIKey || r.APIKey.Reveal() != "test-api-key" {
-		t.Fatalf("Resolve = %+v, %v", r, err)
+	if err != nil || r.APIKey.Reveal() != "test-api-key" {
+		t.Fatalf("Resolve: %v", err)
 	}
-	if want := []string{"/etc/tk/read.env"}; !reflect.DeepEqual(checked, want) {
-		t.Errorf("checked reads = %v, want %v", checked, want)
-	}
-	if want := []string{"/run/secrets/key"}; !reflect.DeepEqual(byPath, want) {
-		t.Errorf("reads by path = %v, want %v: the file: value is not checked", byPath, want)
+	if want := []string{"/etc/tk/read.env", keyPath}; !reflect.DeepEqual(checked, want) {
+		t.Errorf("checked reads %v, want %v", checked, want)
 	}
 }
 
@@ -176,14 +169,14 @@ func TestOneMatchingPairOfQuotesIsStripped(t *testing.T) {
 // A token file with nothing in it is said to be empty; it used to be an empty token that
 // failed later, at the exchange, with an error about the token.
 func TestAnEmptyOIDCTokenFileSaysSo(t *testing.T) {
-	p := config.Provider{Provider: "oidc", ClientID: "fed-client", TokenFile: "/run/tk/token"}
+	p := config.Provider{Provider: "oidc", ClientID: "fed-client", TokenFile: absPath("/run/tk/token")}
 	for name, body := range map[string]string{"empty": "", "blank": " \r\n\t\n"} {
 		r, err := Resolve(context.Background(), p, sys(nil, map[string]string{p.TokenFile: body}))
 		if err != nil {
 			t.Fatal(err)
 		}
 		_, err = r.IDToken(context.Background())
-		if e := asErr(t, err); e.Code != tkerr.CredentialUnavailable || !strings.Contains(e.Message, "/run/tk/token is empty") {
+		if e := asErr(t, err); e.Code != tkerr.CredentialUnavailable || !strings.Contains(e.Message, p.TokenFile+" is empty") {
 			t.Errorf("%s: err = %v, want credential_unavailable: the token file is empty", name, err)
 		}
 	}

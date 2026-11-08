@@ -46,15 +46,28 @@ func loadInvariants(ctx context.Context, env *registry.Env, in ACLValidateInput)
 	case in.Invariants != "":
 		return parseInvariants(ctx, in.Invariants)
 	}
-	if env.Config == nil || env.Config.Config.ACL.InvariantsFile == "" {
-		return nil, nil, nil
-	}
-	path := env.Config.Config.ACL.InvariantsFile
-	data, err := safefile.Read(path, safefile.Options{Cap: guard.MaxPolicyBytes, Code: tkerr.ConfigInvalid, Verify: config.OwnedBy(os.Getuid())})
-	if err != nil {
+	data, configured, err := readConfiguredInvariants(env)
+	if err != nil || !configured {
 		return nil, nil, err
 	}
 	return parseInvariants(ctx, string(data))
+}
+
+// readConfiguredInvariants reads the file acl.invariantsFile names, if the configuration names
+// one: the one place that opens it, for every tool that applies the configured invariants. The
+// file is opened by the rules of every file that holds policy content and by the owner's check,
+// and a path that is set and cannot be read is config_invalid, so that configured is true
+// whenever err is nil and the path was set.
+func readConfiguredInvariants(env *registry.Env) (data []byte, configured bool, err error) {
+	if env.Config == nil || env.Config.Config.ACL.InvariantsFile == "" {
+		return nil, false, nil
+	}
+	path := env.Config.Config.ACL.InvariantsFile
+	data, err = safefile.Read(path, safefile.Options{Cap: guard.MaxPolicyBytes, Code: tkerr.ConfigInvalid, Verify: config.OwnedBy(os.Getuid())})
+	if err != nil {
+		return nil, true, err
+	}
+	return data, true, nil
 }
 
 // invariantsCall is the text of the second validation.
