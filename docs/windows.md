@@ -174,6 +174,29 @@ The suite runs on Windows in CI (the `test-os` job). These tests do not run ther
 - `TestTheResultStepPassesOnlyWhenTheLiveJobSucceededAndTheOfflineJobWasSkipped` (`internal/workflows`): the workflow step is a bash script.
 - `TestReleaseRefusesAnythingButAPublicRepository` (`internal/workflows`): the release workflow's check is a POSIX shell command, which the test runs with `sh`.
 - `TestTheCronFileBaselineIsThePolicyTextAndDiffReadsIt` (`internal/cli`): the recipe's lines are a POSIX shell script that runs `jq`.
+- `TestIndirectionRejectsUnsafeOwnerModeAndOversize/env-id/mode` (`internal/creds`): Windows does not enforce POSIX ownership and mode privacy.
+- `TestIndirectionRejectsUnsafeOwnerModeAndOversize/env-key/mode` (`internal/creds`): Windows does not enforce POSIX ownership and mode privacy.
+- `TestIndirectionRejectsUnsafeOwnerModeAndOversize/env-secret/mode` (`internal/creds`): Windows does not enforce POSIX ownership and mode privacy.
+- `TestIndirectionRejectsUnsafeOwnerModeAndOversize/exec/mode` (`internal/creds`): Windows does not enforce POSIX ownership and mode privacy.
+- `TestIndirectionRejectsUnsafeOwnerModeAndOversize/file/mode` (`internal/creds`): Windows does not enforce POSIX ownership and mode privacy.
+- `TestIndirectionRejectsUnsafeOwnerModeAndOversize/oidc-env/mode` (`internal/creds`): Windows does not enforce POSIX ownership and mode privacy.
+- `TestIndirectionRejectsUnsafeOwnerModeAndOversize/oidc-file/mode` (`internal/creds`): Windows does not enforce POSIX ownership and mode privacy.
+- `TestIndirectionRejectsUnsafeOwnerModeAndOversize/privacy-env/mode` (`internal/creds`): Windows does not enforce POSIX ownership and mode privacy.
+- `TestIndirectionRejectsUnsafeOwnerModeAndOversize/privacy-exec/mode` (`internal/creds`): Windows does not enforce POSIX ownership and mode privacy.
+- `TestIndirectionRejectsUnsafeOwnerModeAndOversize/privacy-file/mode` (`internal/creds`): Windows does not enforce POSIX ownership and mode privacy.
+- `TestAScanTellsTheCollectionWhichFeaturesTheCatalogRequires/every_source_whole` (`internal/tools`): the stand-in tailscale CLI is a POSIX shell script.
+- `TestNoFindingsWithMissingCoverageIsIncomplete/a_rule_still_pending` (`internal/tools`): the stand-in tailscale CLI is a POSIX shell script.
+- `TestNoFindingsWithMissingCoverageIsIncomplete/a_source_failed` (`internal/tools`): the stand-in tailscale CLI is a POSIX shell script.
+- `TestNoFindingsWithMissingCoverageIsIncomplete/every_source_whole,_intent_not_requested:_complete_and_0` (`internal/tools`): the stand-in tailscale CLI is a POSIX shell script.
+- `TestScanNoInvariantsIgnoresConfiguredFile/a_readable_file_is_not_read_for_its_digest` (`internal/tools`): the stand-in tailscale CLI is a POSIX shell script.
+- `TestScanWithConfiguredInvariantsIsPartialAndCarriesDigest/the_same_fleet,_now_partial` (`internal/tools`): the stand-in tailscale CLI is a POSIX shell script.
+- `TestScanWithoutInvariantsHasIntentNotRequested/nothing_configured:_not_requested,_and_the_scan_can_be_complete` (`internal/tools`): the stand-in tailscale CLI is a POSIX shell script.
+- `TestSecurityScanOutputHoldsNoUnkeyedIdentifierOrRawDeviceReference/privacy_key_false` (`internal/tools`): the stand-in tailscale CLI is a POSIX shell script.
+- `TestSecurityScanOutputHoldsNoUnkeyedIdentifierOrRawDeviceReference/privacy_key_true` (`internal/tools`): the stand-in tailscale CLI is a POSIX shell script.
+- `TestThisNodesAPIRowWithNoDaemonVersionClearsNoRunningDaemonRuleUnlessGuarded/connected,_last_seen_31_minutes_ago` (`internal/tools`): the stand-in tailscale CLI is a POSIX shell script.
+- `TestThisNodesAPIRowWithNoDaemonVersionClearsNoRunningDaemonRuleUnlessGuarded/connected_and_fresh:_the_API_speaks_for_the_daemon` (`internal/tools`): the stand-in tailscale CLI is a POSIX shell script.
+- `TestThisNodesAPIRowWithNoDaemonVersionClearsNoRunningDaemonRuleUnlessGuarded/connection_not_reported` (`internal/tools`): the stand-in tailscale CLI is a POSIX shell script.
+- `TestThisNodesAPIRowWithNoDaemonVersionClearsNoRunningDaemonRuleUnlessGuarded/disconnected` (`internal/tools`): the stand-in tailscale CLI is a POSIX shell script.
 <!-- windows-skipped:end -->
 
 ### Not compiled on Windows

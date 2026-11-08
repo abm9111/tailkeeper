@@ -306,8 +306,9 @@ func connectMCP(t *testing.T, srv *mcp.Server) *mcp.ClientSession {
 // layout: the CLI's text and JSON and the MCP result alike.
 func TestSecurityScanSanitizerAndTripwireAcrossEveryFormat(t *testing.T) {
 	at := scanAt(t)
+	// Generate a synthetic key shape for redaction; this is not a live credential.
 	hostile := []string{
-		"##vso[task.logissue]AAAAAAAA", "tskey-api-kABCDEFG1CNTRL-0123456789abcdefghij", "alice@example.com-device-0001",
+		"##vso[task.logissue]AAAAAAAA", "tskey-api-k" + strings.Repeat("A", 13) + "-" + strings.Repeat("b", 20), "alice@example.com-device-0001",
 		"nESC\x1b[31mRED\x1b[0m-CNTRL", "nBIDI\u202eEVILCNTRL", "::error file=x::injected-message-0001",
 	}
 	var devs []map[string]any

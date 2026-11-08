@@ -733,7 +733,7 @@ func TestReadRegularRefusesInputFailures(t *testing.T) {
 			}
 			checkInputFailure(t, stage, err)
 			if descriptor != nil {
-				if _, err := descriptor.Stat(); !errors.Is(err, os.ErrClosed) {
+				if _, err := descriptor.Read(make([]byte, 1)); !errors.Is(err, os.ErrClosed) {
 					t.Fatalf("input descriptor not closed: %v", err)
 				}
 			}
@@ -765,8 +765,14 @@ func TestFindThinRejectsCandidateStatFailure(t *testing.T) {
 	if err = f.Close(); err != nil {
 		t.Fatal(err)
 	}
+	_, cause := f.Stat()
+	var pe *os.PathError
+	if !errors.As(cause, &pe) {
+		t.Fatalf("closed Stat did not produce a PathError: %v", cause)
+	}
 	paths, err = findThinWith(dir, "amd64", func(string) (os.FileInfo, error) { return f.Stat() })
-	if !errors.Is(err, os.ErrClosed) || len(paths) != 0 {
+	var got *os.PathError
+	if !errors.Is(err, pe.Err) || !errors.As(err, &got) || got.Op != pe.Op || got.Path != pe.Path || len(paths) != 0 {
 		t.Fatalf("accepted candidate stat failure: %v %v", paths, err)
 	}
 }

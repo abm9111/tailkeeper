@@ -72,7 +72,8 @@ jobs:
           race=""; if [ "$RUNNER_OS" = macOS ]; then race="-race"; fi
           # Windows gets the longer limit: its monotonic clock steps in ticks, which makes the
           # growth guard in internal/sanitize run for minutes (it fails itself at 100 s).
-          timeout=300s; if [ "$RUNNER_OS" = Windows ]; then timeout=900s; fi
+          # macOS's race suite needs 600 s for cumulative large-data package tests.
+          timeout=600s; if [ "$RUNNER_OS" = Windows ]; then timeout=900s; fi
           go test $race -count=1 -timeout "$timeout" -v ./... 2>&1 | tee "$RUNNER_TEMP/test.log"
       # The Windows leg must skip exactly the tests docs/windows.md lists. The script fails
       # on a difference, on a missing log, on a log with no test result and on a list that

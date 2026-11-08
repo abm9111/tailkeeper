@@ -157,25 +157,34 @@ func TestASecretFileChangedAfterTheReadIsRefused(t *testing.T) {
 // JSON form.
 func TestASecretFileThatCannotBeStatedAfterTheReadIsRefused(t *testing.T) {
 	p, want := secretFile(t, 64)
+	var cause error
 	hooks(t, nil, func(f *os.File) {
 		if err := f.Close(); err != nil {
 			t.Fatal(err)
 		}
+		_, cause = f.Stat()
+		if cause == nil {
+			t.Fatal("closed file Stat succeeded")
+		}
 	})
 	data, err := readCheckedLimit(p, want, secretCap)
 	code, msg := refusal(t, data, err)
-	if code != tkerr.ConfigUnsafe || !strings.Contains(msg, "cannot inspect "+p+" after reading it") || !strings.Contains(msg, os.ErrClosed.Error()) {
+	var expected *fs.PathError
+	if !errors.As(cause, &expected) {
+		t.Fatalf("closed Stat is not a PathError: %v", cause)
+	}
+	if code != tkerr.ConfigUnsafe || !strings.Contains(msg, "cannot inspect "+p+" after reading it") || !strings.Contains(msg, expected.Err.Error()) {
 		t.Errorf("%s: %s, want config_unsafe, cannot inspect the file after reading it, and why", code, msg)
 	}
 	if strings.Contains(msg, "changed while it was being read") {
 		t.Errorf("a Stat that failed is reported as a change: %s", msg)
 	}
-	if !errors.Is(err, os.ErrClosed) {
-		t.Errorf("the cause of the Stat error was dropped: errors.Is does not find it in %v", err)
+	if !errors.Is(err, expected.Err) {
+		t.Errorf("the cause of the Stat error was dropped: %v", err)
 	}
 	var pe *fs.PathError
-	if !errors.As(err, &pe) || pe.Op != "stat" {
-		t.Errorf("errors.As does not find the stat error in %v", err)
+	if !errors.As(err, &pe) || pe.Op != expected.Op || pe.Path != expected.Path {
+		t.Errorf("errors.As does not find the original Stat operation and path in %v", err)
 	}
 	// A change, by contrast, has no cause to keep.
 	p2, want2 := secretFile(t, 64)

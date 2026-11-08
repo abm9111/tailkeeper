@@ -489,7 +489,10 @@ func TestWriteSBOMStagingIOFailures(t *testing.T) {
 				if !errors.As(err, &pathErr) {
 					t.Fatalf("expected filesystem PathError, got %v", err)
 				}
-				if pathErr.Op != "mkdir" && pathErr.Op != "open" && pathErr.Op != "lstat" && pathErr.Op != "stat" {
+				if kind == "root-lookup" && (!errors.Is(err, os.ErrNotExist) || filepath.Base(pathErr.Path) != filepath.Base(root)) {
+					t.Errorf("removed staging root did not retain its path and missing cause: %v", err)
+				}
+				if pathErr.Op != "mkdir" && pathErr.Op != "open" && pathErr.Op != "lstat" && pathErr.Op != "stat" && !(kind == "root-lookup" && pathErr.Op == "GetFileAttributesEx") {
 					t.Errorf("unexpected filesystem operation %q", pathErr.Op)
 				}
 				wantBase := map[string]string{"control-config": "syft.yaml", "entry-parent": "server", "entry-write": "LICENSE", "slice-directory": "slices", "slice-write": "tailkeeper-amd64"}[kind]

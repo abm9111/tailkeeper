@@ -71,10 +71,23 @@ func TestSelfInfoCLIAndMCPNameTheSameBuild(t *testing.T) {
 
 func TestSelfInfoIgnoresUnsafeConfiguration(t *testing.T) {
 	env := isolated(t)
+	// Exercise the HOME fallback when XDG_CONFIG_HOME is empty.
+	for i, entry := range env {
+		if strings.HasPrefix(entry, "XDG_CONFIG_HOME=") {
+			env[i] = "XDG_CONFIG_HOME="
+		}
+	}
 	// An invalid configured provider would prevent normal App.Build. Self info
 	// succeeds without reading it and never echoes the configuration contents.
 	canary := strings.Repeat("private-fixture-", 8)
 	writeConfig(t, env, `{"contexts":{"fixture":{"tailnetId":"fixture","credentials":{"read":{"provider":"file","path":"`+canary+`"}}}}}`)
+	// The same child environment must find and reject the invalid configuration.
+	control := exec.Command(bin, "doctor", "--json")
+	control.Env = env
+	controlOut, controlErr := control.CombinedOutput()
+	if controlErr == nil || !strings.Contains(string(controlOut), "the file provider needs an absolute") {
+		t.Fatalf("doctor did not find the invalid user configuration: %v, %s", controlErr, controlOut)
+	}
 	cmd := exec.Command(bin, "self", "info", "--json")
 	cmd.Env = env
 	out, err := cmd.CombinedOutput()
