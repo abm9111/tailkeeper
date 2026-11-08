@@ -46,12 +46,13 @@ permissions:
   contents: read
 
 env:
+  TEST_TIMEOUT: 600s
   OWNER: abm9111 # the account whose registered SSH signing keys may sign release tags
 
 jobs:
   verify:
     runs-on: ubuntu-24.04 # pinned: ubuntu-latest moves to each new Ubuntu release on GitHub's schedule
-    timeout-minutes: 20
+    timeout-minutes: 30
     steps:
       - name: A release needs a public repository
         if: github.event_name == 'push'

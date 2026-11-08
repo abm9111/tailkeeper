@@ -27,10 +27,13 @@ concurrency:
   # A newer push to a pull request supersedes its run; a run on main always finishes.
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
+env:
+  TEST_TIMEOUT: 600s
+
 jobs:
   verify:
     runs-on: ubuntu-24.04 # pinned: ubuntu-latest moves to each new Ubuntu release on GitHub's schedule
-    timeout-minutes: 20
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -73,7 +76,7 @@ jobs:
           # Windows gets the longer limit: its monotonic clock steps in ticks, which makes the
           # growth guard in internal/sanitize run for minutes (it fails itself at 100 s).
           # macOS's race suite needs 600 s for cumulative large-data package tests.
-          timeout=600s; if [ "$RUNNER_OS" = Windows ]; then timeout=900s; fi
+          timeout="$TEST_TIMEOUT"; if [ "$RUNNER_OS" = Windows ]; then timeout=900s; fi
           go test $race -count=1 -timeout "$timeout" -v ./... 2>&1 | tee "$RUNNER_TEMP/test.log"
       # The Windows leg must skip exactly the tests docs/windows.md lists. The script fails
       # on a difference, on a missing log, on a log with no test result and on a list that

@@ -752,50 +752,160 @@ var guardDeadline = func() time.Duration {
 // the rest of the package: the Windows deadline under the Windows job's timeout in
 // verify.yml, the other under the timeout of make test (which CI runs on Linux) and the
 // other jobs'. A deadline at or over its timeout never fires before the timeout does.
+// timeoutBudgets checks the actual bindings and every recipe that consumes them. Requiring
+// exactly one match avoids accepting an ambiguous or unused binding.
+func timeoutBudgets(mk, yml, release string) ([]time.Duration, error) {
+	match := func(text, pattern, name string) (string, error) {
+		matches := regexp.MustCompile(pattern).FindAllStringSubmatch(text, -1)
+		if len(matches) != 1 {
+			return "", fmt.Errorf("%s: expected exactly one binding or recipe, got %d", name, len(matches))
+		}
+		return matches[0][1], nil
+	}
+	// Reject additional assignments, including target-specific and nearer workflow scopes.
+	// This deliberately checks source shape rather than interpreting Make or shell syntax.
+	makeAssignments := regexp.MustCompile(`(?m)^[^#\n]*\bTEST_TIMEOUT[ \t]*(?:\?=|:=|\+=|!=|=)`)
+	if len(makeAssignments.FindAllString(mk, -1)) != 1 {
+		return nil, fmt.Errorf("Makefile: expected exactly one TEST_TIMEOUT assignment")
+	}
+	workflowKeys := regexp.MustCompile(`(?m)^[ \t]+TEST_TIMEOUT[ \t]*:`)
+	for _, workflow := range []string{yml, release} {
+		if len(workflowKeys.FindAllString(workflow, -1)) != 1 {
+			return nil, fmt.Errorf("workflow: expected exactly one TEST_TIMEOUT declaration")
+		}
+	}
+	local, err := match(mk, `(?m)^TEST_TIMEOUT[ \t]*\?=[ \t]*([0-9]+)s[ \t]*$`, "Makefile TEST_TIMEOUT")
+	if err != nil {
+		return nil, err
+	}
+	ci, err := match(yml, `(?m)^env:\n  TEST_TIMEOUT: ([0-9]+)s[ \t]*$`, "workflow TEST_TIMEOUT")
+	if err != nil {
+		return nil, err
+	}
+	releaseCI, err := match(release, `(?m)^env:\n  TEST_TIMEOUT: ([0-9]+)s[ \t]*$`, "release workflow TEST_TIMEOUT")
+	if err != nil {
+		return nil, err
+	}
+	if releaseCI != ci {
+		return nil, fmt.Errorf("workflow timeouts differ: %ss and %ss", ci, releaseCI)
+	}
+	windows, err := match(yml, `timeout="\$TEST_TIMEOUT"; if \[ "\$RUNNER_OS" = Windows \]; then timeout=([0-9]+)s; fi`, "OS timeouts")
+	if err != nil {
+		return nil, err
+	}
+	for _, recipe := range []struct{ pattern, name string }{
+		{`(?m)^test:\n\tenv -u TAILKEEPER_LIVE \$\(GO\) test -race -count=1 -timeout ("\$\(TEST_TIMEOUT\)") `, "test"},
+		{`(?m)^\tenv -u TAILKEEPER_LIVE \$\(GO\) test -count=1 -timeout ("\$\(TEST_TIMEOUT\)") -cover `, "cover"},
+		{`(?m)^\t\tenv -u TAILKEEPER_LIVE \$\(GO\) test -count=1 -timeout ("\$\(TEST_TIMEOUT\)") -coverprofile=`, "cover-pkg"},
+	} {
+		if _, err := match(mk, recipe.pattern, recipe.name); err != nil {
+			return nil, err
+		}
+	}
+	var budgets []time.Duration
+	for _, value := range []string{windows, local, ci, local} {
+		n, err := strconv.ParseInt(value, 10, 64)
+		if err != nil || n > int64((1<<63-1)/int64(time.Second)) {
+			return nil, fmt.Errorf("invalid timeout %q", value)
+		}
+		budgets = append(budgets, time.Duration(n)*time.Second)
+	}
+	return budgets, nil
+}
+
+func checkTimeoutBudgets(mk, yml, release string) error {
+	budgets, err := timeoutBudgets(mk, yml, release)
+	if err != nil {
+		return err
+	}
+	for i, deadline := range []time.Duration{guardDeadlineWindows, guardDeadlineOther, guardDeadlineOther, guardDeadlineOther} {
+		if deadline+restOfPackage > budgets[i] {
+			return fmt.Errorf("deadline %v plus %v for the rest of the package is over %v", deadline, restOfPackage, budgets[i])
+		}
+	}
+	return nil
+}
+
 func TestTheGuardDeadlinesAreUnderTheirTimeouts(t *testing.T) {
 	yml, err := os.ReadFile("../../.github/workflows/verify.yml")
 	if err != nil {
 		t.Fatal(err)
 	}
-	m := regexp.MustCompile(`timeout=(\d+)s; if \[ "\$RUNNER_OS" = Windows \]; then timeout=(\d+)s`).FindSubmatch(yml)
-	if m == nil {
-		t.Fatal("verify.yml: no `timeout=Ns; if [ \"$RUNNER_OS\" = Windows ]; then timeout=Ns` in the test step")
-	}
 	mk, err := os.ReadFile("../../Makefile")
 	if err != nil {
 		t.Fatal(err)
 	}
-	mt := regexp.MustCompile(`(?m)^\tenv -u TAILKEEPER_LIVE \$\(GO\) test -race -count=1 -timeout (\d+)s `).FindSubmatch(mk)
-	if mt == nil {
-		t.Fatal("Makefile: no `go test -race -count=1 -timeout Ns` line in the test target")
+	release, err := os.ReadFile("../../.github/workflows/release.yml")
+	if err != nil {
+		t.Fatal(err)
 	}
-	// make cover runs every package with -cover, which is slower, under its own timeout.
-	mc := regexp.MustCompile(`(?m)^\tenv -u TAILKEEPER_LIVE \$\(GO\) test -count=1 -timeout (\d+)s -cover `).FindSubmatch(mk)
-	if mc == nil {
-		t.Fatal("Makefile: no `go test -count=1 -timeout Ns -cover` line in the cover target")
+	if err := checkTimeoutBudgets(string(mk), string(yml), string(release)); err != nil {
+		t.Fatal(err)
 	}
-	secs := func(b []byte) time.Duration {
-		n, err := strconv.Atoi(string(b))
-		if err != nil {
-			t.Fatal(err)
-		}
-		return time.Duration(n) * time.Second
+}
+
+func TestTimeoutBudgetBindingsFailClosed(t *testing.T) {
+	mk, err := os.ReadFile("../../Makefile")
+	if err != nil {
+		t.Fatal(err)
 	}
-	windowsJob, otherJobs, makeTest, makeCover := secs(m[2]), secs(m[1]), secs(mt[1]), secs(mc[1])
-	for _, c := range []struct {
-		what     string
-		deadline time.Duration
-		timeout  time.Duration
-	}{
-		{"the Windows deadline and the Windows job's timeout", guardDeadlineWindows, windowsJob},
-		{"the default deadline and make test's timeout", guardDeadlineOther, makeTest},
-		{"the default deadline and the other jobs' timeout", guardDeadlineOther, otherJobs},
-		{"the default deadline and make cover's timeout", guardDeadlineOther, makeCover},
+	yml, err := os.ReadFile("../../.github/workflows/verify.yml")
+	if err != nil {
+		t.Fatal(err)
+	}
+	release, err := os.ReadFile("../../.github/workflows/release.yml")
+	if err != nil {
+		t.Fatal(err)
+	}
+	goodMake, goodYAML, goodRelease := string(mk), string(yml), string(release)
+	if err := checkTimeoutBudgets(goodMake, goodYAML, goodRelease); err != nil {
+		t.Fatal(err)
+	}
+	for _, tc := range []struct{ name, mk, yml string }{
+		{"missing default", strings.Replace(goodMake, "TEST_TIMEOUT ?= 300s", "", 1), goodYAML},
+		{"malformed default", strings.Replace(goodMake, "TEST_TIMEOUT ?= 300s", "TEST_TIMEOUT ?= soon", 1), goodYAML},
+		{"short default", strings.Replace(goodMake, "TEST_TIMEOUT ?= 300s", "TEST_TIMEOUT ?= 1s", 1), goodYAML},
+		{"unused recipe", strings.Replace(goodMake, `-timeout "$(TEST_TIMEOUT)"`, "-timeout 300s", 1), goodYAML},
+		{"unused cover", strings.Replace(goodMake, `-timeout "$(TEST_TIMEOUT)" -cover `, "-timeout 300s -cover ", 1), goodYAML},
+		{"unused cover-pkg", strings.Replace(goodMake, `-timeout "$(TEST_TIMEOUT)" -coverprofile=`, "-timeout 300s -coverprofile=", 1), goodYAML},
+		{"missing CI", goodMake, strings.Replace(goodYAML, "  TEST_TIMEOUT: 600s", "", 1)},
+		{"short CI", goodMake, strings.Replace(goodYAML, "  TEST_TIMEOUT: 600s", "  TEST_TIMEOUT: 1s", 1)},
+		{"unused CI", goodMake, strings.Replace(goodYAML, `timeout="$TEST_TIMEOUT"`, "timeout=600s", 1)},
+		{"short Windows", goodMake, strings.Replace(goodYAML, "timeout=900s", "timeout=1s", 1)},
 	} {
-		if c.deadline+restOfPackage > c.timeout {
-			t.Errorf("%s: %v plus %v for the rest of the package is over %v", c.what, c.deadline, restOfPackage, c.timeout)
+		t.Run(tc.name, func(t *testing.T) {
+			if err := checkTimeoutBudgets(tc.mk, tc.yml, goodRelease); err == nil {
+				t.Fatal("invalid binding or budget accepted")
+			}
+		})
+	}
+	for _, tc := range []struct{ name, mk, yml, release string }{
+		{"target override", goodMake + "\ntest: TEST_TIMEOUT := 30s\n", goodYAML, goodRelease},
+		{"global override", goodMake + "\nTEST_TIMEOUT := 30s\n", goodYAML, goodRelease},
+		{"verify job override", goodMake, strings.Replace(goodYAML, "      GOFLAGS: -mod=readonly", "      GOFLAGS: -mod=readonly\n      TEST_TIMEOUT: 30s", 1), goodRelease},
+		{"release step override", goodMake, goodYAML, strings.Replace(goodRelease, "    steps:", "    env:\n      TEST_TIMEOUT: 30s\n    steps:", 1)},
+		{"both CI budgets short", goodMake, strings.Replace(goodYAML, "TEST_TIMEOUT: 600s", "TEST_TIMEOUT: 150s", 1), strings.Replace(goodRelease, "TEST_TIMEOUT: 600s", "TEST_TIMEOUT: 150s", 1)},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			err := checkTimeoutBudgets(tc.mk, tc.yml, tc.release)
+			if err == nil {
+				t.Fatal("invalid override or budget accepted")
+			}
+			if tc.name == "both CI budgets short" && !strings.Contains(err.Error(), "deadline") {
+				t.Fatalf("short matching budgets failed for the wrong reason: %v", err)
+			}
+		})
+	}
+	for _, bad := range []string{
+		strings.Replace(goodRelease, "  TEST_TIMEOUT: 600s", "", 1),
+		strings.Replace(goodRelease, "  TEST_TIMEOUT: 600s", "  TEST_TIMEOUT: soon", 1),
+		strings.Replace(goodRelease, "  TEST_TIMEOUT: 600s", "  TEST_TIMEOUT: 1s", 1),
+	} {
+		if err := checkTimeoutBudgets(goodMake, goodYAML, bad); err == nil {
+			t.Fatal("invalid release binding accepted")
 		}
 	}
+
 }
 
 // The deadline fires, with a message that names the guard and the clock step, on a

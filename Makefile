@@ -8,6 +8,7 @@ GOLANGCI    := github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v2.14.0
 ACTIONLINT  := github.com/rhysd/actionlint/cmd/actionlint@v1.7.12
 GORELEASER  := github.com/goreleaser/goreleaser/v2@v2.18.2
 BINDIR      ?= $(HOME)/.local/bin
+TEST_TIMEOUT ?= 300s
 
 .PHONY: build install test cover cover-pkg bench fuzz mutate live probe-acl vet fmt-check lint lint-extra actionlint vuln docs docs-check deps deps-check release-notes-check release-check verify
 
@@ -54,15 +55,11 @@ install:
 # shell must never send the gate to the tailnet your configuration names. Only the
 # live target sets it, and only for its own test run.
 #
-# The timeout of the go test lines below (here and in cover and cover-pkg) is the limit on a
-# hang, not on speed: a slow or busy machine must not read a timeout panic as a failing test.
-# The slowest package under -race is internal/tools, 80 s on an idle machine with 28 cores
-# (87 s with a second full run beside it), then internal/acl at 73 s, internal/sanitize and
-# internal/cli at 65 s and internal/mcpserver at 51 s. The same suite gets 300 s on Linux and
-# 900 s in CI on Windows (.github/workflows/verify.yml), and the local gate gets the Linux
-# figure. TestTheGuardDeadlinesAreUnderTheirTimeouts reads these lines.
+# The package timeout is an aggregate hang guard, not a performance target. CI supplies
+# a larger budget for busy runners; individual performance guards keep their own deadlines.
+# TestTheGuardDeadlinesAreUnderTheirTimeouts checks these bindings and recipes.
 test:
-	env -u TAILKEEPER_LIVE $(GO) test -race -count=1 -timeout 300s ./...
+	env -u TAILKEEPER_LIVE $(GO) test -race -count=1 -timeout "$(TEST_TIMEOUT)" ./...
 
 # Statement coverage of every package by every test, the end-to-end runs of the
 # built binary included (cmd/tailkeeper builds it with -cover when go test collects
@@ -72,7 +69,7 @@ COVER_MIN ?= 90
 
 cover: cover-pkg
 	@root="$$(mktemp -d)" && trap 'rm -rf "$$root"' EXIT && mkdir "$$root/data" && \
-	env -u TAILKEEPER_LIVE $(GO) test -count=1 -timeout 300s -cover -coverpkg=github.com/abm9111/tailkeeper/... ./... -args -test.gocoverdir="$$root/data" && \
+	env -u TAILKEEPER_LIVE $(GO) test -count=1 -timeout "$(TEST_TIMEOUT)" -cover -coverpkg=github.com/abm9111/tailkeeper/... ./... -args -test.gocoverdir="$$root/data" && \
 	$(GO) tool covdata textfmt -i="$$root/data" -o="$$root/cover.out" && \
 	awk -v m="$(COVER_MIN)" 'BEGIN { if (m !~ /^[0-9]+([.][0-9]+)?$$/) { print "COVER_MIN must be a number, not \"" m "\""; bad = 1; exit 2 } } \
 		NR > 1 { stmts[$$1] = $$2; if ($$3 > 0) hit[$$1] = 1 } \
@@ -93,7 +90,7 @@ cover-pkg:
 	[ -n "$(strip $(COVER_PKGS))" ] || { echo "cover-pkg: COVER_PKGS names no package"; exit 2; }; \
 	root="$$(mktemp -d)"; trap 'rm -rf "$$root"' EXIT; \
 	for pkg in $(COVER_PKGS); do \
-		env -u TAILKEEPER_LIVE $(GO) test -count=1 -timeout 300s -coverprofile="$$root/cover.out" "$$pkg" || { echo "cover-pkg: the tests of $$pkg failed"; exit 1; }; \
+		env -u TAILKEEPER_LIVE $(GO) test -count=1 -timeout "$(TEST_TIMEOUT)" -coverprofile="$$root/cover.out" "$$pkg" || { echo "cover-pkg: the tests of $$pkg failed"; exit 1; }; \
 		awk -v m="$(COVER_PKG_MIN)" -v p="$$pkg" 'NR > 1 { n += $$2; if ($$3 > 0) c += $$2 } \
 			END { if (n == 0) { print "cover-pkg: " p " has no statements in its profile"; exit 1 } \
 				printf "coverage of %s from its own tests: %.2f%% of %d statements (minimum %s%%)\n", p, 100 * c / n, n, m; exit !(100 * c >= m * n) }' "$$root/cover.out" || exit 1; \
