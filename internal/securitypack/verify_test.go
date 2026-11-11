@@ -33,6 +33,8 @@ func TestGuardOutcomeTable(t *testing.T) {
 		{security.AccessUnmet, security.AccessUnknown, nil, nil, "unchanged_unconfirmed"},
 		{security.AccessMetWithLimits, security.AccessMetWithLimits, []security.AccessLimit{security.LimitPosture, security.LimitRules}, []security.AccessLimit{security.LimitRules, security.LimitPosture}, "unchanged"},
 		{security.AccessMetWithLimits, security.AccessMetWithLimits, []security.AccessLimit{security.LimitPosture}, []security.AccessLimit{security.LimitRules}, "limits_changed"},
+		{security.AccessMetWithLimits, security.AccessMetWithLimits, []security.AccessLimit{security.LimitPosture, security.LimitRules}, []security.AccessLimit{security.LimitPosture}, "limits_changed"},
+		{security.AccessMetWithLimits, security.AccessMet, []security.AccessLimit{security.LimitPosture}, nil, "limits_changed"},
 		{security.AccessMet, security.AccessMetWithLimits, nil, []security.AccessLimit{security.LimitRules}, "limits_changed"},
 		{security.AccessUnknown, security.AccessMetWithLimits, nil, []security.AccessLimit{security.LimitRules}, "improved"},
 		{security.AccessMet, security.AccessMet, nil, nil, "held"},

@@ -211,6 +211,9 @@ func guardOutcome(before, after security.AccessJudgement) string {
 		if before.Status == security.AccessMet {
 			return "held"
 		}
+		if before.Status == security.AccessMetWithLimits {
+			return "limits_changed"
+		}
 		return "improved"
 	default:
 		return "access_judgement_missing"
@@ -237,6 +240,7 @@ func guardLimited(before, after security.AccessJudgement) string {
 		if len(before.Limits) == len(after.Limits) {
 			return "unchanged"
 		}
+		return "limits_changed"
 	}
 	return "improved"
 }
