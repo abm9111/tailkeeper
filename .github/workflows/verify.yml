@@ -73,9 +73,10 @@ jobs:
         run: |
           set -o pipefail
           race=""; if [ "$RUNNER_OS" = macOS ]; then race="-race"; fi
-          # Windows gets the longer limit: its monotonic clock steps in ticks, which makes the
+          # Windows gets the longest limit: its monotonic clock steps in ticks, which makes the
           # growth guard in internal/sanitize run for minutes (it fails itself at 100 s).
           # macOS's race suite needs 600 s for cumulative large-data package tests.
+          # internal/tools reached a 300 s package timeout there while a page was still decoding.
           timeout="$TEST_TIMEOUT"; if [ "$RUNNER_OS" = Windows ]; then timeout=900s; fi
           go test $race -count=1 -timeout "$timeout" -v ./... 2>&1 | tee "$RUNNER_TEMP/test.log"
       # The Windows leg must skip exactly the tests docs/windows.md lists. The script fails
