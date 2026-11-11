@@ -38,7 +38,7 @@ The planned universal macOS MCP bundle and its verification and host-acceptance 
 
 On Windows the archive is a `.zip`, and the Windows build differs: it has no `exec` provider (start tailkeeper under your secret manager's run command and use the `env` provider), it does not check the owner or permissions of the configuration and credential files (`tailkeeper doctor` warns), and it cannot rotate the audit log. The audit log has no lock between processes there, so two tailkeeper processes writing at the same moment can break its chain. [docs/windows.md](docs/windows.md) lists every difference and the tests that do not run on Windows.
 
-With Go 1.27.3 or later, `go install github.com/abm9111/tailkeeper/cmd/tailkeeper@latest` also works; that binary reports `tailkeeper dev` instead of its version, and it is built on your machine rather than by the release workflow, so the checks below do not apply to it.
+With Go 1.27.4 or later, `go install github.com/abm9111/tailkeeper/cmd/tailkeeper@latest` also works; that binary reports `tailkeeper dev` instead of its version, and it is built on your machine rather than by the release workflow, so the checks below do not apply to it.
 
 From a clone, `make install` runs the gate (`make verify`), then installs the binary as `~/.local/bin/tailkeeper` (set `BINDIR` to change the directory). It refuses uncommitted changes, so `tailkeeper version` always names a commit. Point MCP hosts at the installed binary, not at `bin/tailkeeper`: `make build` rewrites `bin/` on whatever branch is checked out.
 

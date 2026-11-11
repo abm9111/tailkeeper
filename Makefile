@@ -223,7 +223,7 @@ vet:
 fmt-check:
 	@out="$$(gofmt -l .)" || exit 1; if [ -n "$$out" ]; then echo "gofmt needed:"; echo "$$out"; exit 1; fi
 
-# staticcheck v0.8.1 cannot read go1.27.3 export data. Lint results do not depend
+# staticcheck v0.8.1 cannot read go1.27.4 export data. Lint results do not depend
 # on the patch release, so it runs under go1.27.1; builds and govulncheck use the
 # toolchain pinned in go.mod.
 lint:
