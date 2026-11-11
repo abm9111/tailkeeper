@@ -4,7 +4,7 @@ What each release of tailkeeper changed. Versions follow semantic versioning; un
 
 ## Unreleased — foundations
 
-- Built with Go 1.27.4: Go 1.27.3's `net/http` can crash an HTTP/1 server on a MaxBytesReader header race (GO-2026-6859), which reaches tailkeeper through its HTTP client and the MCP server.
+- Built with Go 1.27.4: Go 1.27.3's `net/http` can crash an HTTP/1 server on a MaxBytesReader header race (GO-2026-6859). Tailkeeper does not serve HTTP. The pin tracks that Go security release.
 
 - All credential `file:` indirections, OIDC `tokenFile` reads and privacy-key file references use the checked private-file reader, capped at 1 MiB. Shared-readable secret mounts must migrate to private regular files or an exec provider. Unix owner/mode checks and Windows ACL limitations are documented in SECURITY.md.
 - A `file:` credential reference must name an absolute path. A relative one (`file:secrets/key`) is refused before anything is read, with `config_invalid` (`privacy_key_unavailable` for the privacy key) and an error that names the variable and asks for an absolute path; it was read from whatever directory tailkeeper ran in. An OIDC `tokenFile` that reaches the credential layer relative is refused the same way (the configuration already required it absolute). SECURITY.md again says that the check of the credential file's directory looks the parent up by name after the open, not through the descriptor.
