@@ -18,7 +18,7 @@ See [security coverage](docs/security/coverage.md) for evidence and deployment l
 
 Tailkeeper lets you inspect your Tailscale network from the command line or an MCP client. For example, after setup, ask your assistant to list your tailnet's devices. Tailkeeper only reads: apart from the credential's token request, its only request other than GET asks Tailscale to validate a policy, which changes nothing (see the status line above). Review the privacy limits above and below before connecting an agent.
 
-1. **Install.** With Go 1.27.3 or later, run:
+1. **Install.** With Go 1.27.4 or later, run:
 
    ```sh
    go install github.com/abm9111/tailkeeper/cmd/tailkeeper@latest
