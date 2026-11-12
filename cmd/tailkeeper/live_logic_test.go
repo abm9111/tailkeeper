@@ -296,8 +296,8 @@ func TestIDsAreNeverReadAsFlags(t *testing.T) {
 
 // TestHarnessWithNothingToAnswer runs the whole harness against the real binary
 // with an empty home, a credential provider that has no credential, and a Tailscale
-// CLI that always fails: no tool can answer. Every call must be a failure; none may
-// read as ok, unavailable or skipped, and no tool may be left out. The CLI is a
+// CLI that always fails: only pure self metadata can answer. Every external/local
+// call must fail and no tool may be left out. The CLI is a
 // stand-in on purpose: local tools need no configuration, so without it they would
 // run against the Tailscale on whichever machine runs the gate.
 func TestHarnessWithNothingToAnswer(t *testing.T) {
@@ -311,10 +311,17 @@ func TestHarnessWithNothingToAnswer(t *testing.T) {
 	if total := len(l.results); total != len(liveRegistry().All()) {
 		t.Errorf("%d results for %d tools", total, len(liveRegistry().All()))
 	}
-	if counts[outcomeOK] != 0 || counts[outcomeUnavailable] != 0 {
+	// Two tools answer: the build metadata, and the security scan, whose failed sources are
+	// gaps in a partial result (exit 1) and not an error. That is an answer, with every gap named.
+	if counts[outcomeOK] != 2 || counts[outcomeUnavailable] != 0 || l.offlineCalls != 1 {
 		t.Errorf("with nothing to answer, %d ok and %d unavailable", counts[outcomeOK], counts[outcomeUnavailable])
 	}
-	if counts[outcomeFail] == 0 || counts[outcomeFail] != l.calls {
+	for _, r := range l.results {
+		if r.outcome == outcomeOK && r.tool != "tailkeeper_info" && r.tool != "security_scan" {
+			t.Errorf("%s answered with nothing to answer from", r.tool)
+		}
+	}
+	if counts[outcomeFail] == 0 || counts[outcomeFail] != l.calls-2 {
 		t.Errorf("%d fail for %d calls", counts[outcomeFail], l.calls)
 	}
 	for _, r := range l.results {

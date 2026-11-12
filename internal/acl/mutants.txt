@@ -151,9 +151,39 @@ kill: TestActionIsPartOfAnAtom
 
 mutant: an SSH test that expects check is read as one that expects accept
 file: shapes.go
-old: {"check", "check"}
-new: {"check", "accept"}
+old: groups = append(groups, group{polarity, l})
+new: pol := polarity; if pol == "check" { pol = "accept" }; groups = append(groups, group{pol, l})
 kill: TestSSHTestsCheckVersusAccept
+
+mutant: the deprecated user is not read as a test's source
+file: shapes.go
+old: "src": {"src", "user"}
+new: "src": {"src"}
+kill: TestPolicyTestKeys|TestTestsAreAssertions
+
+mutant: the deprecated allow is not read as a test's accept list
+file: shapes.go
+old: "srcPostureAttrs": {"srcPostureAttrs"}, "accept": {"accept", "allow"}
+new: "srcPostureAttrs": {"srcPostureAttrs"}, "accept": {"accept"}
+kill: TestPolicyTestKeys|TestTestsAreAssertions
+
+mutant: the deprecated allow is not read as an SSH test's accept list
+file: shapes.go
+old: "dst": {"dst"}, "accept": {"accept", "allow"}
+new: "dst": {"dst"}, "accept": {"accept"}
+kill: TestPolicyTestKeys
+
+mutant: the deprecated user is read as an SSH test's source
+file: shapes.go
+old: return map[string][]string{"src": {"src"}, "dst": {"dst"}
+new: return map[string][]string{"src": {"src", "user"}, "dst": {"dst"}
+kill: TestPolicyTestKeys
+
+mutant: only the first spelling of a test's list is read
+file: shapes.go
+old: for _, name := range keys[polarity] { // an SSH test alone has check
+new: for _, name := range keys[polarity][:min(1, len(keys[polarity]))] { // an SSH test alone has check
+kill: TestPolicyTestKeys|TestTestsAreAssertions
 
 mutant: a node attribute's ipPool is read from the wrong field
 file: shapes.go
@@ -805,3 +835,213 @@ file: diff_text.go
 old: ch.Section = d.viewOf(c).cut(ch.Section)
 new: ch.Section = d.ov.cut(ch.Section)
 kill: TestEachSideIsShownThroughItsOwnShow
+
+mutant: access reading matches a section name case-sensitively
+file: access.go
+old: occ := r.d.byKey[sectionKey(name)]
+new: occ := r.d.byKey[name]
+kill: TestReadAccessListsTheRulesOfEverySection
+
+mutant: access reading does not take the legacy users and ports of an acl rule
+file: access.go
+old: srcNames, dstNames := []string{"src", "users"}, []string{"dst", "ports"}
+new: srcNames, dstNames := []string{"src"}, []string{"dst"}
+kill: TestReadAccessListsTheRulesOfEverySection
+
+mutant: access reading keeps the ports in the selector of an acl destination
+file: access.go
+old: sel, ports := splitDstPorts(d)
+new: sel, ports := d, ""
+kill: TestReadAccessListsTheRulesOfEverySection
+
+mutant: access reading splits an IPv6 address with no brackets at its last colon
+file: access.go
+old: if _, err := netip.ParseAddr(entry); err == nil {
+new: if _, err := netip.ParseAddr(entry); err == nil && false {
+kill: TestSplitDstPorts
+
+mutant: access reading does not see a posture on a rule
+file: access.go
+old: rule.Posture = len(posture) > 0
+new: rule.Posture = len(posture) > 99
+kill: TestReadAccessListsTheRulesOfEverySection
+
+mutant: access reading counts an empty app map as a capability
+file: access.go
+old: rule.App = len(obj.Members) > 0
+new: rule.App = len(obj.Members) >= 0
+kill: TestReadAccessListsTheRulesOfEverySection
+
+mutant: access reading lists a rule it cannot read as if it were read
+file: access.go
+old: if !srcOK || !dstOK {
+new: if (!srcOK || !dstOK) && false {
+kill: TestReadAccessListsTheRulesOfEverySection
+
+mutant: access reading lists one rule past its cap
+file: access.go
+old: if len(r.out.Rules) >= MaxAccessRules {
+new: if len(r.out.Rules) > MaxAccessRules {
+kill: TestReadAccessCapsTheRules
+
+mutant: access reading does not read defaultSrcPosture
+file: access.go
+old: r.out.DefaultPosture = setPosture(v)
+new: r.out.DefaultPosture = false
+kill: TestReadAccessListsTheRulesOfEverySection
+
+mutant: access reading does not spend the work budget on a rule
+file: access.go
+old: el := &arr.Elements[i]\n\t\tif err := r.m.tick(1); err != nil {
+new: el := &arr.Elements[i]\n\t\tif err := error(nil); err != nil {
+kill: TestReadAccessSpendsTheWorkBudgetOnRules
+
+mutant: access reading does not spend the work budget on the members of a list
+file: access.go
+old: if err := r.m.tick(len(arr.Elements)); err != nil {
+new: if err := error(nil); err != nil {
+kill: TestReadAccessSpendsTheWorkBudgetOnMembers|TestReadAccessChargesTheListOfAGroupOrOfTagOwnersBeforeReadingIt
+
+mutant: a port range ends one short
+file: access.go
+old: return rs[i].hi >= port
+new: return rs[i].hi > port
+kill: TestPortsContain|TestPortSetReadsASpecOnce
+
+mutant: access reading does not keep the proto of an acls rule
+file: access.go
+old: rule.Proto = proto
+new: _ = proto
+kill: TestReadAccessReadsTheProtoOfAnACLRule
+
+mutant: access reading keeps an empty proto list as a proto
+file: access.go
+old: if len(proto) > 0 {
+new: if true {
+kill: TestReadAccessReadsTheProtoOfAnACLRule
+
+mutant: access reading takes a proto that is not a string or a list of them
+file: access.go
+old: \t\tif len(proto) > 0 {\n\t\t\trule.Proto = proto\n\t\t}\n\t\treturn ok
+new: \t\tif len(proto) > 0 {\n\t\t\trule.Proto = proto\n\t\t}\n\t\treturn ok || true
+kill: TestReadAccessReadsTheProtoOfAnACLRule
+
+mutant: access reading reads the proto of a grant
+file: access.go
+old: case RulesACLs:
+new: default:
+kill: TestReadAccessReadsTheProtoOfAnACLRule
+
+mutant: access reading does not read the posture of an ssh rule
+file: access.go
+old: \treturn r.readQualifiers(by, rule)\n}
+new: \tif rule.Section == RulesSSH {\n\t\treturn nil\n\t}\n\treturn r.readQualifiers(by, rule)\n}
+kill: TestReadAccessReadsThePostureOfAnSSHRule
+
+mutant: a port range starts one late
+file: access.go
+old: return i < len(rs) && rs[i].lo <= port
+new: return i < len(rs) && rs[i].lo < port
+kill: TestPortsContain|TestPortSetReadsASpecOnce
+
+mutant: access reading takes ssh users it cannot read as none
+file: access.go
+old: rule.Users = users\n\t\treturn ok
+new: rule.Users = users\n\t\treturn ok || true
+kill: TestReadAccessDoesNotDropWhatItCannotRead
+
+mutant: access reading takes the ip entries of a grant it cannot read as none
+file: access.go
+old: if !ipOK {
+new: if !ipOK && false {
+kill: TestReadAccessDoesNotDropWhatItCannotRead
+
+mutant: access reading drops a section that is no list
+file: access.go
+old: r.out.Rules = append(r.out.Rules, AccessRule{Section: section, Index: 1, Line: line, Column: col, Unreadable: true})
+new: _, _ = line, col
+kill: TestReadAccessDoesNotDropWhatItCannotRead|TestReadAccessOfAnEmptyOrOddPolicy
+
+mutant: access reading takes a section written null as rules it cannot read
+file: access.go
+old: isLit && lit.Kind() == 'n' {
+new: isLit && lit.Kind() == 'x' {
+kill: TestReadAccessDoesNotDropWhatItCannotRead
+
+mutant: access reading takes a defaultSrcPosture it cannot read as none
+file: access.go
+old: case hujson.Literal:\n\t\treturn x.Kind() != 'n'\n\t}\n\treturn true
+new: case hujson.Literal:\n\t\treturn x.Kind() != 'n'\n\t}\n\treturn false
+kill: TestReadAccessReadsAMalformedDefaultPostureAsSet
+
+mutant: access reading takes a scalar defaultSrcPosture as none
+file: access.go
+old: return x.Kind() != 'n'
+new: return false
+kill: TestReadAccessReadsAMalformedDefaultPostureAsSet
+
+mutant: access reading takes a null defaultSrcPosture as a posture
+file: access.go
+old: return x.Kind() != 'n'
+new: return true
+kill: TestReadAccessReadsAMalformedDefaultPostureAsSet
+
+mutant: access reading takes an empty defaultSrcPosture list as a posture
+file: access.go
+old: return len(x.Elements) > 0\n\tcase hujson.Literal:
+new: return true\n\tcase hujson.Literal:
+kill: TestReadAccessReadsAMalformedDefaultPostureAsSet
+
+mutant: access reading does not spend the work budget on the members of the lists of a rule
+file: access.go
+old: if err = r.m.tick(members(f)); err != nil {
+new: if err = error(nil); err != nil {
+kill: TestReadAccessChargesTheListsOfARule
+
+mutant: access reading does not spend the work budget on the protocols of an acls rule
+file: access.go
+old: if err := r.m.tick(members(f)); err != nil {\n\t\t\treturn false, err
+new: if err := error(nil); err != nil {\n\t\t\treturn false, err
+kill: TestReadAccessChargesTheListsOfARule
+
+mutant: access reading counts no member of a list
+file: access.go
+old: return len(arr.Elements)\n\t}\n\treturn 0\n}
+new: return len(arr.Elements) * 0\n\t}\n\treturn 0\n}
+kill: TestReadAccessChargesTheListsOfARule
+
+mutant: access reading does not spend a step on a grant
+file: access.go
+old: \treturn r.m.tick(1)\n}
+new: \treturn nil\n}
+kill: TestReadAccessSpendsTheWorkBudgetOnGrants
+
+mutant: access reading spends the work budget on the members of a group or of tag owners only after reading them
+file: access.go
+old: \t\tif err := r.m.tick(len(arr.Elements)); err != nil { // the members are paid for before they are read\n\t\t\treturn nil, err\n\t\t}\n\t\tvar items []string\n\t\tokAll := true\n\t\tfor j := range arr.Elements {\n\t\t\tlit, isLit := arr.Elements[j].Value.(hujson.Literal)\n\t\t\tif !isLit || lit.Kind() != '"' {\n\t\t\t\tokAll = false\n\t\t\t\tbreak\n\t\t\t}\n\t\t\titems = append(items, litString(lit))\n\t\t}\n
+new: \t\tvar items []string\n\t\tokAll := true\n\t\tfor j := range arr.Elements {\n\t\t\tlit, isLit := arr.Elements[j].Value.(hujson.Literal)\n\t\t\tif !isLit || lit.Kind() != '"' {\n\t\t\t\tokAll = false\n\t\t\t\tbreak\n\t\t\t}\n\t\t\titems = append(items, litString(lit))\n\t\t}\n\t\tif err := r.m.tick(len(items)); err != nil {\n\t\t\treturn nil, err\n\t\t}\n
+kill: TestReadAccessChargesTheListOfAGroupOrOfTagOwnersBeforeReadingIt
+
+mutant: access reading takes a via it cannot read as none
+file: access.go
+old: } else if by["via"] != nil {\n\t\trule.Via = true
+new: } else if by["via"] != nil {\n\t\trule.Via = false
+kill: TestReadAccessReadsAViaOrAppItCannotTakeAsSet
+
+mutant: access reading takes an app it cannot read as none
+file: access.go
+old: rule.App = !isLit || lit.Kind() != 'n'
+new: rule.App = false && (!isLit || lit.Kind() != 'n')
+kill: TestReadAccessReadsAViaOrAppItCannotTakeAsSet
+
+mutant: access reading takes an app that is not a scalar as none
+file: access.go
+old: rule.App = !isLit || lit.Kind() != 'n'
+new: rule.App = isLit && lit.Kind() != 'n'
+kill: TestReadAccessReadsAViaOrAppItCannotTakeAsSet
+
+mutant: access reading takes an app written null as a capability
+file: access.go
+old: rule.App = !isLit || lit.Kind() != 'n'
+new: rule.App = !isLit || lit.Kind() != 'x'
+kill: TestReadAccessReadsAViaOrAppItCannotTakeAsSet

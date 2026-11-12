@@ -30,8 +30,7 @@ func sys(vars map[string]string, files map[string]string) System {
 		return nil, errors.New("no such file")
 	}
 	return System{
-		Getenv:   func(k string) string { return vars[k] },
-		ReadFile: read,
+		Getenv: func(k string) string { return vars[k] },
 		// The fake file system has no permissions to check: a test that wants an
 		// unsafe file replaces this, as production reads through config.ReadSecretFile.
 		ReadSecretFile: read,
@@ -71,8 +70,9 @@ func TestStringMasksTheClientID(t *testing.T) {
 }
 
 func TestEnvFilePrefix(t *testing.T) {
+	path := absPath("/run/secrets/key")
 	r, err := Resolve(context.Background(), config.Provider{Provider: "env"},
-		sys(map[string]string{EnvAPIKey: "file:/run/secrets/key"}, map[string]string{"/run/secrets/key": "test-api-key\n"}))
+		sys(map[string]string{EnvAPIKey: "file:" + path}, map[string]string{path: "test-api-key\n"}))
 	if err != nil || r.Kind != KindAPIKey || r.APIKey.Reveal() != "test-api-key" {
 		t.Fatalf("Resolve = %+v, %v", r, err)
 	}
@@ -170,7 +170,7 @@ func TestExecResolutionKeepsTheRealCause(t *testing.T) {
 		{"nothing before re-exec", map[string]string{}, "", true},
 		{"client ID only before re-exec", map[string]string{id: "test-id"}, "", true},
 		{"key and pair conflict", map[string]string{key: "test-key", id: "test-id", secret: "test-value"}, tkerr.ConfigInvalid, false},
-		{"unreadable file: secret", map[string]string{id: "test-id", secret: "file:/nonexistent/secret"}, tkerr.CredentialUnavailable, false},
+		{"unreadable file: secret", map[string]string{id: "test-id", secret: "file:" + absPath("/nonexistent/secret")}, tkerr.CredentialUnavailable, false},
 		{"nothing after re-exec", map[string]string{EnvReexec: "1"}, tkerr.CredentialUnavailable, false},
 		{"client ID only after re-exec", map[string]string{EnvReexec: "1", id: "test-id"}, tkerr.CredentialUnavailable, false},
 	}
@@ -212,8 +212,8 @@ func TestReexecEnvReplacesAnInheritedMarker(t *testing.T) {
 // The OIDC token comes from tokenFile first, then GitHub Actions, then
 // TAILKEEPER_OIDC_TOKEN; each failure says which source failed.
 func TestOIDCTokenSources(t *testing.T) {
-	p := config.Provider{Provider: "oidc", ClientID: "fed-client", TokenFile: "/run/tk/token"}
-	r, err := Resolve(context.Background(), p, sys(nil, map[string]string{"/run/tk/token": "file-token\n"}))
+	p := config.Provider{Provider: "oidc", ClientID: "fed-client", TokenFile: absPath("/run/tk/token")}
+	r, err := Resolve(context.Background(), p, sys(nil, map[string]string{p.TokenFile: "file-token\n"}))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -221,7 +221,7 @@ func TestOIDCTokenSources(t *testing.T) {
 		t.Errorf("tokenFile: %q, %v", tok, err)
 	}
 	r, _ = Resolve(context.Background(), p, sys(nil, nil))
-	if _, err := r.IDToken(context.Background()); code(err) != tkerr.CredentialUnavailable || !strings.Contains(err.Error(), "/run/tk/token") {
+	if _, err := r.IDToken(context.Background()); code(err) != tkerr.CredentialUnavailable || !strings.Contains(err.Error(), p.TokenFile) {
 		t.Errorf("unreadable tokenFile: %v", err)
 	}
 	p.TokenFile = ""
@@ -274,7 +274,7 @@ func TestPrivacyKeyComesFromWhereTheReadCredentialIs(t *testing.T) {
 	}{
 		"env":         {config.Provider{Provider: "env"}, map[string]string{privacy.EnvKey: key}, nil},
 		"exec":        {config.Provider{Provider: "exec"}, map[string]string{privacy.EnvKey: key}, nil},
-		"file prefix": {config.Provider{Provider: "env"}, map[string]string{privacy.EnvKey: "file:/k"}, map[string]string{"/k": key + "\n"}},
+		"file prefix": {config.Provider{Provider: "env"}, map[string]string{privacy.EnvKey: "file:" + absPath("/k")}, map[string]string{absPath("/k"): key + "\n"}},
 		"file":        {config.Provider{Provider: "file", Path: "/c.env"}, nil, map[string]string{"/c.env": privacy.EnvKey + "=" + key + "\n"}},
 	} {
 		k, err := PrivacyKey(c.p, sys(c.vars, c.files))
@@ -304,19 +304,17 @@ func TestPrivacyKeyMalformedFailsWithoutQuotingIt(t *testing.T) {
 	if code(err) != tkerr.PrivacyKeyUnavailable || strings.Contains(fmt.Sprint(err), bad) {
 		t.Fatalf("err = %v", err)
 	}
-	_, err = PrivacyKey(config.Provider{Provider: "env"}, sys(map[string]string{privacy.EnvKey: "file:/missing"}, nil))
+	_, err = PrivacyKey(config.Provider{Provider: "env"}, sys(map[string]string{privacy.EnvKey: "file:" + absPath("/missing")}, nil))
 	if code(err) != tkerr.PrivacyKeyUnavailable {
 		t.Fatalf("unreadable key file: %v", err)
 	}
 }
 
 // The file provider and the privacy key read the credential file through
-// System.ReadSecretFile when it is set, so the check and the read cover one file;
-// ReadFile, which reads by path, is not used then.
+// System.ReadSecretFile when it is set, so the check and the read cover one file.
 func TestSecretFilesAreReadThroughReadSecretFile(t *testing.T) {
 	key := strings.Repeat("5a", 32)
 	s := sys(nil, nil)
-	s.ReadFile = func(string) ([]byte, error) { t.Error("ReadFile was used"); return nil, errors.New("unused") }
 	var read []string
 	s.ReadSecretFile = func(p string) ([]byte, error) {
 		read = append(read, p)
@@ -343,8 +341,8 @@ func TestSecretFilesAreReadThroughReadSecretFile(t *testing.T) {
 // does, through config.ReadSecretFile: one step that checks a file and reads that
 // file. It does not fall back to checking a path and then reading the path again,
 // which leaves a gap between the two, so a caller that forgets the field gets the
-// safe read and no signal is needed. A real file system shows it: the fake ReadFile
-// would serve the unsafe file below, and the check refuses it.
+// safe read and no signal is needed. A real file system shows it: the file below is
+// served by its path, and the check refuses it once it is unsafe.
 func TestASystemWithoutReadSecretFileStillReadsThroughTheCheckedFile(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		t.Skip("SKIPPED: Windows has no strict mode until Windows hardened mode (spec §4)")
@@ -355,10 +353,7 @@ func TestASystemWithoutReadSecretFileStillReadsThroughTheCheckedFile(t *testing.
 	if err := os.WriteFile(path, []byte(body), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	bypass := System{
-		Getenv:   func(string) string { return "" },
-		ReadFile: func(p string) ([]byte, error) { t.Errorf("ReadFile read %s by path", p); return []byte(body), nil },
-	}
+	bypass := System{Getenv: func(string) string { return "" }}
 	p := config.Provider{Provider: "file", Path: path}
 	r, err := Resolve(context.Background(), p, bypass)
 	if err != nil || r.ClientID != "test-client" || r.ClientSecret.Reveal() != "test-secret" {
@@ -498,5 +493,44 @@ func TestGithubTokenFallbackClientNeverFollowsARedirect(t *testing.T) {
 	tok, err = githubToken(context.Background(), plain.URL, "request-token", "aud", nil)
 	if err != nil || tok != "the-oidc-token" || auth != "Bearer request-token" {
 		t.Errorf("the normal request through the fallback = %q, %v (authorization %q)", tok, err, auth)
+	}
+}
+
+func TestMCPBExecProviderInheritedCredentialSemantics(t *testing.T) {
+	provider := config.Provider{Provider: "exec", Command: []string{absPath("/wrapper")}}
+	missing := absPath("/missing")
+	cases := []struct {
+		name   string
+		vars   map[string]string
+		kind   Kind
+		want   tkerr.Code
+		reexec bool
+	}{
+		{"absent", nil, "", "", true},
+		{"partial", map[string]string{EnvClientID: "fixture-id"}, "", "", true},
+		{"api", map[string]string{EnvAPIKey: "fixture-key"}, KindAPIKey, "", false},
+		{"oauth", map[string]string{EnvClientID: "fixture-id", EnvClientSecret: "fixture-secret"}, KindOAuth, "", false},
+		{"conflict", map[string]string{EnvAPIKey: "fixture-key", EnvClientID: "fixture-id"}, "", tkerr.ConfigInvalid, false},
+		{"unreadable", map[string]string{EnvAPIKey: "file:" + missing}, "", tkerr.CredentialUnavailable, false},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			got, err := Resolve(context.Background(), provider, sys(tc.vars, nil))
+			if tc.reexec {
+				if !errors.Is(err, ErrReexecRequired) {
+					t.Fatalf("expected reexec: %v", err)
+				}
+				return
+			}
+			if tc.want != "" {
+				if code(err) != tc.want || errors.Is(err, ErrReexecRequired) {
+					t.Fatalf("error = %v, want %s without reexec", err, tc.want)
+				}
+				return
+			}
+			if err != nil || got.Kind != tc.kind || got.Provider != "exec" {
+				t.Fatalf("resolution kind/provider = %s/%s, error = %v", got.Kind, got.Provider, err)
+			}
+		})
 	}
 }

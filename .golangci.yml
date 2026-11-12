@@ -81,6 +81,15 @@ linters:
         text: G101
         source: 'credTagsUnreadable = "unreadable \(needs oauth_keys:read or federated_keys:read\)"'
 
+      # G204: release tooling runs the operator-selected absolute Syft binary,
+      # without a shell, using only fixed internal argument lists and the isolated
+      # environment from stageSyftControl. This trusts the build tool;
+      # the path and its reported version do not authenticate or sandbox it.
+      - path: '^internal/releasebundle/sbom\.go$'
+        linters: [gosec]
+        text: G204
+        source: 'exec\.CommandContext\(ctx, path, args\.\.\.\)'
+
       # G204 (subprocess with variable arguments): the exec provider's command is
       # the owner's configuration (spec §7.3), and the process replaces itself with
       # it, with no shell.

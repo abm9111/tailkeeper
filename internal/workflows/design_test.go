@@ -751,3 +751,70 @@ func TestDesignObservedColumnMatchesTheSkeletons(t *testing.T) {
 		}
 	}
 }
+
+// unshippedAuditTokens are the names the design gives to audit features that no code
+// implements: the HMAC key reference of the chain, the export and its checkpoint, the
+// requirement that pruning follows an export, and the reconcile command and tool. A line
+// of the design or the threat model that names one must carry plannedMark, so that they cannot be
+// read as describing a shipped command or setting (VIGIL-COMP-001).
+var unshippedAuditTokens = []string{"audit.hmacKeyRef", "audit.requireExport", "audit export", "audit reconcile", "audit_reconcile"}
+
+const plannedMark = "*Planned, not implemented"
+
+// unshippedAuditProblems returns one problem for each line of the text that names an
+// unshipped audit feature without the mark. A feature is matched by the name it is
+// written under, not by meaning, and the mark may stand anywhere on the same line.
+func unshippedAuditProblems(section string) []string {
+	var problems []string
+	for n, line := range strings.Split(section, "\n") {
+		for _, tok := range unshippedAuditTokens {
+			if strings.Contains(line, tok) && !strings.Contains(line, plannedMark) {
+				problems = append(problems, fmt.Sprintf("line %d names `%s` without %q: %.80s", n+1, tok, plannedMark, line))
+			}
+		}
+	}
+	return problems
+}
+
+// No code reads audit.hmacKeyRef, audit.requireExport, `audit export` or `audit reconcile`
+// (git grep over internal/ and cmd/ finds none, and the CLI answers "unknown command"),
+// so every line of the design and of the threat model that names one is marked as planned,
+// wherever it stands: §14 and the list of scheduled operations of §13.3, the detection row of
+// the threat model, the tool catalogue, the section on expected actors, the roadmap and the
+// risks. The Reconcile section opens with the mark.
+func TestDesignMarksTheUnshippedAuditFeaturesAsPlanned(t *testing.T) {
+	data, err := os.ReadFile("../../docs/design.md")
+	if err != nil {
+		t.Fatal(err)
+	}
+	doc := string(data)
+	for _, p := range unshippedAuditProblems(doc) {
+		t.Errorf("docs/design.md: %s", p)
+	}
+	model, err := os.ReadFile("../../docs/threat-model.md")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, p := range unshippedAuditProblems(string(model)) {
+		t.Errorf("docs/threat-model.md: %s", p)
+	}
+	section := designSection(t, doc, "## 14. Audit log")
+	if !strings.Contains(section, "### Reconcile\n\n"+plannedMark) {
+		t.Errorf("the Reconcile section of §14 does not open with %q", plannedMark)
+	}
+
+	// The check must be able to fail: a line that names a feature without the mark is a problem.
+	const bad = "- **Chain.** `hash` is HMAC-SHA-256 when `audit.hmacKeyRef` names a key.\n"
+	if got := unshippedAuditProblems(bad); len(got) != 1 {
+		t.Errorf("a present-tense line was not refused: %v", got)
+	}
+	const good = "- **Chain.** *Planned, not implemented in 0.6.0: HMAC-SHA-256 when `audit.hmacKeyRef` names a key.*\n"
+	if got := unshippedAuditProblems(good); len(got) != 0 {
+		t.Errorf("a marked line was refused: %v", got)
+	}
+	for _, tok := range unshippedAuditTokens {
+		if got := unshippedAuditProblems("Run `" + tok + "` nightly.\n"); len(got) != 1 {
+			t.Errorf("%s: a bare mention was not refused: %v", tok, got)
+		}
+	}
+}

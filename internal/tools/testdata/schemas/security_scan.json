@@ -1,0 +1,341 @@
+{
+  "input": {
+    "additionalProperties": false,
+    "properties": {
+      "scope": {
+        "description": "fleet: the devices the API lists plus this node's own facts; local: this node only, with no API request. One of fleet, local",
+        "type": "string"
+      },
+      "threshold": {
+        "description": "the lowest source severity that makes an affected or potentially affected finding count toward exit code 8 (and atThreshold): low (default), medium, high or critical. A finding whose rule gives no severity counts at every threshold",
+        "type": "string"
+      }
+    },
+    "required": [
+      "scope"
+    ],
+    "type": "object"
+  },
+  "output": {
+    "additionalProperties": false,
+    "properties": {
+      "atThreshold": {
+        "additionalProperties": false,
+        "description": "affected and potentially affected findings at or above the threshold, over all of them (not only the listed): any makes the exit code 8",
+        "properties": {
+          "affected": {
+            "type": "integer"
+          },
+          "potentiallyAffected": {
+            "type": "integer"
+          }
+        },
+        "required": [
+          "affected",
+          "potentiallyAffected"
+        ],
+        "type": "object"
+      },
+      "catalog": {
+        "additionalProperties": false,
+        "description": "the advisory catalog the scan judged by",
+        "properties": {
+          "approved": {
+            "description": "rules the owner approved",
+            "type": "integer"
+          },
+          "digest": {
+            "description": "SHA-256 over the sorted name:digest lines of the files; it changes with any byte of any file",
+            "type": "string"
+          },
+          "expiresAt": {
+            "description": "the earliest expiry of any file: the catalog is stale from then",
+            "type": "string"
+          },
+          "issuedAt": {
+            "description": "the latest issue time of any file",
+            "type": "string"
+          },
+          "pending": {
+            "description": "rules not yet approved: they give unknown findings only",
+            "type": "integer"
+          },
+          "revision": {
+            "description": "the highest revision of any file",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "rules": {
+            "description": "rules in the catalog",
+            "type": "integer"
+          },
+          "withdrawn": {
+            "description": "rules withdrawn: they give no finding",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "revision",
+          "issuedAt",
+          "expiresAt",
+          "digest",
+          "rules",
+          "approved",
+          "pending",
+          "withdrawn"
+        ],
+        "type": "object"
+      },
+      "counts": {
+        "additionalProperties": false,
+        "description": "findings by applicability, over all of them",
+        "properties": {
+          "affected": {
+            "type": "integer"
+          },
+          "notAffected": {
+            "type": "integer"
+          },
+          "potentiallyAffected": {
+            "type": "integer"
+          },
+          "unknown": {
+            "type": "integer"
+          }
+        },
+        "required": [
+          "affected",
+          "potentiallyAffected",
+          "unknown",
+          "notAffected"
+        ],
+        "type": "object"
+      },
+      "coverage": {
+        "description": "what each requested dimension covered, and what it did not",
+        "items": {
+          "additionalProperties": false,
+          "properties": {
+            "counts": {
+              "additionalProperties": false,
+              "description": "what a row evaluated; the catalog row has them",
+              "properties": {
+                "devices": {
+                  "type": "integer"
+                },
+                "findings": {
+                  "type": "integer"
+                },
+                "potentiallyAffected": {
+                  "type": "integer"
+                },
+                "rules": {
+                  "type": "integer"
+                },
+                "unknown": {
+                  "type": "integer"
+                },
+                "withdrawn": {
+                  "type": "integer"
+                }
+              },
+              "required": [
+                "rules",
+                "withdrawn",
+                "devices",
+                "findings",
+                "unknown",
+                "potentiallyAffected"
+              ],
+              "type": [
+                "null",
+                "object"
+              ]
+            },
+            "dimension": {
+              "description": "versions, features, catalog or intent",
+              "type": "string"
+            },
+            "explanation": {
+              "description": "why a row is partial: fixed words, error codes and counts",
+              "type": "string"
+            },
+            "source": {
+              "description": "what produced the row",
+              "type": "string"
+            },
+            "status": {
+              "description": "complete or partial",
+              "type": "string"
+            }
+          },
+          "required": [
+            "dimension",
+            "source",
+            "status"
+          ],
+          "type": "object"
+        },
+        "type": [
+          "null",
+          "array"
+        ]
+      },
+      "findings": {
+        "description": "at most 100, affected first",
+        "items": {
+          "additionalProperties": false,
+          "properties": {
+            "applicability": {
+              "description": "affected, potentially_affected, unknown or not_affected",
+              "type": "string"
+            },
+            "confidence": {
+              "description": "unknown or reported",
+              "type": "string"
+            },
+            "device": {
+              "description": "the first four characters of the device's node ID, then an ellipsis",
+              "type": "string",
+              "x-tailkeeper-untrusted": true
+            },
+            "deviceRef": {
+              "description": "a pseudonym of the node ID, the same in every call; needs a privacy key",
+              "type": "string"
+            },
+            "evidence": {
+              "description": "the observations the finding cites",
+              "items": {
+                "additionalProperties": false,
+                "properties": {
+                  "acquiredAt": {
+                    "description": "when tailkeeper read it",
+                    "type": "string"
+                  },
+                  "error": {
+                    "description": "why the observation is not usable",
+                    "type": "string"
+                  },
+                  "freshness": {
+                    "description": "fresh, stale or unknown",
+                    "type": "string"
+                  },
+                  "observedAt": {
+                    "description": "when its source says it was true",
+                    "type": "string"
+                  },
+                  "origin": {
+                    "description": "api or local",
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "origin",
+                  "acquiredAt",
+                  "freshness"
+                ],
+                "type": "object"
+              },
+              "type": [
+                "null",
+                "array"
+              ]
+            },
+            "evidenceState": {
+              "description": "observed, unknown, stale or absent",
+              "type": "string"
+            },
+            "explanation": {
+              "description": "fixed words that say what the finding rests on",
+              "type": "string"
+            },
+            "reason": {
+              "description": "why a finding is unknown or only potentially affected, from a fixed set",
+              "type": "string"
+            },
+            "rule": {
+              "description": "the advisory rule, for example CVE-2022-41925",
+              "type": "string"
+            },
+            "ruleRevision": {
+              "type": "string"
+            },
+            "severity": {
+              "description": "the rule's own severity: unknown, low, medium, high or critical",
+              "type": "string"
+            },
+            "verification": {
+              "description": "what the vendor advises, for an affected or potentially affected finding",
+              "items": {
+                "type": "string"
+              },
+              "type": [
+                "null",
+                "array"
+              ]
+            }
+          },
+          "required": [
+            "rule",
+            "ruleRevision",
+            "device",
+            "applicability",
+            "severity",
+            "evidenceState",
+            "confidence",
+            "explanation"
+          ],
+          "type": "object"
+        },
+        "type": [
+          "null",
+          "array"
+        ]
+      },
+      "generatedAt": {
+        "description": "when the findings were made: RFC 3339, in UTC",
+        "type": "string"
+      },
+      "observedAt": {
+        "description": "when the sources were read: RFC 3339, in UTC",
+        "type": "string"
+      },
+      "scope": {
+        "description": "fleet or local",
+        "type": "string"
+      },
+      "status": {
+        "description": "complete or partial: complete only if every requested coverage (versions, features, catalog, intent) is complete. In this version intent is never evaluated, so a scan is partial; read coverage for every other gap",
+        "type": "string"
+      },
+      "threshold": {
+        "description": "the severity threshold that applied",
+        "type": "string"
+      },
+      "totalFindings": {
+        "description": "every finding the scan made, one for each device and rule; findings lists at most 100",
+        "type": "integer"
+      },
+      "truncated": {
+        "description": "findings lists fewer than totalFindings. The order puts affected first, then potentially affected, unknown and not affected, so what is cut is last; there is no way to page to the rest",
+        "type": "boolean"
+      }
+    },
+    "required": [
+      "status",
+      "scope",
+      "threshold",
+      "observedAt",
+      "generatedAt",
+      "totalFindings",
+      "truncated",
+      "counts",
+      "atThreshold",
+      "catalog",
+      "coverage",
+      "findings"
+    ],
+    "type": "object"
+  },
+  "tool": "security_scan"
+}

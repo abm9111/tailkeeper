@@ -1909,8 +1909,8 @@ kill: TestWhereDNSGetCutsItsListsDoesNotDependOnTheLengthOfAMaskedValue
 
 mutant: dns_get counts a value as masked while the owner sees personal data (text)
 file: result_budget.go
-old: if env.ShowPersonalData() {\n\t\treturn s\n\t}\n\treturn env.Masker().Text(s)
-new: return env.Masker().Text(s)
+old: if env.ShowPersonalData() {\n\t\treturn s\n\t}\n\treturn env.Masker().TextCapped(s, registry.ResultStringMax)
+new: return env.Masker().TextCapped(s, registry.ResultStringMax)
 kill: TestWhileTheOwnerSeesPersonalDataDNSGetCountsAValueAsItIs
 
 mutant: dns_get counts a value as masked while the owner sees personal data (whole)
@@ -2026,3 +2026,39 @@ file: acl_probe.go
 old: len(pv.Results[0].Errors) != 1
 new: len(pv.Results[0].Errors) < 1
 kill: TestTheSSHProbeNeedsExactlyOneFailureInTheSSHForm
+
+mutant: the look through the users of an ssh rule is not metered
+file: security_explain_rules.go
+old: if !m.w.tick(1 + len(ruleUsers)) { // the look for a selector that cannot be resolved reads the whole list
+new: if false { // the look for a selector that cannot be resolved reads the whole list
+kill: TestTheWalksThatShowARuleToBeAboutOthersCostAStepForEachComparison
+
+mutant: each user of an expectation compared with an ssh rule is not metered
+file: security_explain_rules.go
+old: if !m.w.tick(1+len(ruleUsers)) || strings.HasPrefix(u, "localpart:")
+new: if strings.HasPrefix(u, "localpart:")
+kill: TestTheWalksThatShowARuleToBeAboutOthersCostAStepForEachComparison
+
+mutant: a user compared with an ssh rule costs one step and not one for each of the rule's users
+file: security_explain_rules.go
+old: if !m.w.tick(1+len(ruleUsers)) ||
+new: if !m.w.tick(1) ||
+kill: TestTheWalksThatShowARuleToBeAboutOthersCostAStepForEachComparison
+
+mutant: the comparison of the destinations of an ssh rule is not metered
+file: security_explain_rules.go
+old: if !m.w.tick(1) || !m.differs(d.Selector, dst) {
+new: if !m.differs(d.Selector, dst) {
+kill: TestTheWalksThatShowARuleToBeAboutOthersCostAStepForEachComparison
+
+mutant: the comparison of the destinations of a network rule is not metered
+file: security_explain_rules.go
+old: if !m.w.tick(1) {\n\t\t\t\treturn false // nothing more is shown: the rule counts
+new: if false {\n\t\t\t\treturn false // nothing more is shown: the rule counts
+kill: TestTheWalksThatShowARuleToBeAboutOthersCostAStepForEachComparison
+
+mutant: a policy that cannot be read whole is a policy whose hosts were read
+file: acl_test_ssh.go
+old: return nil, false // a document it cannot read whole is a policy it has not read
+new: return nil, true // a document it cannot read whole is a policy it has not read
+kill: TestLiveHostAliasesSayTheyWereNotReadWhenOnlyTheReadingOfTheRulesEnds

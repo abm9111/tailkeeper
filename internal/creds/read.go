@@ -16,6 +16,8 @@ import (
 	"io/fs"
 	"net/http"
 	"net/url"
+	"path/filepath"
+	"runtime"
 	"strings"
 	"time"
 
@@ -69,8 +71,7 @@ func (r Read) String() string {
 
 // System is the environment and filesystem a provider reads. Tests replace it.
 type System struct {
-	Getenv   func(string) string
-	ReadFile func(string) ([]byte, error) // files a variable names ("file:" values) and the OIDC token file
+	Getenv func(string) string
 	// ReadSecretFile checks a credential file and reads it through the file it
 	// checked, so nothing can be put in the path's place between the check and the
 	// read. It is config.ReadSecretFile when nil: a System built without it takes the
@@ -78,6 +79,19 @@ type System struct {
 	// afterwards. A test that has no real file replaces it with a fake that does both.
 	ReadSecretFile func(string) ([]byte, error)
 	HTTPClient     *http.Client // used only to fetch platform OIDC tokens
+	// LookupEnv says whether a variable is set at all, so that one set to nothing differs
+	// from one that is not there. When nil it is derived from Getenv, and an empty
+	// variable reads as not set.
+	LookupEnv func(string) (string, bool)
+}
+
+// lookupEnv returns the variable name and whether it is set.
+func (s System) lookupEnv(name string) (string, bool) {
+	if s.LookupEnv != nil {
+		return s.LookupEnv(name)
+	}
+	v := s.Getenv(name)
+	return v, v != ""
 }
 
 // readSecret reads the credential file path, refusing an unsafe one. code classifies
@@ -102,6 +116,11 @@ func (s System) readSecret(path string, code tkerr.Code) ([]byte, error) {
 	return data, nil
 }
 
+// readCredentialFile applies the same checked boundary to every indirection.
+func (s System) readCredentialFile(path string) ([]byte, error) {
+	return s.readSecret(path, tkerr.CredentialUnavailable)
+}
+
 // ErrReexecRequired means the exec provider must re-run tailkeeper under its wrapper.
 var ErrReexecRequired = tkerr.New(tkerr.CredentialUnavailable,
 	"the exec provider must re-run tailkeeper under its wrapper", "")
@@ -110,9 +129,9 @@ var ErrReexecRequired = tkerr.New(tkerr.CredentialUnavailable,
 func Resolve(ctx context.Context, p config.Provider, sys System) (Read, error) {
 	switch p.Provider {
 	case "env":
-		return fromVars(sys.Getenv, sys.ReadFile, "env")
+		return fromVars(sys.Getenv, sys.readCredentialFile, "env")
 	case "exec":
-		r, err := fromVars(sys.Getenv, sys.ReadFile, "exec")
+		r, err := fromVars(sys.Getenv, sys.readCredentialFile, "exec")
 		if err == nil {
 			return r, nil
 		}
@@ -143,7 +162,7 @@ func Resolve(ctx context.Context, p config.Provider, sys System) (Read, error) {
 		if err != nil {
 			return Read{}, err
 		}
-		return fromVars(func(k string) string { return vars[k] }, sys.ReadFile, "file")
+		return fromVars(func(k string) string { return vars[k] }, sys.readCredentialFile, "file")
 	case "oidc":
 		return oidc(p, sys), nil
 	}
@@ -151,15 +170,15 @@ func Resolve(ctx context.Context, p config.Provider, sys System) (Read, error) {
 }
 
 func fromVars(get func(string) string, readFile func(string) ([]byte, error), provider string) (Read, error) {
-	id, err := value(get(EnvClientID), readFile)
+	id, err := value(EnvClientID, get(EnvClientID), readFile)
 	if err != nil {
 		return Read{}, err
 	}
-	secret, err := value(get(EnvClientSecret), readFile)
+	secret, err := value(EnvClientSecret, get(EnvClientSecret), readFile)
 	if err != nil {
 		return Read{}, err
 	}
-	key, err := value(get(EnvAPIKey), readFile)
+	key, err := value(EnvAPIKey, get(EnvAPIKey), readFile)
 	if err != nil {
 		return Read{}, err
 	}
@@ -201,14 +220,66 @@ func reexecEnv(environ []string) []string {
 	return append(out, EnvReexec+"=1")
 }
 
-// value resolves the `file:` prefix convention shared with Tailscale's TS_* variables.
-func value(v string, readFile func(string) ([]byte, error)) (string, error) {
-	if !strings.HasPrefix(v, "file:") {
-		return strings.TrimSpace(v), nil
+// errRelativePath is why a file: reference or a tokenFile is refused: it names a relative path.
+var errRelativePath = errors.New("a credential file is named by a relative path")
+
+// relativePath is the refusal of a relative path, named by what holds it (a variable, or the
+// oidc tokenFile). It is config_invalid: the owner wrote something the documentation does
+// not allow. It names the holder and never the path, which may be text that is not a path.
+func relativePath(holder string) error {
+	return tkerr.Wrap(tkerr.ConfigInvalid, errRelativePath,
+		holder+": a file: reference must name an absolute path, not a relative one",
+		"write file:"+absoluteExample(runtime.GOOS)+", so that the file does not depend on the directory tailkeeper runs in")
+}
+
+// errPaddedReference is why a file: reference is refused: spaces, tabs or line ends sit
+// around it.
+var errPaddedReference = errors.New("a file: reference has spaces around it")
+
+// paddedReference is the refusal of a value that is a file: reference once its spaces are
+// trimmed but has some before or after it. It is config_invalid, like a relative path: the
+// owner wrote something the documentation does not allow. Read as it stands, such a value was
+// a plain token that spelled "file:" and a path, or (with the space after it) a path that
+// does not exist. The message names the variable and never the value.
+func paddedReference(name string) error {
+	return tkerr.Wrap(tkerr.ConfigInvalid, errPaddedReference,
+		name+": a file: reference must not have spaces, tabs or line ends before or after it",
+		"remove the spaces around the value, so that it is read as a reference to a file and not as the secret itself")
+}
+
+// absoluteExample is a path to show in a hint, spelled as an absolute path is on goos: a
+// path with a root and no drive is relative on Windows, so "/absolute/path" would send a
+// Windows reader to the same refusal.
+func absoluteExample(goos string) string {
+	if goos == "windows" {
+		return `C:\absolute\path`
 	}
-	path := strings.TrimPrefix(v, "file:")
+	return "/absolute/path"
+}
+
+// value resolves the `file:` prefix convention shared with Tailscale's TS_* variables. The
+// path after the prefix must be absolute: a relative one would be read from whatever
+// directory tailkeeper happens to run in, which the owner did not choose. A reference with
+// spaces around it is refused, not trimmed: the one place where the surrounding spaces
+// change what the value means. A plain value is trimmed. name is the variable that holds v,
+// and is all a refusal says of it.
+func value(name, v string, readFile func(string) ([]byte, error)) (string, error) {
+	trimmed := strings.TrimSpace(v)
+	path, isFile := strings.CutPrefix(trimmed, "file:")
+	if !isFile {
+		return trimmed, nil
+	}
+	if trimmed != v {
+		return "", paddedReference(name)
+	}
+	if !filepath.IsAbs(path) {
+		return "", relativePath(name)
+	}
 	data, err := readFile(path)
 	if err != nil {
+		if _, ok := tkerr.As(err); ok {
+			return "", err
+		}
 		return "", tkerr.Wrap(tkerr.CredentialUnavailable, err, "cannot read secret file "+path, "")
 	}
 	return strings.TrimSpace(string(data)), nil
@@ -271,9 +342,13 @@ func oidc(p config.Provider, sys System) Read {
 // documented request endpoint, then TAILKEEPER_OIDC_TOKEN.
 func platformToken(ctx context.Context, p config.Provider, aud string, sys System) (string, error) {
 	if p.TokenFile != "" {
-		data, err := sys.ReadFile(p.TokenFile)
+		if !filepath.IsAbs(p.TokenFile) {
+			return "", tkerr.Wrap(tkerr.ConfigInvalid, errRelativePath, `oidc "tokenFile" must be an absolute path`,
+				"write the absolute path of the token file, so that it does not depend on the directory tailkeeper runs in")
+		}
+		data, err := sys.readCredentialFile(p.TokenFile)
 		if err != nil {
-			return "", tkerr.Wrap(tkerr.CredentialUnavailable, err, "cannot read OIDC token file "+p.TokenFile, "")
+			return "", err
 		}
 		tok := strings.TrimSpace(string(data))
 		if tok == "" {
@@ -286,7 +361,7 @@ func platformToken(ctx context.Context, p config.Provider, aud string, sys Syste
 		return githubToken(ctx, reqURL, reqTok, aud, sys.HTTPClient)
 	}
 	if v := sys.Getenv(EnvOIDCToken); v != "" {
-		return value(v, sys.ReadFile)
+		return value(EnvOIDCToken, v, sys.readCredentialFile)
 	}
 	return "", tkerr.New(tkerr.CredentialUnavailable, "no OIDC identity token available",
 		"set tokenFile, run in GitHub Actions with `permissions: id-token: write`, or set "+EnvOIDCToken)
@@ -336,31 +411,120 @@ func githubToken(ctx context.Context, reqURL, reqTok, aud string, hc *http.Clien
 // it there), the credential file for file. oidc stores no secret, so it has no
 // key. No key set is not an error: masking then names nothing.
 func PrivacyKey(p config.Provider, sys System) (*privacy.Key, error) {
+	k, _, err := LoadPrivacyKey(p, sys)
+	return k, err
+}
+
+// LoadPrivacyKey is PrivacyKey with one more answer. When no key loaded and nothing failed,
+// but the owner appears to have set one, note says what is wrong with it, so that the
+// surfaces can warn: masking goes on without pseudonyms and nothing in a result says so.
+// That is the case when
+//   - the variable (env, exec) or the line (file) is there and holds nothing, or names a
+//     file: that holds nothing; or
+//   - (file) a line names TAILKEEPER_PRIVACY_KEY and is not a NAME=value line for it: an
+//     `export ` prefix, a UTF-8 byte order mark before the name, quotes around the name, or
+//     another spelling of the name.
+//
+// A key that is simply absent is a choice and has no note. The note names a variable or a
+// line number and holds no value, no path and no text of a line: a line may hold the key.
+func LoadPrivacyKey(p config.Provider, sys System) (key *privacy.Key, note string, err error) {
 	var raw string
+	var set bool
+	var lines privacyLines
 	switch p.Provider {
 	case "env", "exec":
-		raw = sys.Getenv(privacy.EnvKey)
+		raw, set = sys.lookupEnv(privacy.EnvKey)
 	case "file":
 		data, err := sys.readSecret(p.Path, tkerr.PrivacyKeyUnavailable)
 		if err != nil {
-			return nil, privacyKeyFileError(err)
+			return nil, "", privacyKeyFileError(err)
 		}
 		vars, err := parseEnvFile(data)
 		if err != nil {
-			return nil, privacyKeyFileError(err)
+			return nil, "", privacyKeyFileError(err)
 		}
-		raw = vars[privacy.EnvKey]
+		raw, set = vars[privacy.EnvKey]
+		lines = scanPrivacyLines(data)
 	default:
-		return nil, nil
+		return nil, "", nil
 	}
-	v, err := value(raw, sys.ReadFile)
+	v, err := value(privacy.EnvKey, raw, sys.readCredentialFile)
 	if err != nil {
-		return nil, tkerr.Wrap(tkerr.PrivacyKeyUnavailable, err, "cannot read the file "+privacy.EnvKey+" names", "")
+		if errors.Is(err, errRelativePath) || errors.Is(err, errPaddedReference) {
+			// The refusals whose reason the owner needs, and that carry no value.
+			e := tkerr.From(err)
+			return nil, "", tkerr.New(tkerr.PrivacyKeyUnavailable, e.Message, e.Hint)
+		}
+		return nil, "", tkerr.Wrap(tkerr.PrivacyKeyUnavailable, err, "cannot read the file "+privacy.EnvKey+" names", "")
 	}
 	if v == "" {
-		return nil, nil
+		return nil, emptyPrivacyNote(p.Provider, raw, set, lines), nil
 	}
-	return privacy.Parse(v)
+	k, err := privacy.Parse(v)
+	return k, "", err
+}
+
+// emptyPrivacyNote says why a key that resolved to nothing looks as if it was meant to be
+// there, or "" when it looks like a choice.
+func emptyPrivacyNote(provider, raw string, set bool, lines privacyLines) string {
+	named := strings.HasPrefix(raw, "file:")
+	switch {
+	case set && provider == "file" && named:
+		return fmt.Sprintf("line %d of the credential file names a file for %s that holds nothing", lines.assigned, privacy.EnvKey)
+	case set && provider == "file":
+		return fmt.Sprintf("line %d of the credential file gives %s no value", lines.assigned, privacy.EnvKey)
+	case set && named:
+		return privacy.EnvKey + " names a file that holds nothing"
+	case set:
+		return privacy.EnvKey + " is set but empty"
+	case lines.misnamed > 0:
+		return fmt.Sprintf("line %d of the credential file names %s but is not a NAME=value line for it, and an `export ` prefix, a byte order mark and quotes around the name are not read", lines.misnamed, privacy.EnvKey)
+	}
+	return ""
+}
+
+// privacyLines are line numbers in a credential file, 0 for none: the last line that
+// assigns TAILKEEPER_PRIVACY_KEY (the one parseEnvFile keeps) and the first that names it
+// without being such a line.
+type privacyLines struct{ assigned, misnamed int }
+
+// scanPrivacyLines reads a credential file as parseEnvFile does and returns line numbers
+// only: the text of a line may be the key.
+func scanPrivacyLines(data []byte) privacyLines {
+	var out privacyLines
+	sc := bufio.NewScanner(bytes.NewReader(data))
+	for line := 1; sc.Scan(); line++ {
+		text := strings.TrimSpace(sc.Text())
+		if text == "" || strings.HasPrefix(text, "#") {
+			continue
+		}
+		// parseEnvFile has refused a line with no =, so every line here has one.
+		name, _, _ := strings.Cut(text, "=")
+		name = strings.TrimSpace(name)
+		switch {
+		case name == privacy.EnvKey:
+			out.assigned = line
+		case out.misnamed == 0 && namesPrivacyKey(name):
+			out.misnamed = line
+		}
+	}
+	return out
+}
+
+// namesPrivacyKey reports whether name, the text before the = of a line, holds the name of
+// the key as a word of its own, in any case, as a person writes it by mistake:
+// `export TAILKEEPER_PRIVACY_KEY`, a name behind the UTF-8 byte order mark that some editors
+// put at the start of a file, or a name in quotes. parseEnvFile reads none of these as the
+// key, so the key does not load and the owner must be told; what loads is not changed.
+func namesPrivacyKey(name string) bool {
+	for _, word := range strings.Fields(name) {
+		word = strings.TrimPrefix(word, "\ufeff")
+		word = strings.Trim(word, `"'`)
+		if strings.EqualFold(word, privacy.EnvKey) {
+			return true
+		}
+	}
+	return false
 }
 
 // privacyKeyFileError is how a failure to read or parse the credential file that holds

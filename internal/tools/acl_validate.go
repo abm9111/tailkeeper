@@ -581,9 +581,16 @@ func plural(n int, word string) string {
 // its entry with its comments, and the file parsed, so that a failure can be placed in it.
 type invariantSet struct {
 	Tests, SSHTests [][]byte
-	Doc             *acl.Doc
-	WithSSHCanary   bool // acl_test's SSH path appends an sshTests canary of its own
+	// TestAt and SSHTestAt are where each entry of Tests and SSHTests starts in the file, in the
+	// lines and columns the file's problems use, so that a reader of the set can name an entry
+	// without repeating a word of it.
+	TestAt, SSHTestAt []filePos
+	Doc               *acl.Doc
+	WithSSHCanary     bool // acl_test's SSH path appends an sshTests canary of its own
 }
+
+// filePos is a line and a column of a text, 1-based, counted as the file's problems count them.
+type filePos struct{ Line, Column int }
 
 // parseInvariants reads an invariants file: a HuJSON object with optional tests and
 // sshTests arrays in the policy's own syntax and no other key. A marker of a pseudonym
@@ -639,15 +646,15 @@ func parseInvariants(ctx context.Context, text string) (*invariantSet, []ACLProb
 		}
 		for i := range list.Elements {
 			el := &list.Elements[i]
+			l, c := d.Position(el.StartOffset)
 			if _, ok := el.Value.(*hujson.Object); !ok {
-				l, c := d.Position(el.StartOffset)
 				problems = append(problems, problem(kindStructure, l, c, fmt.Sprintf("/%s/%d", sec.Name, i), "a test is an object"))
 				continue
 			}
 			if sec.Name == "tests" {
-				set.Tests = append(set.Tests, el.Pack())
+				set.Tests, set.TestAt = append(set.Tests, el.Pack()), append(set.TestAt, filePos{l, c})
 			} else {
-				set.SSHTests = append(set.SSHTests, el.Pack())
+				set.SSHTests, set.SSHTestAt = append(set.SSHTests, el.Pack()), append(set.SSHTestAt, filePos{l, c})
 			}
 		}
 	}

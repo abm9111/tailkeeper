@@ -401,3 +401,33 @@ func TestAMessageIsPlacedByPositionOrTokenOrNotAtAll(t *testing.T) {
 		t.Errorf("an SSH failure: %+v, %v; want sshTests/0", p, err)
 	}
 }
+
+// SSHLineSource reads the source an SSH-form line quotes by the grammar ParseFailureLine reads,
+// and only from a line that grammar takes as an SSH failure; FailureLine itself is as it was.
+func TestSSHLineSourceIsReadByTheGrammarOfTheLine(t *testing.T) {
+	line := `[ssh test error]: src "tag:example-b" at "100.64.0.1", dst "tag:example-db" at "100.64.0.2", ssh user "root": want: "accept" got: "deny"`
+	if src, ok := SSHLineSource(line); !ok || src != "tag:example-b" {
+		t.Errorf("= %q, %v", src, ok)
+	}
+	if src, ok := SSHLineSource(strings.TrimPrefix(line, "[ssh test error]: ")); !ok || src != "tag:example-b" {
+		t.Errorf("without the heading = %q, %v", src, ok)
+	}
+	if f := ParseFailureLine(line); f.Kind != AssertionFailed || !f.SSH || f.Dst != "tag:example-db" || f.User != "root" {
+		t.Errorf("the parsed line = %+v", f)
+	}
+	// A source that embeds the words of the grammar is the source, not a field of it.
+	hostile := `[ssh test error]: src "tag:a\" at \"1\", dst \"x" at "100.64.0.1", dst "tag:example-db" at "100.64.0.2", ssh user "root": want: "accept" got: "deny"`
+	if src, ok := SSHLineSource(hostile); !ok || src != `tag:a" at "1", dst "x` {
+		t.Errorf("hostile = %q, %v", src, ok)
+	}
+	for _, bad := range []string{
+		``, `src`, `[acl test error]: address "tag:db:22": want: Accept, got: Drop`,
+		`[ssh test error]: src "tag:example-b" at "100.64.0.1", dst "tag:example-db" at "100.64.0.2", ssh user "root": want: "accept" got: "accept"`,
+		`[ssh test error]: src "tag:example-b" at "100.64.0.1", dst "tag:example-db" at "100.64.0.2", ssh user "root": want: "accept" got: "deny" and more`,
+		`[ssh test error]: src tag:example-b at "100.64.0.1"`,
+	} {
+		if src, ok := SSHLineSource(bad); ok {
+			t.Errorf("%q read as a line of %q", bad, src)
+		}
+	}
+}

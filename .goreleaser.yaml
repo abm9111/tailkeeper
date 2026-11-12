@@ -29,8 +29,19 @@ builds:
       - goos: windows
         goarch: arm64
 
+universal_binaries:
+  - id: tailkeeper_mcpb
+    ids: [tailkeeper]
+    name_template: tailkeeper
+    replace: false
+    mod_timestamp: "{{ .CommitTimestamp }}"
+    hooks:
+      post:
+        - cmd: 'go run ./scripts/mcpb.go build -version "{{ .Version }}" -universal "{{ .Path }}" -root "." -out "dist/tailkeeper_{{ .Version }}_darwin_universal.mcpb"'
+
 archives:
   - id: default
+    ids: [tailkeeper]
     formats: [tar.gz]
     format_overrides:
       - goos: windows
@@ -47,6 +58,8 @@ archives:
 checksum:
   name_template: checksums.txt
   algorithm: sha256
+  extra_files:
+    - glob: "dist/tailkeeper_{{ .Version }}_darwin_universal.mcpb"
 
 # One CycloneDX SBOM per archive, written by syft.
 sboms:
@@ -54,7 +67,15 @@ sboms:
     artifacts: archive
     documents:
       - "{{ .ArtifactName }}.sbom.cdx.json"
-    args: ["$artifact", "--output", "cyclonedx-json=$document"]
+    cmd: go
+    args: ["run", "../scripts/mcpb.go", "archive-sbom", "-archive", "$artifact", "-dist", ".", "-out", "$document", "-syft", "syft"]
+
+  - id: mcpb
+    artifacts: any
+    cmd: go
+    documents:
+      - "tailkeeper_{{ .Version }}_darwin_universal.mcpb.sbom.cdx.json"
+    args: ["run", "../scripts/mcpb.go", "sbom", "-bundle", "tailkeeper_{{ .Version }}_darwin_universal.mcpb", "-out", "$document", "-syft", "syft"]
 
 # A keyless cosign bundle over the checksums file: it covers every archive and
 # SBOM, because each is listed in checksums.txt with its SHA-256.
@@ -73,6 +94,8 @@ release:
   draft: true
   prerelease: auto
   mode: replace
+  extra_files:
+    - glob: "dist/tailkeeper_{{ .Version }}_darwin_universal.mcpb"
   footer: |
     Verify a download before you run it: see "Verify a release" in README.md.
 

@@ -288,3 +288,57 @@ func TestNoShapeThatIsNotAPassReadsAsAPassThroughTheClient(t *testing.T) {
 		}
 	}
 }
+
+// SendOnce is Send with no retry: a caller that promises a number of validation requests on the
+// wire uses it. Whatever the endpoint answers, one POST goes out, and a transient failure is
+// returned as the error of that attempt. Send, which retries, still does.
+func TestSendOnceMakesOnePostWhateverTheEndpointAnswers(t *testing.T) {
+	down := func(status int) apitest.Shape {
+		return apitest.Shape{Endpoint: apitest.EndpointValidate, Status: status, Header: map[string]string{"Content-Type": "application/json"}, Body: `{"message":"down"}`}
+	}
+	cases := []struct {
+		name   string
+		shapes []apitest.Shape
+		code   tkerr.Code
+	}{
+		{"a 500 then a pass", []apitest.Shape{apitest.PolicyServerError500(), apitest.TestsPassEmptyObject()}, tkerr.PolicyRejectedOrServerError},
+		{"a 503 then a pass", []apitest.Shape{down(503), apitest.TestsPassEmptyObject()}, tkerr.UpstreamUnavailable},
+		{"a 429 then a pass", []apitest.Shape{down(429), apitest.TestsPassEmptyObject()}, tkerr.APIRateLimited},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			f := apitest.New(t)
+			calls := answers(f, c.shapes...)
+			client := f.Client(t)
+			call, err := client.BeginValidate(context.Background(), 2)
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer call.End()
+			v, err := call.SendOnce([]byte(emptyPolicy))
+			if tkerr.From(err).Code != c.code || v.Status == api.PolicyPass || calls.Load() != 1 {
+				t.Errorf("= %+v, %v after %d requests, want %s after exactly 1", v, err, calls.Load(), c.code)
+			}
+			// The same call may still Send (and retry) with its other token.
+			v, err = call.Send([]byte(emptyPolicy))
+			if err != nil || v.Status != api.PolicyPass || calls.Load() != 2 {
+				t.Errorf("Send after SendOnce = %+v, %v after %d requests, want a pass on the second request", v, err, calls.Load())
+			}
+		})
+	}
+	t.Run("a call sends no more than it reserved", func(t *testing.T) {
+		f := apitest.New(t)
+		answers(f, apitest.TestsPassEmptyObject(), apitest.TestsPassEmptyObject())
+		call, err := f.Client(t).BeginValidate(context.Background(), 1)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer call.End()
+		if _, err := call.SendOnce([]byte(emptyPolicy)); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := call.SendOnce([]byte(emptyPolicy)); tkerr.From(err).Code != tkerr.Internal {
+			t.Errorf("a second send on one token: %v", err)
+		}
+	})
+}

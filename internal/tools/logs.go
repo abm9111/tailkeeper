@@ -679,6 +679,32 @@ func auditLog(ctx context.Context, env *registry.Env, in AuditLogInput) (AuditLo
 	return out, nil
 }
 
+// previewMax is the byte cap on the preview of an audit value.
+const previewMax = 256
+
+// rawDigest is the digest a result shows of bytes it does not otherwise show, by the one rule
+// the digests of a policy follow: with personalData show, the plain SHA-256 ("sha256:" and the
+// hex hash); while personal data is masked, the keyed digest ("hmac-sha256:" and the hex HMAC)
+// when a privacy key is loaded, and none when no key is, since an unkeyed hash confirms a
+// guessed value. The audit log's digests and the intent file's are made here.
+func rawDigest(env *registry.Env, b []byte) string {
+	switch {
+	case env.ShowPersonalData():
+		sum := sha256.Sum256(b)
+		return "sha256:" + hex.EncodeToString(sum[:])
+	case env != nil && env.Privacy != nil:
+		return env.Privacy.Digest(b)
+	}
+	return ""
+}
+
+// ShortDigest is the first n hexadecimal digits of a digest a result shows, whichever kind it
+// is ("sha256:..." or "hmac-sha256:..."); none for no digest.
+func ShortDigest(d string, n int) string {
+	d = d[strings.LastIndex(d, ":")+1:]
+	return d[:min(n, len(d))]
+}
+
 // digestPreview returns a digest of a raw JSON value and a short preview of it
 // (spec Appendix C). The digest is over the raw value; the preview is not: values
 // under credential-named keys are removed from it and every URL is cut to its host,
@@ -686,26 +712,22 @@ func auditLog(ctx context.Context, env *registry.Env, in AuditLogInput) (AuditLo
 // leave a piece of it. While masking is on, the digest is keyed, or left out when
 // no key is loaded, since an unkeyed hash confirms a guessed value; and the preview
 // is masked before it is capped, which would otherwise leave an address too short
-// to recognise.
+// to recognise. A preview longer than the masking window (64 KiB) is masked from its
+// first part only (sanitize.Masker.TextCapped), so that a value of megabytes costs what the
+// window costs.
 func digestPreview(raw json.RawMessage, env *registry.Env, wantPreview bool) (string, string) {
 	if len(raw) == 0 || string(raw) == "null" {
 		return "", ""
 	}
-	digest := ""
-	if env.ShowPersonalData() {
-		sum := sha256.Sum256(raw)
-		digest = "sha256:" + hex.EncodeToString(sum[:])
-	} else if env.Privacy != nil {
-		digest = env.Privacy.Digest(raw)
-	}
+	digest := rawDigest(env, raw)
 	if !wantPreview {
 		return digest, ""
 	}
 	preview := cutURLs(previewText(raw))
 	if !env.ShowPersonalData() {
-		preview = env.Masker().Text(preview)
+		preview = env.Masker().TextCapped(preview, previewMax)
 	}
-	return digest, sanitize.String(preview, 256)
+	return digest, sanitize.String(preview, previewMax)
 }
 
 // previewText is a value as text: a string is its content, with credential-named

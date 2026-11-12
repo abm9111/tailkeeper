@@ -114,3 +114,35 @@ func TestTheNameRulesApplyOnlyOnWindows(t *testing.T) {
 		}
 	}
 }
+
+// NameProblem is the name check of a reader that does not go through Read (the readers of
+// credential files): the Windows rules on Windows, nothing elsewhere. nameProblemFor runs the
+// Windows rules on every platform, so they are tested here and not only on a Windows runner.
+func TestNameProblemAppliesTheWindowsRulesOnWindowsOnly(t *testing.T) {
+	for p, want := range map[string]string{
+		`\\server\share\key`: "UNC paths",
+		`\\?\C:\key`:         "UNC paths",
+		`\\.\COM1`:           "UNC paths",
+		`C:\keys\NUL`:        "device names",
+		`C:\keys\key.env:s`:  "alternate data streams",
+	} {
+		if got := nameProblemFor("windows", p); !strings.Contains(got, want) || got != windowsNameProblem(p) {
+			t.Errorf("nameProblemFor(windows, %q) = %q, want %q (the reason windowsNameProblem gives)", p, got, want)
+		}
+		if got := nameProblemFor("linux", p); got != "" {
+			t.Errorf("nameProblemFor(linux, %q) = %q, no name is refused off Windows", p, got)
+		}
+		wantHere := ""
+		if runtime.GOOS == "windows" {
+			wantHere = windowsNameProblem(p)
+		}
+		if got := NameProblem(p); got != wantHere {
+			t.Errorf("NameProblem(%q) = %q on %s, want %q", p, got, runtime.GOOS, wantHere)
+		}
+	}
+	for _, p := range []string{`C:\keys\key.env`, `/home/me/key.env`, `key.env`} {
+		if got := NameProblem(p); got != "" {
+			t.Errorf("NameProblem(%q) = %q, want none", p, got)
+		}
+	}
+}

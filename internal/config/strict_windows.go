@@ -40,6 +40,11 @@ func OwnedBy(_ ...int) func(path string, opened os.FileInfo) error {
 // CheckSecretFile on Windows has the same limits as CheckOwnership.
 func CheckSecretFile(path string) error { return CheckOwnership(path) }
 
+// Windows retains regular-file checks without an owner/ACL confidentiality claim.
+func checkSecretFileInfo(path string, fi os.FileInfo) error {
+	return OwnedBy()(path, fi)
+}
+
 // sameChangeTime is true on Windows: Go's FileInfo carries no change time there, so
 // readChecked compares the identity, kind, mode, size and modification time only.
 func sameChangeTime(_, _ os.FileInfo) bool { return true }

@@ -21,7 +21,9 @@ import (
 	"github.com/abm9111/tailkeeper/internal/config"
 	"github.com/abm9111/tailkeeper/internal/creds"
 	"github.com/abm9111/tailkeeper/internal/privacy"
+	"github.com/abm9111/tailkeeper/internal/registry"
 	"github.com/abm9111/tailkeeper/internal/tkerr"
+	"github.com/abm9111/tailkeeper/internal/tools"
 )
 
 func code(err error) tkerr.Code {
@@ -64,8 +66,25 @@ func TestNoConfigurationKeepsLocalToolsAvailable(t *testing.T) {
 	if code(a.Env.APIErr) != tkerr.ConfigMissing || code(a.Env.LocalErr) != tkerr.LocalBinaryMissing {
 		t.Fatalf("APIErr = %v, LocalErr = %v", a.Env.APIErr, a.Env.LocalErr)
 	}
-	if len(a.Registry.All()) != 46 {
+	if len(a.Registry.All()) != 48 {
 		t.Errorf("registry has %d tools", len(a.Registry.All()))
+	}
+}
+
+// The registry the app builds is the one the MCP server is made from. The tools of the owner's
+// command line alone are not in it, whatever the configuration.
+func TestTheAppRegistryHoldsNoOwnerTool(t *testing.T) {
+	for _, body := range []string{"", envConfig} {
+		a, err := Build(context.Background(), Options{Dirs: dirs(t, body), Stat: noCLI})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, ok := a.Registry.Get("security_explain"); ok {
+			t.Error("security_explain is in the app's registry, from which the MCP server is built")
+		}
+		if len(a.Registry.All()) != 48 {
+			t.Errorf("registry has %d tools, want the 48 it had", len(a.Registry.All()))
+		}
 	}
 }
 
@@ -158,6 +177,46 @@ func TestConnectPassesTheConfiguredValidateRate(t *testing.T) {
 	}
 	if _, err := b.Env.API.ValidateTests(context.Background(), tests); code(err) != tkerr.ValidateRateLimited {
 		t.Errorf("the 31st call: %v", err)
+	}
+}
+
+// The read line of the owner's security explanation carries where the intent came from, the start
+// of its digest and the counts; a field of any other name is dropped.
+func TestRecordKeepsTheFieldsOfTheExplanationAndNothingElse(t *testing.T) {
+	f := apitest.New(t)
+	env := map[string]string{creds.EnvClientID: apitest.ClientID, creds.EnvClientSecret: apitest.ClientSecret}
+	d := dirs(t, envConfig)
+	a, err := Build(context.Background(), Options{Dirs: d, Stat: noCLI, Getenv: func(k string) string { return env[k] },
+		API: api.Options{BaseURL: f.URL(), Sleep: func(context.Context, time.Duration) error { return nil }}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	out := tools.SecurityExplainOutput{Intent: tools.SecurityExplainIntent{Source: "cli", Revision: "0123456789ab"},
+		Counts: tools.SecurityExplainCounts{Total: 5, Met: 1, Unmet: 1, Unknown: 1, MetWithLimits: 1, NotEvaluated: 1}}
+	fields := out.AuditFields()
+	fields["tool"] = "security_explain"
+	fields["source"], fields["path"], fields["policy"], fields["login"] = "SRC-CANARY", "PATH-CANARY", "POLICY-CANARY", "LOGIN-CANARY"
+	if err := a.Record(fields); err != nil {
+		t.Fatal(err)
+	}
+	data, err := os.ReadFile(filepath.Join(d.Logs, "audit.jsonl"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var line map[string]any
+	if err := json.Unmarshal([]byte(strings.TrimSpace(string(data))), &line); err != nil {
+		t.Fatal(err)
+	}
+	for k, want := range map[string]any{"intent": "cli", "digest": "0123456789ab", "expectations": float64(5), "met": float64(1), "unmet": float64(1),
+		"unknown": float64(1), "limited": float64(1), "not_evaluated": float64(1), "tool": "security_explain"} {
+		if line[k] != want {
+			t.Errorf("%s = %v, want %v", k, line[k], want)
+		}
+	}
+	for _, bad := range []string{"SRC-CANARY", "PATH-CANARY", "POLICY-CANARY", "LOGIN-CANARY"} {
+		if strings.Contains(string(data), bad) {
+			t.Errorf("the audit line holds %q: %s", bad, data)
+		}
 	}
 }
 
@@ -288,9 +347,9 @@ func TestBuildLoadsThePrivacyKeyEvenWithoutACredential(t *testing.T) {
 }
 
 // The file provider's credential file is read through config.ReadSecretFile, which
-// checks and reads one file; Options.ReadFile, the by-path reader that follows a
-// separate check, is not used for it. A test with fakes cannot tell the two apart,
-// so this one reads a real file.
+// checks and reads one file; Options defaults to that checked reader.
+// A test with fakes cannot show that the check runs, so this one reads a real file: it is
+// served while its mode is private and refused once it is not.
 func TestFileProviderReadsItsCredentialThroughReadSecretFile(t *testing.T) {
 	f := apitest.New(t)
 	credPath := filepath.Join(t.TempDir(), "read.env")
@@ -299,18 +358,180 @@ func TestFileProviderReadsItsCredentialThroughReadSecretFile(t *testing.T) {
 		t.Fatal(err)
 	}
 	cfg := fmt.Sprintf(`{"contexts": {"test": {"tailnetId": "T1234CNTRL", "credentials": {"read": {"provider": "file", "path": %q}}}}}`, credPath)
-	var byPath []string
-	a, err := Build(context.Background(), Options{Dirs: dirs(t, cfg), Stat: noCLI,
-		Getenv:   func(string) string { return "" },
-		ReadFile: func(p string) ([]byte, error) { byPath = append(byPath, p); return os.ReadFile(p) },
-		API:      api.Options{BaseURL: f.URL(), Sleep: func(context.Context, time.Duration) error { return nil }}})
-	if err != nil {
-		t.Fatal(err)
+	build := func() *App {
+		t.Helper()
+		a, err := Build(context.Background(), Options{Dirs: dirs(t, cfg), Stat: noCLI,
+			Getenv: func(string) string { return "" },
+			API:    api.Options{BaseURL: f.URL(), Sleep: func(context.Context, time.Duration) error { return nil }}})
+		if err != nil {
+			t.Fatal(err)
+		}
+		return a
 	}
+	a := build()
 	if a.Env.APIErr != nil || a.CredKind != creds.KindOAuth || a.Provider.Provider != "file" {
 		t.Fatalf("APIErr = %v, kind %q, provider %q", a.Env.APIErr, a.CredKind, a.Provider.Provider)
 	}
-	if len(byPath) != 0 {
-		t.Errorf("the credential file was read by path through Options.ReadFile: %v", byPath)
+	if runtime.GOOS == "windows" {
+		return // Windows has no strict mode until Windows hardened mode (spec section 4)
+	}
+	if err := os.Chmod(credPath, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if a = build(); code(a.Env.APIErr) != tkerr.ConfigUnsafe {
+		t.Errorf("a credential file with mode 0644: APIErr = %v, want config_unsafe from the checked read", a.Env.APIErr)
+	}
+}
+
+// PrivacyState is the one condition for the privacy key: `doctor` reports it and the
+// start-up warnings use it, so that they cannot disagree about what the key amounts to.
+func TestPrivacyStateIsTheOneConditionForTheKey(t *testing.T) {
+	k, err := privacy.Parse(strings.Repeat("5a", 32))
+	if err != nil {
+		t.Fatal(err)
+	}
+	bad := tkerr.New(tkerr.PrivacyKeyUnavailable, "bad", "")
+	show := &config.Loaded{Config: config.Config{PersonalData: config.PersonalDataShow}}
+	for name, c := range map[string]struct {
+		set  func(*App)
+		want PrivacyState
+	}{
+		"nothing loaded":         {func(*App) {}, PrivacyNone},
+		"a key":                  {func(a *App) { a.Env.Privacy = k }, PrivacyLoaded},
+		"a key that failed":      {func(a *App) { a.Env.PrivacyErr = bad }, PrivacyFailed},
+		"a failure beside a key": {func(a *App) { a.Env.Privacy, a.Env.PrivacyErr = k, bad }, PrivacyFailed},
+		"oidc":                   {func(a *App) { a.Provider = config.Provider{Provider: "oidc"} }, PrivacyNotStored},
+		"personal data shown":    {func(a *App) { a.Env.Config = show }, PrivacyUnused},
+		"a failure while shown":  {func(a *App) { a.Env.Config, a.Env.PrivacyErr = show, bad }, PrivacyFailed},
+	} {
+		a := &App{Env: &registry.Env{}, Provider: config.Provider{Provider: "env"}}
+		c.set(a)
+		if got := a.PrivacyState(); got != c.want {
+			t.Errorf("%s: state %d, want %d", name, got, c.want)
+		}
+	}
+}
+
+// Build keeps why a privacy key that looks set did not load, and the notice that says it is
+// there while the key is none with a reason, or when it failed (the notice then says that);
+// not when it loaded, not when personal data is shown and nothing failed (no key is used),
+// not for oidc. The notice holds no value.
+func TestBuildNotesAPrivacyKeyThatLooksSetAndDidNotLoad(t *testing.T) {
+	key := strings.Repeat("5a", 32)
+	shown := `{"contexts": {"test": {"tailnetId": "T1234CNTRL", "credentials": {"read": {"provider": "env"}}}}, "personalData": "show"}`
+	oidc := `{"contexts": {"test": {"tailnetId": "T1234CNTRL", "credentials": {"read": {"provider": "oidc", "clientId": "c"}}}}}`
+	for name, c := range map[string]struct {
+		cfg    string
+		env    map[string]string
+		note   bool
+		notice bool
+	}{
+		"absent":            {envConfig, nil, false, false},
+		"a valid key":       {envConfig, map[string]string{privacy.EnvKey: key}, false, false},
+		"set but empty":     {envConfig, map[string]string{privacy.EnvKey: ""}, true, true},
+		"blank":             {envConfig, map[string]string{privacy.EnvKey: "  "}, true, true},
+		"malformed":         {envConfig, map[string]string{privacy.EnvKey: "short"}, false, true},
+		"empty, data shown": {shown, map[string]string{privacy.EnvKey: ""}, true, false},
+		"empty, oidc":       {oidc, map[string]string{privacy.EnvKey: ""}, false, false},
+	} {
+		a, err := Build(context.Background(), Options{Dirs: dirs(t, c.cfg), Stat: noCLI,
+			Getenv:    func(k string) string { return c.env[k] },
+			LookupEnv: func(k string) (string, bool) { v, ok := c.env[k]; return v, ok }})
+		if err != nil {
+			t.Fatalf("%s: %v", name, err)
+		}
+		if (a.PrivacyNote != "") != c.note {
+			t.Errorf("%s: note %q", name, a.PrivacyNote)
+		}
+		n := a.PrivacyNotice()
+		if (n != "") != c.notice {
+			t.Errorf("%s: notice %q", name, n)
+		}
+		want := "tailkeeper: warning: no privacy key was loaded (TAILKEEPER_PRIVACY_KEY is set but empty)"
+		if name == "malformed" {
+			want = "tailkeeper: the privacy key is malformed or unreadable (privacy_key_unavailable)" // said by the failure branch
+		}
+		if c.notice && (!strings.HasPrefix(n, want) || strings.Contains(n, key)) {
+			t.Errorf("%s: notice %q", name, n)
+		}
+	}
+}
+
+// The real environment is read through os.LookupEnv, so that a variable set to nothing (an
+// unset secret in a workflow, an empty line of an environment file) is told from one that
+// is not there at all.
+func TestBuildSeesAnEmptyPrivacyKeyVariableInTheRealEnvironment(t *testing.T) {
+	for _, name := range []string{creds.EnvClientID, creds.EnvClientSecret, creds.EnvAPIKey, "TAILKEEPER_CONTEXT"} {
+		t.Setenv(name, "")
+	}
+	t.Setenv(privacy.EnvKey, "")
+	a, err := Build(context.Background(), Options{Dirs: dirs(t, envConfig), Stat: noCLI})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(a.PrivacyNote, "TAILKEEPER_PRIVACY_KEY is set but empty") {
+		t.Errorf("a variable set to nothing: note %q", a.PrivacyNote)
+	}
+	if err := os.Unsetenv(privacy.EnvKey); err != nil {
+		t.Fatal(err)
+	}
+	a, err = Build(context.Background(), Options{Dirs: dirs(t, envConfig), Stat: noCLI})
+	if err != nil || a.PrivacyNote != "" {
+		t.Errorf("a variable that is not set: note %q, err %v", a.PrivacyNote, err)
+	}
+}
+
+// A key that is set and failed (malformed, unreadable) is said by the same notice, in the
+// words the MCP server has always used, escaped, with no value; one that failed is not said
+// twice when a note exists; an absent key says nothing.
+func TestPrivacyNoticeSaysAMalformedKeyToo(t *testing.T) {
+	const typed = "zz-not-the-key-zz"
+	_, bad := privacy.Parse(typed)
+	a := &App{Env: &registry.Env{PrivacyErr: bad}, Provider: config.Provider{Provider: "env"}, PrivacyNote: "TAILKEEPER_PRIVACY_KEY is set but empty"}
+	n := a.PrivacyNotice()
+	if !strings.HasPrefix(n, "tailkeeper: the privacy key is malformed or unreadable (privacy_key_unavailable): results are masked without pseudonyms and audit_log leaves out digests: ") ||
+		strings.Contains(n, typed) || strings.Contains(n, "no privacy key was loaded") {
+		t.Errorf("notice = %q", n)
+	}
+	a.Env.PrivacyErr = tkerr.New(tkerr.PrivacyKeyUnavailable, "key file \u202ebad\x1b[2J", "")
+	if n := a.PrivacyNotice(); strings.ContainsAny(n, "\u202e\x1b") || !strings.Contains(n, `\u{202E}bad\u{001B}[2J`) {
+		t.Errorf("the notice prints an invisible character raw, or not escaped: %q", n)
+	}
+	absent := &App{Env: &registry.Env{}, Provider: config.Provider{Provider: "env"}}
+	if n := absent.PrivacyNotice(); n != "" {
+		t.Errorf("an absent key said %q", n)
+	}
+}
+
+// What a malformed key costs depends on the masking mode, and the notice says the cost of the
+// mode in force. With masking on (the default, whether "mask" or nothing is configured),
+// results are masked without pseudonyms and audit_log leaves out its digests. With personalData
+// "show", nothing is masked and no key is used, and audit_log digests are plain SHA-256
+// values, so the notice may not say that results are masked or that digests are left out.
+func TestPrivacyNoticeSaysWhatAMalformedKeyCostsInEachMode(t *testing.T) {
+	const typed = "zz-not-the-key-zz"
+	_, bad := privacy.Parse(typed)
+	withMode := func(mode string) *App {
+		env := &registry.Env{PrivacyErr: bad}
+		if mode != "no configuration" {
+			env.Config = &config.Loaded{Config: config.Config{PersonalData: mode}}
+		}
+		return &App{Env: env, Provider: config.Provider{Provider: "env"}}
+	}
+	const prefix = "tailkeeper: the privacy key is malformed or unreadable (privacy_key_unavailable): "
+	const masked = "results are masked without pseudonyms and audit_log leaves out digests: "
+	for _, mode := range []string{"no configuration", "", config.PersonalDataMask} {
+		n := withMode(mode).PrivacyNotice()
+		if !strings.HasPrefix(n, prefix+masked) || strings.Contains(n, "not masked") || strings.Contains(n, typed) {
+			t.Errorf("masking on (personalData %q): notice %q", mode, n)
+		}
+	}
+	n := withMode(config.PersonalDataShow).PrivacyNotice()
+	if !strings.HasPrefix(n, prefix) || !strings.Contains(n, `personalData is "show"`) || !strings.Contains(n, "results are not masked") ||
+		!strings.Contains(n, "the key is not used") || !strings.Contains(n, "plain SHA-256") {
+		t.Errorf(`personalData "show": notice %q does not say that nothing is masked, that the key is unused and that digests are plain`, n)
+	}
+	if strings.Contains(n, "are masked without") || strings.Contains(n, "leaves out digests") || strings.Contains(n, typed) {
+		t.Errorf(`personalData "show": notice %q says what masking costs, or holds the typed key`, n)
 	}
 }

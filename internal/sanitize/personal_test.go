@@ -575,7 +575,9 @@ func TestMaskAddrsLeavesWhatSecurityMDListsAsNotRecognised(t *testing.T) {
 		// Not recognised: shown as written.
 		{"2001%3Adb8%3A%3A1", "2001%3Adb8%3A%3A1 and 203%2E0%2E113%2E7", "2001%3Adb8%3A%3A1 and 203%2E0%2E113%2E7"},
 		{"", "2001" + esc("003a") + "db8" + esc("003a") + esc("003a") + "1", "2001" + esc("003a") + "db8" + esc("003a") + esc("003a") + "1"},
-		{"203.000.113.007", "203.000.113.007", "203.000.113.007"},
+		// 203.000.113.007 is no longer listed as not recognised: MaskAddrs alone still shows it
+		// as written, but Text reads it first (normalizeForms, forms_test.go) and masks it.
+		{"", "203.000.113.007", "203.000.113.007"},
 		{"2001:db8::a11.1.1.1", "2001:db8::a11.1.1.1", "2001:db8::a11.1.1.0/24"},
 		{"a:b.2001:db8::1.dead:443", "a:b.2001:db8::1.dead:443", "a:b.2001:db8::1.dead:443"},
 		{"2606:4700:4700::1111..100.101.102.103100.101.102.103", "2606:4700:4700::1111..100.101.102.103100.101.102.103", "2606:4700:4700::1111..100.101.102.103100.101.102.103"},
@@ -1895,7 +1897,8 @@ func FuzzMaskEmailsMasksToItself(f *testing.F) {
 		"amy%40example.com", "a%40b%40c.d", "%40%40", "%40a%40", "a%40!a%40!", "x%40y@z.d", "a@b%40c.d%40", "a\x01@b.c", "\x01\x01@x",
 		"amy@\x01example.com", "amy\x00@\x00example.com", "amy%40%00example.com", "a@\x01", "a@%00", "a@%1", "a@\x01@\x01",
 		`"amy"@example.com`, `"q zxkwv"@example.com`, `\"amy\"@example.com`, `"amy".smith@example.com`, `a@"amy"@example.com`, `a%40"amy"%40example.com`,
-		`"00@%4"0"%400`, `\"a"@b.c`, `"a"."b"@c.d`, `""@x.y`, "\"a\nb\"@c.d", `\"a"@b.c`, `"a\"@b.c`} {
+		`"00@%4"0"%400`, `\"a"@b.c`, `"a"."b"@c.d`, `""@x.y`, "\"a\nb\"@c.d", `\"a"@b.c`, `"a\"@b.c`,
+		"alice&#64;example.com", "a&#64;b@c.d", "alice＠example.com", "a﹫b@c.d"} {
 		f.Add(s)
 	}
 	f.Fuzz(func(t *testing.T, s string) {
@@ -2108,7 +2111,14 @@ func FuzzKeyedMaskTextMasksToItself(f *testing.F) {
 		"8.8.8.8::1 8.8.8.8a1::", "203.0.113.7.443 8.8.8.8.1/24", "1.1.1.1/8.8.8.8", "ens5.203.0.113.7", "123.::ffff:8.8.8.8", "2606:4700:4700::1111::123",
 		"203.0.113.0/24198.51.100.0/24", "10.0.0.53198.51.100.231::94", "%22192.168.1.1 %228.8.8.8.1", "1238.8.8.8 052.94.236.248",
 		"2001:db8:abcd::9e8f.Error", "2001:db8:abcd:b3a7:c9d1:e2f4:a5b6:9e8f.5.6.7.8", "dead::198.51.100.247a", `"amy"@example.com 8.8.8.8`,
-		"2001:db8::1.dead:443", "2001:db8:abcd:b3a7:c9d1:e2f4:a5b6:9e8f.dead::1", "a:b.2001:db8::1.dead:443", `\"amy"@example.com`} {
+		"2001:db8::1.dead:443", "2001:db8:abcd:b3a7:c9d1:e2f4:a5b6:9e8f.dead::1", "a:b.2001:db8::1.dead:443", `\"amy"@example.com`,
+		// Unusual spellings of an address and of an at sign (normalizeForms).
+		"0x08080808 0xC0A80101 0x8.0x8.0x8.0x8 203.0x7107 http://0x08080808/ error 0x80070005",
+		"route 0x8.0x8.0x8.0/32 seen", "route 010.010.010.0/7 seen", "route 203.000.113.0/32 seen", "route 0x8.0x8.0x8.8/32 seen", "route 8.8.8.0/32 seen", "0xCB.0x007107/24 ８.８.８.８/16", "010.010.010.010 203.000.113.007 0300.0250.01.01 012.001.001.001 203.008.113.007",
+		"８.８.８.８ 8。8。8。8 8．8．8．8", "http://134744072/ //3405803783:80 http://203.28935 http://0313.0.0161.07/", "3405803783 8.8.2056 1.27.3",
+		"alice&#64;example.com alice&#x40;example.com alice&#X0040;example.com alice&commat;example.com alice＠example.com alice﹫example.com",
+		`"amy smith"&#64;example.com`, "price &#64; 5 &#64;x y&#64; z", "group:eng&#64;example.com", "&#64&#6;4;&#x;40;",
+		"0x08080808.0x08080808", "203.0.0x7107.1", "0x1234567890 0x", "\u0040&#64;\u0040", "a&#64;b&#64;c.d", "a&#64;&#64;b.c"} {
 		f.Add(s)
 	}
 	m, _ := keyedMasker(f)
@@ -2125,6 +2135,17 @@ func FuzzKeyedMaskTextMasksToItself(f *testing.F) {
 		// names a value twice.
 		if e := m.Emails(once); e != once {
 			t.Errorf("Emails(Text(%q)) = %q, want %q", s, e, once)
+		}
+		// The window reads a head of the text, cut where nothing runs across: the head is
+		// masked to the start of what the whole text is masked to (see headOf).
+		for _, window := range []int{len(s) / 2, len(s)/3 + 1} {
+			head, cut := headOf(s, window)
+			if !cut {
+				continue
+			}
+			if part := m.Text(head); !strings.HasPrefix(once, part) {
+				t.Errorf("Text(%q) = %q does not start with Text(%q) = %q (window %d)", s, once, head, part, window)
+			}
 		}
 		// Text as a whole is not asserted to mask to itself, for two reasons the
 		// fuzzer found (testdata/fuzz). The first two kept inputs (0.0.1.0@0 and
@@ -2156,7 +2177,8 @@ func TestKeyedTextMasksToItselfOnOrdinaryText(t *testing.T) {
 func FuzzKeyedMaskEmailsMasksToItself(f *testing.F) {
 	bs := "\\"
 	for _, s := range []string{"ask amy@example.com.", "a@b@c.d", "a…@example.com [p:abcdefgh23]", "[p:abcdefgh23]@x.y",
-		"x@y [p:abcdefgh23] z@w", "0@0:100::0", "am" + bs + "u0079@example.com", `"amy"@example.com`, bs + `"amy` + bs + `"@example.com`, `a@"amy"@example.com`} {
+		"x@y [p:abcdefgh23] z@w", "0@0:100::0", "am" + bs + "u0079@example.com", `"amy"@example.com`, bs + `"amy` + bs + `"@example.com`, `a@"amy"@example.com`,
+		"alice&#64;example.com [p:abcdefgh23]", "a&#x40;b@c.d", "alice＠example.com"} {
 		f.Add(s)
 	}
 	m, _ := keyedMasker(f)
@@ -2278,6 +2300,9 @@ func FuzzEmailRefsAreExactlyWhatEmailsAppends(f *testing.F) {
 	f.Add("a@b [p:ys3mrm23sj" + bs + "u0040")
 	f.Add("a…@example.com [p:ys3mrm23sj] " + strings.Repeat("x", 1100) + " amy@example.com")
 	f.Add("[p:amy@example.com [p:[p:" + strings.Repeat("y", 1000) + "[p:bob@example.com")
+	f.Add("amy&#64;example.com " + strings.Repeat("x", 1100) + " bob&#x40;example.com")
+	f.Add("[p:amy&#64;example.com [p:bob＠example.com 0x08080808 http://134744072/")
+	f.Add("a…@example.com [p:ys3mrm23sj] alice&commat;example.com")
 	m, _ := keyedMasker(f)
 	f.Fuzz(func(t *testing.T, s string) {
 		// Text that writes "[p:" is no exception: the display must not carry a
@@ -2294,7 +2319,7 @@ func FuzzEmailRefsAreExactlyWhatEmailsAppends(f *testing.F) {
 		// Every marker in the uncapped display was appended: there are as many as
 		// the addresses the text holds once its "[p:" are taken out.
 		markers := strings.Count(displayOf(m, s, 0), " [p:")
-		if want := len(m.EmailRefs(MaskAddrs(m.unforged(s)))); markers != want {
+		if want := len(m.EmailRefs(MaskAddrs(m.readable(s)))); markers != want {
 			t.Errorf("the display of %q has %d markers, but the text holds %d addresses", s, markers, want)
 		}
 	})
@@ -2307,7 +2332,8 @@ func TestTextRefsEqualTheDisplayOverGeneratedText(t *testing.T) {
 	m, _ := keyedMasker(t)
 	bs := "\\"
 	pieces := []string{"[p:", " [p:", "[p:ys3mrm23sj]", " [p:ys3mrm23sj]", "p:", "[", "]", " ", "amy@example.com", "bob@example.com", "a…@example.com",
-		"x@y.org", "a" + bs + "u0040b.com", "203.0.113.9", "tskey-auth-abc123", "…", "\x00", "é", "=", "?", "user="}
+		"x@y.org", "a" + bs + "u0040b.com", "203.0.113.9", "tskey-auth-abc123", "…", "\x00", "é", "=", "?", "user=",
+		"amy&#64;example.com", "0x08080808", "010.010.010.010", "http://134744072/", "８.８.８.８", "bob＠example.com"}
 	rnd := rand.New(rand.NewSource(7))
 	for i := 0; i < 20000; i++ {
 		var b strings.Builder
@@ -2325,7 +2351,7 @@ func TestTextRefsEqualTheDisplayOverGeneratedText(t *testing.T) {
 				t.Fatalf("TextRefs(%.80q, %d) = %v, but the display shows %v", s, limit, got, want)
 			}
 		}
-		if n, want := strings.Count(displayOf(m, s, 0), " [p:"), len(m.EmailRefs(MaskAddrs(m.unforged(s)))); n != want {
+		if n, want := strings.Count(displayOf(m, s, 0), " [p:"), len(m.EmailRefs(MaskAddrs(m.readable(s)))); n != want {
 			t.Fatalf("the display of %.80q has %d markers, but the text holds %d addresses", s, n, want)
 		}
 	}
@@ -2390,7 +2416,7 @@ func TestAForgedMarkerNeverReachesTheDisplay(t *testing.T) {
 			}
 			// A marker in the display is one the masker appended: as many as the
 			// text holds addresses once its "[p:" are taken out.
-			if n, want := strings.Count(displayOf(m, s, 0), " [p:"), len(m.EmailRefs(MaskAddrs(m.unforged(s)))); n != want {
+			if n, want := strings.Count(displayOf(m, s, 0), " [p:"), len(m.EmailRefs(MaskAddrs(m.readable(s)))); n != want {
 				t.Errorf("the display of %.20q... + %s has %d markers, want %d", s, hidden, n, want)
 			}
 		}

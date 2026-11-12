@@ -156,8 +156,8 @@ func TestStdioMCPServer(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(tools.Tools) != 44 {
-		t.Errorf("reads profile lists %d tools, want 44", len(tools.Tools))
+	if len(tools.Tools) != 46 {
+		t.Errorf("reads profile lists %d tools, want 46", len(tools.Tools))
 	}
 	res, err := cs.CallTool(ctx, &mcp.CallToolParams{Name: "devices_list", Arguments: map[string]any{}})
 	if err != nil {
@@ -326,10 +326,32 @@ func TestServeGivesInFlightCallsAGrace(t *testing.T) {
 // writeConfig writes the user configuration of the isolated environment env.
 func writeConfig(t *testing.T, env []string, cfg string) {
 	t.Helper()
-	home := strings.TrimPrefix(env[0], "HOME=")
-	cfgDir := filepath.Join(home, ".config", "tailkeeper")
+	vars := map[string]string{}
+	for _, entry := range env {
+		name, value, ok := strings.Cut(entry, "=")
+		if ok {
+			vars[name] = value
+		}
+	}
+	home := vars["HOME"]
+	if runtime.GOOS == "windows" {
+		home = vars["USERPROFILE"]
+	}
+	if home == "" {
+		t.Fatal("isolated environment lacks a home directory")
+	}
+	cfgHome := vars["XDG_CONFIG_HOME"]
+	if cfgHome == "" {
+		cfgHome = filepath.Join(home, ".config")
+	}
+	cfgDir := filepath.Join(cfgHome, "tailkeeper")
 	if runtime.GOOS == "darwin" {
 		cfgDir = filepath.Join(home, "Library", "Application Support", "tailkeeper")
+	} else if runtime.GOOS == "windows" {
+		if vars["AppData"] == "" {
+			t.Fatal("isolated environment lacks AppData")
+		}
+		cfgDir = filepath.Join(vars["AppData"], "tailkeeper")
 	}
 	if err := os.MkdirAll(cfgDir, 0o700); err != nil {
 		t.Fatal(err)

@@ -33,11 +33,26 @@ type Given map[string]bool
 // call will not touch the API.
 type OfflineInput interface{ RunsOffline(g Given) bool }
 
+// ConfigOfflineInput is OfflineInput for an input that cannot say from the flags alone, because
+// the answer is in the loaded configuration (a command that needs a credential only when it has
+// something to ask, and whether it has is a setting). env is the environment the command will run
+// in, with the configuration loaded; the credential is not.
+type ConfigOfflineInput interface {
+	RunsOfflineIn(env *Env, g Given) bool
+}
+
 // Prepared is an input that passed Validate, ready to run.
 type Prepared struct {
-	tool Tool
-	in   reflect.Value // a pointer to the tool's input type
+	tool   Tool
+	in     reflect.Value // a pointer to the tool's input type
+	callID string        // the identifier Run gave the call; empty until it runs
 }
+
+// CallID is the identifier of the call Run made: the one the tool saw (CallOf), which the
+// collect lines of a security collection carry as their parent. A surface puts it on the audit
+// line of the read so the two can be joined. It is empty before Run, and for a call whose
+// source of randomness failed (a record then shows no correlation, never a guessable one).
+func (p *Prepared) CallID() string { return p.callID }
 
 // Tool returns the tool the input was validated for.
 func (p *Prepared) Tool() Tool { return p.tool }
@@ -50,11 +65,19 @@ func (p *Prepared) Input() any { return p.in.Interface() }
 // NeedsCredential says whether running the tool needs the read credential, which
 // for the exec provider means starting its wrapper. g names the CLI flags that
 // were set.
-func (p *Prepared) NeedsCredential(g Given) bool {
+func (p *Prepared) NeedsCredential(g Given) bool { return p.NeedsCredentialIn(nil, g) }
+
+// NeedsCredentialIn is NeedsCredential for a command whose environment is loaded: an input that
+// can tell from the configuration (ConfigOfflineInput) is asked, and the others are asked as
+// NeedsCredential asks them.
+func (p *Prepared) NeedsCredentialIn(env *Env, g Given) bool {
 	switch p.tool.Meta.Credential {
 	case CredRead:
 		return true
 	case CredOptional:
+		if o, ok := p.in.Interface().(ConfigOfflineInput); ok && env != nil {
+			return !o.RunsOfflineIn(env, g)
+		}
 		if o, ok := p.in.Interface().(OfflineInput); ok {
 			return !o.RunsOffline(g)
 		}
@@ -120,14 +143,24 @@ func (p *Prepared) Run(ctx context.Context, env *Env) (out any, err error) {
 			out, err = nil, scrub(err, p.tool.Meta, env)
 		}
 	}()
+	ctx = withCall(ctx, p.tool.Meta.Name)
+	p.callID = CallOf(ctx).ID
 	return p.tool.run(ctx, env, p.in.Elem().Interface())
 }
 
 // Call validates raw JSON arguments and runs the tool: Validate, then Run.
 func (t Tool) Call(ctx context.Context, env *Env, raw json.RawMessage) (any, error) {
+	out, _, err := t.CallWithID(ctx, env, raw)
+	return out, err
+}
+
+// CallWithID is Call that also returns the identifier of the call, for the surface to record
+// it. A call whose arguments were refused never ran and has none.
+func (t Tool) CallWithID(ctx context.Context, env *Env, raw json.RawMessage) (out any, callID string, err error) {
 	p, err := t.validate(env, raw)
 	if err != nil {
-		return nil, err
+		return nil, "", err
 	}
-	return p.Run(ctx, env)
+	out, err = p.Run(ctx, env)
+	return out, p.CallID(), err
 }

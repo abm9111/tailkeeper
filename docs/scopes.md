@@ -10,7 +10,7 @@ tailkeeper needs one OAuth client with read scopes only. Grant every scope below
 | `api_access_tokens:read` |  | `key_get`, `keys_list` |  |  |
 | `auth_keys:read` |  | `key_get`, `keys_list` |  |  |
 | `device_invites:read` | `device_invite_get`, `device_invites_list` |  |  |  |
-| `devices:core:read` | `acl_diff`, `acl_get`, `acl_test`, `acl_validate`, `device_get`, `device_invites_list`, `device_posture_attributes`, `device_routes`, `devices_list` | `settings_get` |  |  |
+| `devices:core:read` | `acl_diff`, `acl_get`, `acl_test`, `acl_validate`, `device_get`, `device_invites_list`, `device_posture_attributes`, `device_routes`, `devices_list`, `security_scan` | `settings_get` |  |  |
 | `devices:posture_attributes:read` | `acl_diff`, `acl_get`, `acl_test`, `acl_validate`, `device_posture_attributes` | `settings_get` |  |  |
 | `devices:routes:read` | `device_routes` |  |  |  |
 | `dns:read` | `dns_get` |  |  |  |

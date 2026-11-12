@@ -63,7 +63,8 @@ func newHarness(t *testing.T, f *apitest.Fake) *harness {
 			}
 			return os.Getenv(k)
 		},
-		Build: func(context.Context, string) (*app.App, error) { return h.app, nil },
+		Build:             func(context.Context, string) (*app.App, error) { return h.app, nil },
+		BuildNoCredential: func(ctx context.Context, name string) (*app.App, error) { return h.r.Build(ctx, name) },
 		Reexec: func(p config.Provider) error {
 			h.reexecProvider = &p
 			return tkerr.New(tkerr.CredentialUnavailable, "re-exec is not possible in tests", "")
@@ -536,8 +537,8 @@ func TestMCPCommandUsesConfiguredProfile(t *testing.T) {
 	if code := h.run("mcp"); code != 0 {
 		t.Fatalf("exit %d: %s", code, h.err)
 	}
-	if listed != 46 || h.out.Len() != 0 {
-		t.Errorf("listed %d tools (want 46 with alpha); stdout must stay empty, got %q", listed, h.out)
+	if listed != 48 || h.out.Len() != 0 {
+		t.Errorf("listed %d tools (want 48 with alpha); stdout must stay empty, got %q", listed, h.out)
 	}
 }
 

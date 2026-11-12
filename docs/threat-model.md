@@ -51,7 +51,7 @@ This is section 3 of the design (`docs/design.md`), published on its own as the 
 **In personal mode:**
 - **Same-user code with a shell.** It can edit the gate configuration and the signer list, delete the kill switch, and reach a write credential through the provider that releases it. Then it can run the whole ceremony itself or call the API directly.
   - Mitigations: run the agent's shell in a sandbox that cannot write tailkeeper's directories or read the secret store (§21 ships the Claude Code sandbox settings); keep credential classes separate (§7); use agent-host deny rules and a hook (§21).
-  - Detection: `audit_reconcile` compares Tailscale's audit log against tailkeeper's plans (§14). How Tailscale attributes OAuth-client actions is a live acceptance item.
+  - Detection: *Planned, not implemented in 0.6.0:* `audit_reconcile` compares Tailscale's audit log against tailkeeper's plans (§14). How Tailscale attributes OAuth-client actions is a live acceptance item.
   - Hardened mode removes this exposure.
 - **Same-user code that drives an interactive approver.** A desktop-automation agent can click a dialog; any process can allocate a pseudo-terminal or answer an MCP elicitation through a permissive host. Plans that grant access, weaken a control or cannot be undone should require a hardware-key signature with a touch (§8.3).
 

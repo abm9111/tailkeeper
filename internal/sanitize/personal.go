@@ -26,7 +26,7 @@ import (
 //     whose next bits hold an IPv4 address), keeping a port; a prefix no narrower
 //     than that network is kept. Tailnet, private, loopback and link-local addresses
 //     are kept. This is a best effort over text: a name written in it, or an address
-//     in an unusual form, is not found.
+//     in a spelling that normalizeForms does not read, is not found.
 //   - `tk:"untrusted,plain"` exempts untrusted text whose addresses are configuration
 //     a diagnosis needs, such as DNS resolvers and routes.
 //   - `tk:"untrusted,emails"` masks only the email addresses in untrusted text whose
@@ -111,14 +111,61 @@ func (m Masker) quotedIdentifier(s string, quoted bool) (out, ref string) {
 
 // Text masks the email addresses and public IP addresses in free text. With a
 // key it first rewrites every "[p:" the text holds (see unforged), so a pseudonym
-// marker in the result is one Text appended and nothing else.
-func (m Masker) Text(s string) string { return m.Emails(MaskAddrs(m.unforged(s))) }
+// marker in the result is one Text appended and nothing else. It then reads the unusual
+// spellings of an IPv4 address and of an at sign as the address and the at sign they
+// denote (see normalizeForms).
+func (m Masker) Text(s string) string { return m.Emails(MaskAddrs(m.readable(s))) }
+
+// TextCapped is Text for free text that a result shows capped at limit bytes (the registry's
+// ResultStringMax, or the 256 of an audit preview), for a caller that masks before it cuts or
+// counts: only the window of the text that headOf keeps is masked, and a notice follows it
+// when the rest was dropped, as in MaskCapped. Text of 64 KiB or less is masked whole, to
+// the text Text returns. limit <= 0 is Text.
+func (m Masker) TextCapped(s string, limit int) string { return m.textWithin(s, limit) }
+
+// textWithin is Text for a string that is shown capped at limit bytes (limit <= 0: no cap,
+// so Text): see maskedWithin.
+func (m Masker) textWithin(s string, limit int) string {
+	masked, _ := m.maskedWithin(s, limit)
+	return masked
+}
+
+// maskedWithin masks the free text s that will be shown capped at limit bytes, and returns
+// the pseudonyms it appended. The work is bounded by the window, not by s: only the part of
+// s that headOf keeps is masked, and when it dropped the rest the truncation notice follows
+// the masked part, so that the cap shows that text was cut even when masking shortened what
+// is left. A string within the window is masked whole, to the text Text returns.
+func (m Masker) maskedWithin(s string, limit int) (string, []string) {
+	head, cut := s, false
+	if limit > 0 {
+		head, cut = headOf(s, maskWindow)
+	}
+	masked, refs := m.emails(MaskAddrs(m.readable(head)))
+	if cut {
+		masked += truncatedSuffix
+	}
+	return masked, refs
+}
+
+// emailsWithin is Emails for a string that is shown capped at limit bytes (limit <= 0: no
+// cap, so Emails), read through the same window as textWithin.
+func (m Masker) emailsWithin(s string, limit int) string {
+	head, cut := s, false
+	if limit > 0 {
+		head, cut = headOf(s, maskWindow)
+	}
+	out := m.Emails(head)
+	if cut {
+		out += truncatedSuffix
+	}
+	return out
+}
 
 // Remask is Text for text a tool already masked with Text: the same scan, so
 // whatever escaping or cutting exposed since is masked too. It does not rewrite
 // "[p:": every marker in text already through Text was appended by it, and the
 // rewrite would destroy them. Only a field tagged premasked is masked this way.
-func (m Masker) Remask(s string) string { return m.Emails(MaskAddrs(s)) }
+func (m Masker) Remask(s string) string { return m.Emails(MaskAddrs(normalizeForms(s))) }
 
 // PolicyText masks the email addresses in text taken from a policy, and nothing else: hosts,
 // CIDRs, tags and groups are the rules and stay whole. With a key it first rewrites every
@@ -358,11 +405,11 @@ func (m Masker) EmailRefs(s string) []string {
 // marker in the display is one Text appended, so what the display shows is
 // exactly what it appended, less what the cap cut.
 func (m Masker) TextRefs(s string, limit int) []string {
-	masked, refs := m.emails(MaskAddrs(m.unforged(s)))
+	masked, refs := m.maskedWithin(s, limit)
 	if len(refs) == 0 {
 		return nil
 	}
-	shown := String(tripwire.Redact(masked), limit)
+	shown := shownUntrusted(masked, limit)
 	var kept []string
 	for _, r := range refs {
 		if !slices.Contains(kept, r) && strings.Contains(shown, privacy.Suffix(r)) {
@@ -1248,230 +1295,395 @@ func partsFrom(s string, p, limit int) int {
 // follow a run that is not read as a prefix, if it ends the run. Nothing is returned when
 // no start reads as an address. depth is 1 for a run, and 0 for glue read as a run: glue
 // is never the whole of its run, and is not read for a glue of its own.
+//
+// The work is done by an atRun: collectEnds lists the places the address may end, and read
+// tries them in order, each with the starts of an address that ends there.
 func maskAt(s string, i, j, k int, bits string, settle bool, depth int) (string, int, found) {
-	ends := []int{j}
+	r := &atRun{s: s, i: i, j: j, k: k, bits: bits, settle: settle, depth: depth, portFrom: -1}
 	// Glue that ends in a colon (depth 0) is the front of a longer run: its eight groups after
 	// a "::" are not an address of their own, as they are where the run ends.
-	open := depth == 0 && j > i && s[j-1] == ':'
-	portFrom := -1     // the ends from here on are those before a colon and a port
-	var stopEnds []int // the ends before a full stop and more, tried when nothing else reads
+	r.open = depth == 0 && j > i && s[j-1] == ':'
+	// The ends are built here and handed to the steps that add to them and read them, and are not
+	// stored in r: the compiler tracks what a struct points to as one, and r holds strings that
+	// leak, so an end kept in r would move the first one off the stack, where it stayed when
+	// this was one function.
+	ends := []int{j}
+	var stopEnds []int
 	if k == j {
-		// A full stop or a colon after an address ends the sentence, not the address; but
-		// an address may end in "::" ("2001:db8::.").
-		if e := trimEnd(s, i, j); e > i && e < j {
-			if j-e > 2 && s[e] == ':' && s[e+1] == ':' {
-				ends = append(ends, e+2)
-			}
-			ends = append(ends, e)
+		ends, stopEnds = r.collectEnds(ends)
+	}
+	res := r.read(ends, stopEnds)
+	return res.out, res.end, res.f
+}
+
+// An atRun is one call of maskAt: the run s[i:j], and, while it is read, what the starts so far
+// have left for later. The places an address may end are kept apart (see maskAt).
+type atRun struct {
+	s        string
+	i, j, k  int
+	bits     string
+	settle   bool
+	depth    int
+	open     bool // glue that ends in a colon, read as a run
+	portFrom int  // the ends from here on are those before a colon and a port; -1 if none
+
+	firstReserved atReserved
+	lateKept      atKept
+	late          atMatch // a public reading that starts after a "::" only because eight groups there end the run (see starts)
+}
+
+// An atReserved is the first reading in the reserved block that the starts made.
+type atReserved struct {
+	saw     bool
+	at, end int
+}
+
+// An atKept is the first reading of an address that locates nobody, in a run that holds
+// two "::", after the first of them (end is 0 if none).
+type atKept struct {
+	at, end int
+	f       found
+}
+
+// An atMatch is a reading f of s[t:e].
+type atMatch struct {
+	t, e int
+	f    found
+}
+
+// An atResult is what maskAt returns.
+type atResult struct {
+	out string
+	end int
+	f   found
+}
+
+// An atStep is what to do after a start has been read.
+type atStep int
+
+const (
+	nextStart atStep = iota // try the next start
+	nextEnd                 // the starts left are not read: go on to the next end
+	finished                // the reading is the result
+)
+
+// collectEnds adds to ends the places an address in the run may end, and returns them with
+// the ends before a full stop and more, and sets portFrom. A full stop or a colon after an
+// address ends the sentence, not the address; but an address may end in "::"
+// ("2001:db8::."). So may an IPv6 address that a port follows, in each of the spellings
+// below.
+func (r *atRun) collectEnds(ends []int) (all, stopEnds []int) {
+	ends = r.addSentenceEnds(ends)
+	ends = r.addFullStopPortEnds(ends)
+	// A second "::" begins text that is no part of an address: "2001:db8::1::5".
+	if e := strings.LastIndex(r.s[r.i:r.j], "::") + r.i; e > r.i && strings.Contains(r.s[r.i:e], "::") {
+		ends = append(ends, e)
+	}
+	// Or one that a port follows after a colon ("2001:db8::1:41641", "2001:db8:::443"), or
+	// after a full stop whatever its length ("2001:db8::1.100022"). These ends come last,
+	// since the run is read whole first: a colon and digits are one more group of the
+	// address where the two make an address ("2001:db8::1:4164"), and the port after it
+	// where they do not.
+	r.portFrom = len(ends)
+	ends = r.addPortEnds(ends)
+	return ends, r.addStopEnds(ends[:r.portFrom])
+}
+
+// addSentenceEnds adds the end before the colons and full stops that end the run, and the
+// end that keeps a "::" among them.
+func (r *atRun) addSentenceEnds(ends []int) []int {
+	s, i, j := r.s, r.i, r.j
+	if e := trimEnd(s, i, j); e > i && e < j {
+		if j-e > 2 && s[e] == ':' && s[e+1] == ':' {
+			ends = append(ends, e+2)
 		}
-		// So may an IPv6 address that a port follows after a full stop, as tcpdump writes
-		// it ("2001:db8::1.443").
-		for _, e := range slices.Clone(ends) {
-			if d := strings.LastIndexByte(s[i:e], '.') + i; d > i && e-d <= 6 && e-d > 1 && digitsEnd(s, d+1) >= e && strings.IndexByte(s[i:d], ':') >= 0 {
-				ends = append(ends, d)
+		ends = append(ends, e)
+	}
+	return ends
+}
+
+// addFullStopPortEnds adds the end before a port after a full stop, as tcpdump writes an
+// IPv6 address ("2001:db8::1.443").
+func (r *atRun) addFullStopPortEnds(ends []int) []int {
+	s, i := r.s, r.i
+	for _, e := range slices.Clone(ends) {
+		if d := strings.LastIndexByte(s[i:e], '.') + i; d > i && e-d <= 6 && e-d > 1 && digitsEnd(s, d+1) >= e && strings.IndexByte(s[i:d], ':') >= 0 {
+			ends = append(ends, d)
+		}
+	}
+	return ends
+}
+
+// addPortEnds adds the ends before a port that follows a colon, or a full stop and more than
+// five digits, to each end so far.
+func (r *atRun) addPortEnds(ends []int) []int {
+	s, i := r.s, r.i
+	for _, e := range slices.Clone(ends) {
+		if c := strings.LastIndexByte(s[i:e], ':') + i; c > i && e-c > 1 && digitsEnd(s, c+1) >= e {
+			ends = append(ends, c)
+			if c-1 > i && s[c-1] == ':' {
+				ends = append(ends, c-1) // a port after "::": the address ends before both colons
 			}
 		}
-		// A second "::" begins text that is no part of an address: "2001:db8::1::5".
-		if e := strings.LastIndex(s[i:j], "::") + i; e > i && strings.Contains(s[i:e], "::") {
-			ends = append(ends, e)
+		if d := strings.LastIndexByte(s[i:e], '.') + i; d > i && e-d > 6 && digitsEnd(s, d+1) >= e && strings.IndexByte(s[i:d], ':') >= 0 {
+			ends = append(ends, d)
 		}
-		// Or one that a port follows after a colon ("2001:db8::1:41641", "2001:db8:::443"), or
-		// after a full stop whatever its length ("2001:db8::1.100022"). These ends come last,
-		// since the run is read whole first: a colon and digits are one more group of the
-		// address where the two make an address ("2001:db8::1:4164"), and the port after it
-		// where they do not.
-		portFrom = len(ends)
-		for _, e := range slices.Clone(ends) {
-			if c := strings.LastIndexByte(s[i:e], ':') + i; c > i && e-c > 1 && digitsEnd(s, c+1) >= e {
-				ends = append(ends, c)
-				if c-1 > i && s[c-1] == ':' {
-					ends = append(ends, c-1) // a port after "::": the address ends before both colons
-				}
-			}
-			if d := strings.LastIndexByte(s[i:e], '.') + i; d > i && e-d > 6 && digitsEnd(s, d+1) >= e && strings.IndexByte(s[i:d], ':') >= 0 {
-				ends = append(ends, d)
-			}
-		}
-		// Or one that a full stop and more follow: a word that starts with a letter a to f is
-		// part of the run ("2001:db8::1.Error"), and so are numbers ("2001:db8::1.5.6"), and a
-		// colon may follow them ("2001:db8::1.dead:443"). A full stop belongs to the literal
-		// only in an IPv4 address at its end, which the whole run is read for first, so the
-		// address ends before the first full stop after its last colon, or after its first.
-		// A colon and a port may stand before the full stop, as they may at the end of the
-		// run ("2001:db8::1:41641.example.com", "2001:db8::1:41641:.Error"): the address
-		// ends before the colons that end it, after the end before the full stop, and then
-		// before the port.
-		// These ends are tried only when no reading above is made, not even a reserved one,
-		// and the run holds no IPv4 address to mask: that one is masked first, and the run
-		// read again ("dead::198.51.100.247a" is not "dead::198" and a tail).
-		addStop := func(e int) {
-			if !slices.Contains(stopEnds, e) {
-				stopEnds = append(stopEnds, e)
-			}
-		}
-		for _, e := range ends[:portFrom] {
-			for _, c := range []int{strings.LastIndexByte(s[i:e], ':'), strings.IndexByte(s[i:e], ':')} {
-				if c >= 0 {
-					if d := strings.IndexByte(s[i+c:e], '.'); d > 0 && !slices.Contains(stopEnds, i+c+d) {
-						stop := i + c + d
-						addStop(stop)
-						if t := trimEnd(s, i, stop); t > i && t < stop {
-							addStop(t)
-							stop = t
-						}
-						if q := strings.LastIndexByte(s[i:stop], ':') + i; q > i && stop-q > 1 && digitsEnd(s, q+1) >= stop {
-							addStop(q)
-							if q-1 > i && s[q-1] == ':' {
-								addStop(q - 1)
-							}
-						}
-					}
-				}
+	}
+	return ends
+}
+
+// addStopEnds lists the ends before a full stop and more, for the ends (those before a
+// port are not among them). A word that starts with a letter a to
+// f is part of the run ("2001:db8::1.Error"), and so are numbers ("2001:db8::1.5.6"), and a
+// colon may follow them ("2001:db8::1.dead:443"). A full stop belongs to the literal
+// only in an IPv4 address at its end, which the whole run is read for first, so the
+// address ends before the first full stop after its last colon, or after its first.
+// A colon and a port may stand before the full stop, as they may at the end of the
+// run ("2001:db8::1:41641.example.com", "2001:db8::1:41641:.Error"): the address
+// ends before the colons that end it, after the end before the full stop, and then
+// before the port.
+// These ends are tried only when no reading above is made, not even a reserved one,
+// and the run holds no IPv4 address to mask: that one is masked first, and the run
+// read again ("dead::198.51.100.247a" is not "dead::198" and a tail).
+func (r *atRun) addStopEnds(ends []int) []int {
+	var stopEnds []int
+	for _, e := range ends {
+		for _, c := range []int{strings.LastIndexByte(r.s[r.i:e], ':'), strings.IndexByte(r.s[r.i:e], ':')} {
+			if c >= 0 {
+				stopEnds = r.addStopEndsAfter(stopEnds, e, c)
 			}
 		}
 	}
-	// The text after the address is masked as text: an IPv4 address in it, with the bits
-	// that follow the run if it ends the run, is cut to its network (see
-	// maskIPv4WithinBits). Then the bits are used, and the end is theirs.
-	tail := func(e int) (string, int) {
-		out, usedBits := maskIPv4WithinBits(s[e:j], bits)
-		if usedBits {
-			return out, j + len(bits)
-		}
-		return out, j
+	return stopEnds
+}
+
+// addStopEndsAfter adds to stopEnds the ends for the first full stop after the colon at i+c of s[i:e]:
+// the full stop, the end without the colons and full stops before it, and the ends before a
+// port that stands before them.
+func (r *atRun) addStopEndsAfter(stopEnds []int, e, c int) []int {
+	s, i := r.s, r.i
+	d := strings.IndexByte(s[i+c:e], '.')
+	if d <= 0 || slices.Contains(stopEnds, i+c+d) {
+		return stopEnds
 	}
-	// atMasked is the text for the public reading f of s[t:e].
-	atMasked := func(t, e int, f found) (string, int, found) {
-		rest, end := tail(e)
-		out := maskGlue(s, i, t, depth, f.dotted) + f.text + rest
-		if settle && !f.dotted && t > i && (s[t-1] == ':' || hexVal(s[t-1]) >= 0) {
-			// "dead:" and eight groups is no address, so the eight were masked on
-			// their own; but "dead:2001:db8:abcd::/48" is one, and the next scan
-			// would cut it to "dead:2001:db8::/48". The same holds where the label
-			// runs into the first group ("0" and "226:fe80::/48" make the group 0226,
-			// which a scan writes as 226). Settle on that now. It is for IPv6 only:
-			// a second scan of a masked IPv4 prefix has nothing to add, and reads it
-			// without the name that it was read behind.
-			out = maskAddrs(out, false)
-		}
-		return out, max(end, k), f
+	stop := i + c + d
+	stopEnds = addStop(stopEnds, stop)
+	if t := trimEnd(s, i, stop); t > i && t < stop {
+		stopEnds = addStop(stopEnds, t)
+		stop = t
 	}
-	sawReserved, reservedAt, reservedEnd := false, k, k
-	lateKept, lateKeptEnd, lateKeptFound := -1, 0, found{}
-	// stopRead reads the run as ending before a full stop, one of stopEnds:
-	// the reading that is made when nothing else reads, not even a reserved one, and the run
-	// holds no IPv4 address to mask first, which is masked, and the run read again
-	// ("dead::198.51.100.247a" is not "dead::198" and a tail). It reads as the run was read
-	// before eight groups after a "::" were an address, or, with afterColons, only at such a
-	// start.
-	stopRead := func(afterColons bool) (int, int, found, bool) {
-		if len(stopEnds) > 0 && maskIPv4Within(s[i:j]) != s[i:j] {
-			return 0, 0, found{}, false
+	if q := strings.LastIndexByte(s[i:stop], ':') + i; q > i && stop-q > 1 && digitsEnd(s, q+1) >= stop {
+		stopEnds = addStop(stopEnds, q)
+		if q-1 > i && s[q-1] == ':' {
+			stopEnds = addStop(stopEnds, q-1)
 		}
-		for _, e := range stopEnds {
-			for _, t := range starts(s, i, e, j, open || !afterColons) {
-				if afterColons && (t <= i+1 || s[t-1] != ':' || s[t-2] != ':' || strings.Count(s[i:e], "::") >= 2) {
-					continue
-				}
-				f := readAddr(s[t:e])
-				f.start = t
-				if f.reading == masked {
-					return t, e, f, true
-				}
-				if f.reading == kept {
-					break // an address that is kept is not read from behind its first groups
-				}
-			}
-		}
-		return 0, 0, found{}, false
 	}
-	// lateRead is a public reading that starts after a "::" only because the eight groups
-	// there end the run (see starts).
-	type lateRead struct {
-		t, e int
-		f    found
+	return stopEnds
+}
+
+// addStop adds e to the ends before a full stop and more, once.
+func addStop(stopEnds []int, e int) []int {
+	if !slices.Contains(stopEnds, e) {
+		stopEnds = append(stopEnds, e)
 	}
-	var late lateRead
+	return stopEnds
+}
+
+// tail is the text after the address that ends at e, masked as text: an IPv4 address in it,
+// with the bits that follow the run if it ends the run, is cut to its network (see
+// maskIPv4WithinBits). Then the bits are used, and the end is theirs.
+func (r *atRun) tail(e int) (string, int) {
+	out, usedBits := maskIPv4WithinBits(r.s[e:r.j], r.bits)
+	if usedBits {
+		return out, r.j + len(r.bits)
+	}
+	return out, r.j
+}
+
+// atMasked is the result for the public reading f of s[t:e].
+func (r *atRun) atMasked(t, e int, f found) atResult {
+	s := r.s
+	rest, end := r.tail(e)
+	out := maskGlue(s, r.i, t, r.depth, f.dotted) + f.text + rest
+	if r.settle && !f.dotted && t > r.i && (s[t-1] == ':' || hexVal(s[t-1]) >= 0) {
+		// "dead:" and eight groups is no address, so the eight were masked on
+		// their own; but "dead:2001:db8:abcd::/48" is one, and the next scan
+		// would cut it to "dead:2001:db8::/48". The same holds where the label
+		// runs into the first group ("0" and "226:fe80::/48" make the group 0226,
+		// which a scan writes as 226). Settle on that now. It is for IPv6 only:
+		// a second scan of a masked IPv4 prefix has nothing to add, and reads it
+		// without the name that it was read behind.
+		out = maskAddrs(out, false)
+	}
+	return atResult{out, max(end, r.k), f}
+}
+
+// keep is the result for the reading f of s[t:e] that is left as it is: the glue before it is
+// masked, and the text after it.
+func (r *atRun) keep(t, e int, f found) atResult {
+	rest, end := r.tail(e)
+	return atResult{maskGlue(r.s, r.i, t, r.depth, false) + r.s[t:e] + rest + r.s[r.j:r.k], max(end, r.k), f}
+}
+
+// read tries the ends in order, each with the starts of an address that ends there, and,
+// when none of them reads, what the starts left for later.
+func (r *atRun) read(ends, stopEnds []int) atResult {
+	r.firstReserved = atReserved{at: r.k, end: r.k}
+	r.lateKept = atKept{at: -1}
 	for x, e := range ends {
-		multi := strings.Count(s[i:e], "::") >= 2
-		for _, t := range starts(s, i, e, j, open) {
-			var f found
-			if k > j {
-				f = readPrefix(s[t:k])
-			} else {
-				f = readAddr(s[t:e])
-			}
-			f.start = t
-			if portFrom >= 0 && x >= portFrom && f.reading != masked {
-				// A port is the last reading to try: it changes nothing but what it masks, and
-				// an address that is kept ("fd7a:115c:a1e0::1:41641") is not read from behind
-				// its first groups.
-				if f.reading == kept {
-					break
-				}
-				continue
-			}
-			if f.embeds && f.reading != masked && (t > i || e < j || afterEscape(s, i) || depth == 0) {
-				// An IPv4 address inside an IPv6 literal is kept only when the literal
-				// is all there is to the run ("64:ff9b::203.0.113.7"). Behind a label, after
-				// an escape's digits, or before a full stop, the literal is not the whole
-				// run, and the IPv4 address in it is masked as it is anywhere else in the run.
-				continue
-			}
-			switch f.reading {
-			case masked:
-				if !multi && t > i+1 && s[t-1] == ':' && s[t-2] == ':' {
-					// A start after a "::" is listed only for eight groups that end the run, and
-					// the run is read as it was before that first: its front may be an address
-					// that this reading would leave whole ("<eight groups>.5.6::<eight groups>").
-					// The late reading is made when nothing else reads; the next round of
-					// MaskAddrs masks what the front left.
-					if late.e == 0 {
-						late = lateRead{t, e, f}
-					}
-					continue
-				}
-				return atMasked(t, e, f)
-			case kept:
-				if multi && t > i+1 && s[t-1] == ':' && s[t-2] == ':' {
-					// In a run that holds two "::" a reading after the first is one guess among
-					// several: look on for a public one before settling for it.
-					if lateKept < 0 {
-						lateKept, lateKeptEnd, lateKeptFound = t, e, f
-					}
-					continue
-				}
-				rest, end := tail(e)
-				return maskGlue(s, i, t, depth, false) + s[t:e] + rest + s[j:k], max(end, k), f
-			case reserved:
-				if t < reservedAt {
-					reservedAt, reservedEnd = t, e
-				}
-				sawReserved = true
-			}
+		if res, ok := r.readEnd(x, e); ok {
+			return res
 		}
 	}
-	if lateKept >= 0 {
-		rest, end := tail(lateKeptEnd)
-		return maskGlue(s, i, lateKept, depth, false) + s[lateKept:lateKeptEnd] + rest + s[j:k], max(end, k), lateKeptFound
+	return r.fallback(stopEnds)
+}
+
+// readEnd reads the starts of an address that ends at e, the x-th end. It reports whether
+// one of them is the result.
+func (r *atRun) readEnd(x, e int) (atResult, bool) {
+	multi := strings.Count(r.s[r.i:e], "::") >= 2
+	for _, t := range starts(r.s, r.i, e, r.j, r.open) {
+		switch step, res := r.readStart(x, e, t, multi); step {
+		case finished:
+			return res, true
+		case nextEnd:
+			return atResult{}, false
+		}
 	}
-	if sawReserved {
+	return atResult{}, false
+}
+
+// readStart reads s[t:e], or s[t:k] as a prefix, as an address, and says what to do next.
+// multi is whether s[i:e] holds two "::".
+func (r *atRun) readStart(x, e, t int, multi bool) (atStep, atResult) {
+	var f found
+	if r.k > r.j {
+		f = readPrefix(r.s[t:r.k])
+	} else {
+		f = readAddr(r.s[t:e])
+	}
+	f.start = t
+	if r.portFrom >= 0 && x >= r.portFrom && f.reading != masked {
+		// A port is the last reading to try: it changes nothing but what it masks, and
+		// an address that is kept ("fd7a:115c:a1e0::1:41641") is not read from behind
+		// its first groups.
+		if f.reading == kept {
+			return nextEnd, atResult{}
+		}
+		return nextStart, atResult{}
+	}
+	if f.embeds && f.reading != masked && r.literalIsNotTheRun(t, e) {
+		// An IPv4 address inside an IPv6 literal is kept only when the literal
+		// is all there is to the run ("64:ff9b::203.0.113.7"). Behind a label, after
+		// an escape's digits, or before a full stop, the literal is not the whole
+		// run, and the IPv4 address in it is masked as it is anywhere else in the run.
+		return nextStart, atResult{}
+	}
+	switch f.reading {
+	case masked:
+		return r.readMasked(e, t, multi, f)
+	case kept:
+		return r.readKept(e, t, multi, f)
+	case reserved:
+		if t < r.firstReserved.at {
+			r.firstReserved.at, r.firstReserved.end = t, e
+		}
+		r.firstReserved.saw = true
+	}
+	return nextStart, atResult{}
+}
+
+// literalIsNotTheRun reports whether the literal s[t:e] is not all there is to the run.
+func (r *atRun) literalIsNotTheRun(t, e int) bool {
+	return t > r.i || e < r.j || afterEscape(r.s, r.i) || r.depth == 0
+}
+
+// followsColons reports whether the start t follows a "::" that is inside the run.
+func (r *atRun) followsColons(t int) bool {
+	return t > r.i+1 && r.s[t-1] == ':' && r.s[t-2] == ':'
+}
+
+// readMasked handles the public reading f of s[t:e].
+func (r *atRun) readMasked(e, t int, multi bool, f found) (atStep, atResult) {
+	if !multi && r.followsColons(t) {
+		// A start after a "::" is listed only for eight groups that end the run, and
+		// the run is read as it was before that first: its front may be an address
+		// that this reading would leave whole ("<eight groups>.5.6::<eight groups>").
+		// The late reading is made when nothing else reads; the next round of
+		// MaskAddrs masks what the front left.
+		if r.late.e == 0 {
+			r.late = atMatch{t, e, f}
+		}
+		return nextStart, atResult{}
+	}
+	return finished, r.atMasked(t, e, f)
+}
+
+// readKept handles the reading f of s[t:e] of an address that locates nobody.
+func (r *atRun) readKept(e, t int, multi bool, f found) (atStep, atResult) {
+	if multi && r.followsColons(t) {
+		// In a run that holds two "::" a reading after the first is one guess among
+		// several: look on for a public one before settling for it.
+		if r.lateKept.at < 0 {
+			r.lateKept = atKept{t, e, f}
+		}
+		return nextStart, atResult{}
+	}
+	return finished, r.keep(t, e, f)
+}
+
+// fallback is the result when no end and start read as a public address or as one that is
+// kept: what a reading after the first "::" of a run that holds two left, the reserved
+// reading, and the readings that are made when nothing else reads.
+func (r *atRun) fallback(stopEnds []int) atResult {
+	if r.lateKept.at >= 0 {
+		return r.keep(r.lateKept.at, r.lateKept.end, r.lateKept.f)
+	}
+	if r.firstReserved.saw {
 		// What the label's digits and the address read as is left as it is, but not what
 		// comes before the first such reading: "8.8.8.8::1" holds the IPv4 address 8.8.8.8
 		// and the text ::1.
-		rest, end := tail(reservedEnd)
-		return maskGlue(s, i, reservedAt, depth, false) + s[reservedAt:reservedEnd] + rest + s[j:k], max(end, k), found{reading: reserved, start: i}
+		return r.keep(r.firstReserved.at, r.firstReserved.end, found{reading: reserved, start: r.i})
 	}
-	if t, e, f, ok := stopRead(false); ok {
-		return atMasked(t, e, f)
+	if m, ok := r.stopRead(stopEnds, false); ok {
+		return r.atMasked(m.t, m.e, m.f)
 	}
-	if late.e > 0 {
-		return atMasked(late.t, late.e, late.f)
+	if r.late.e > 0 {
+		return r.atMasked(r.late.t, r.late.e, r.late.f)
 	}
-	if t, e, f, ok := stopRead(true); ok {
-		return atMasked(t, e, f)
+	if m, ok := r.stopRead(stopEnds, true); ok {
+		return r.atMasked(m.t, m.e, m.f)
 	}
-	return "", j, found{start: -1}
+	return atResult{"", r.j, found{start: -1}}
+}
+
+// stopRead reads the run as ending before a full stop, one of stopEnds:
+// the reading that is made when nothing else reads, not even a reserved one, and the run
+// holds no IPv4 address to mask first, which is masked, and the run read again
+// ("dead::198.51.100.247a" is not "dead::198" and a tail). It reads as the run was read
+// before eight groups after a "::" were an address, or, with afterColons, only at such a
+// start.
+func (r *atRun) stopRead(stopEnds []int, afterColons bool) (atMatch, bool) {
+	s, i := r.s, r.i
+	if len(stopEnds) > 0 && maskIPv4Within(s[i:r.j]) != s[i:r.j] {
+		return atMatch{}, false
+	}
+	for _, e := range stopEnds {
+		for _, t := range starts(s, i, e, r.j, r.open || !afterColons) {
+			if afterColons && !(r.followsColons(t) && strings.Count(s[i:e], "::") < 2) {
+				continue
+			}
+			f := readAddr(s[t:e])
+			f.start = t
+			if f.reading == masked {
+				return atMatch{t, e, f}, true
+			}
+			if f.reading == kept {
+				break // an address that is kept is not read from behind its first groups
+			}
+		}
+	}
+	return atMatch{}, false
 }
 
 // maskGlue masks what comes before the address that starts at t in the run s[i:j]: the
@@ -1752,12 +1964,21 @@ func Mask(ptr any) { Masker{}.Mask(ptr) }
 // Mask rewrites, in place, the personal data reachable from ptr (a pointer), as
 // described above. PersonalPaths, run at registration, guarantees that every
 // field tagged personal is a string, a pointer to one or a slice of them.
-func (m Masker) Mask(ptr any) {
+func (m Masker) Mask(ptr any) { m.maskTo(ptr, 0) }
+
+// MaskCapped is Mask for a value that Fields then shows with its untrusted strings capped
+// at limit bytes (the registry's Display): the free text of such a string is masked from
+// the part of it that headOf keeps, not from all of it, and a notice follows the part when
+// the rest was dropped. Text under the window is masked exactly as Mask masks it. A field
+// tagged multiline is capped at MaxText, not at limit, and is masked whole as Mask does.
+func (m Masker) MaskCapped(ptr any, limit int) { m.maskTo(ptr, limit) }
+
+func (m Masker) maskTo(ptr any, limit int) {
 	v := reflect.ValueOf(ptr)
 	if v.Kind() != reflect.Pointer || v.IsNil() {
 		panic(fmt.Sprintf("sanitize.Mask: want a non-nil pointer, got %T", ptr))
 	}
-	m.mask(v.Elem(), keep)
+	m.mask(v.Elem(), keep, limit)
 }
 
 type maskMode int
@@ -1770,7 +1991,9 @@ const (
 	maskAgain                  // untrusted text tagged premasked
 )
 
-func (m Masker) mask(v reflect.Value, mode maskMode) {
+// mask masks v in the given mode. limit is the byte cap Fields will put on the strings of
+// untrusted text, or 0 for none: see MaskCapped.
+func (m Masker) mask(v reflect.Value, mode maskMode, limit int) {
 	switch v.Kind() {
 	case reflect.String:
 		if !v.CanSet() {
@@ -1778,17 +2001,17 @@ func (m Masker) mask(v reflect.Value, mode maskMode) {
 		}
 		switch mode {
 		case maskText:
-			v.SetString(m.Text(v.String()))
+			v.SetString(m.textWithin(v.String(), limit))
 		case maskWhole:
 			v.SetString(m.Identifier(v.String()))
 		case maskEmails:
-			v.SetString(m.Emails(v.String()))
+			v.SetString(m.emailsWithin(v.String(), limit))
 		case maskAgain:
 			v.SetString(m.Remask(v.String()))
 		}
 	case reflect.Pointer:
 		if !v.IsNil() {
-			m.mask(v.Elem(), mode)
+			m.mask(v.Elem(), mode, limit)
 		}
 	case reflect.Struct:
 		t := v.Type()
@@ -1797,7 +2020,10 @@ func (m Masker) mask(v reflect.Value, mode maskMode) {
 			if !f.IsExported() {
 				continue
 			}
-			fieldMode := mode
+			fieldMode, fieldLimit := mode, limit
+			if HasTag(f.Tag, "multiline") {
+				fieldLimit = 0 // capped at MaxText by Fields, which is no reason to cut it short here
+			}
 			switch {
 			case HasTag(f.Tag, "personal"):
 				fieldMode = maskWhole
@@ -1810,11 +2036,11 @@ func (m Masker) mask(v reflect.Value, mode maskMode) {
 			case HasTag(f.Tag, "untrusted"):
 				fieldMode = maskText
 			}
-			m.mask(v.Field(i), fieldMode)
+			m.mask(v.Field(i), fieldMode, fieldLimit)
 		}
 	case reflect.Slice, reflect.Array:
 		for i := 0; i < v.Len(); i++ {
-			m.mask(v.Index(i), mode)
+			m.mask(v.Index(i), mode, limit)
 		}
 	case reflect.Map:
 		// Output maps hold scalars (UntrustedPaths refuses others). Values are
@@ -1827,7 +2053,7 @@ func (m Masker) mask(v reflect.Value, mode maskMode) {
 		for iter.Next() {
 			val := reflect.New(v.Type().Elem()).Elem()
 			val.Set(iter.Value())
-			m.mask(val, mode)
+			m.mask(val, mode, limit)
 			fresh.SetMapIndex(iter.Key(), val)
 		}
 		v.Set(fresh)

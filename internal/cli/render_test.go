@@ -125,3 +125,23 @@ func (detailedOut) Details() []string {
 func (detailedOut) Block() (int, string) {
 	return 1, "document ##teamcity[buildProblem description='x']\n"
 }
+
+// A list tagged tk:"none" is printed even when it is empty, as none; one that is not tagged
+// is left out when empty, as before.
+func TestRenderPrintsAnEmptyListTaggedNoneAsNone(t *testing.T) {
+	type out struct {
+		Listed   []string `json:"listed" tk:"none"`
+		Plain    []string `json:"plain"`
+		Filled   []string `json:"filled" tk:"none"`
+		Absent   []string `json:"absent" tk:"none"`
+		Declared string   `json:"declared"`
+	}
+	var b strings.Builder
+	if err := render(&b, out{Listed: []string{}, Plain: []string{}, Filled: []string{"v1", "v2"}, Declared: "x"}); err != nil {
+		t.Fatal(err)
+	}
+	want := "listed: none\nfilled: v1,v2\nabsent: none\ndeclared: x\n"
+	if b.String() != want {
+		t.Errorf("render = %q, want %q", b.String(), want)
+	}
+}

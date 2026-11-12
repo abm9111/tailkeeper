@@ -8,6 +8,7 @@ GOLANGCI    := github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v2.14.0
 ACTIONLINT  := github.com/rhysd/actionlint/cmd/actionlint@v1.7.12
 GORELEASER  := github.com/goreleaser/goreleaser/v2@v2.18.2
 BINDIR      ?= $(HOME)/.local/bin
+TEST_TIMEOUT ?= 300s
 
 .PHONY: build install test cover cover-pkg bench fuzz mutate live probe-acl vet fmt-check lint lint-extra actionlint vuln docs docs-check deps deps-check release-notes-check release-check verify
 
@@ -54,15 +55,11 @@ install:
 # shell must never send the gate to the tailnet your configuration names. Only the
 # live target sets it, and only for its own test run.
 #
-# The timeout of the go test lines below (here and in cover and cover-pkg) is the limit on a
-# hang, not on speed: a slow or busy machine must not read a timeout panic as a failing test.
-# The slowest package under -race is internal/tools, 80 s on an idle machine with 28 cores
-# (87 s with a second full run beside it), then internal/acl at 73 s, internal/sanitize and
-# internal/cli at 65 s and internal/mcpserver at 51 s. The same suite gets 300 s on Linux and
-# 900 s in CI on Windows (.github/workflows/verify.yml), and the local gate gets the Linux
-# figure. TestTheGuardDeadlinesAreUnderTheirTimeouts reads these lines.
+# The package timeout is an aggregate hang guard, not a performance target. CI supplies
+# a larger budget for busy runners; individual performance guards keep their own deadlines.
+# TestTheGuardDeadlinesAreUnderTheirTimeouts checks these bindings and recipes.
 test:
-	env -u TAILKEEPER_LIVE $(GO) test -race -count=1 -timeout 300s ./...
+	env -u TAILKEEPER_LIVE $(GO) test -race -count=1 -timeout "$(TEST_TIMEOUT)" ./...
 
 # Statement coverage of every package by every test, the end-to-end runs of the
 # built binary included (cmd/tailkeeper builds it with -cover when go test collects
@@ -72,7 +69,7 @@ COVER_MIN ?= 90
 
 cover: cover-pkg
 	@root="$$(mktemp -d)" && trap 'rm -rf "$$root"' EXIT && mkdir "$$root/data" && \
-	env -u TAILKEEPER_LIVE $(GO) test -count=1 -timeout 300s -cover -coverpkg=github.com/abm9111/tailkeeper/... ./... -args -test.gocoverdir="$$root/data" && \
+	env -u TAILKEEPER_LIVE $(GO) test -count=1 -timeout "$(TEST_TIMEOUT)" -cover -coverpkg=github.com/abm9111/tailkeeper/... ./... -args -test.gocoverdir="$$root/data" && \
 	$(GO) tool covdata textfmt -i="$$root/data" -o="$$root/cover.out" && \
 	awk -v m="$(COVER_MIN)" 'BEGIN { if (m !~ /^[0-9]+([.][0-9]+)?$$/) { print "COVER_MIN must be a number, not \"" m "\""; bad = 1; exit 2 } } \
 		NR > 1 { stmts[$$1] = $$2; if ($$3 > 0) hit[$$1] = 1 } \
@@ -84,7 +81,7 @@ cover: cover-pkg
 # aggregate figure above would hide. Each package is measured on its own, with only its own
 # tests. Fails closed: a package with no statements in its profile, or whose tests fail,
 # fails the target.
-COVER_PKGS    ?= ./internal/acl ./internal/guard
+COVER_PKGS    ?= ./internal/acl ./internal/guard ./internal/securitypack ./internal/releasebundle
 COVER_PKG_MIN ?= 95
 
 cover-pkg:
@@ -93,7 +90,7 @@ cover-pkg:
 	[ -n "$(strip $(COVER_PKGS))" ] || { echo "cover-pkg: COVER_PKGS names no package"; exit 2; }; \
 	root="$$(mktemp -d)"; trap 'rm -rf "$$root"' EXIT; \
 	for pkg in $(COVER_PKGS); do \
-		env -u TAILKEEPER_LIVE $(GO) test -count=1 -timeout 300s -coverprofile="$$root/cover.out" "$$pkg" || { echo "cover-pkg: the tests of $$pkg failed"; exit 1; }; \
+		env -u TAILKEEPER_LIVE $(GO) test -count=1 -timeout "$(TEST_TIMEOUT)" -coverprofile="$$root/cover.out" "$$pkg" || { echo "cover-pkg: the tests of $$pkg failed"; exit 1; }; \
 		awk -v m="$(COVER_PKG_MIN)" -v p="$$pkg" 'NR > 1 { n += $$2; if ($$3 > 0) c += $$2 } \
 			END { if (n == 0) { print "cover-pkg: " p " has no statements in its profile"; exit 1 } \
 				printf "coverage of %s from its own tests: %.2f%% of %d statements (minimum %s%%)\n", p, 100 * c / n, n, m; exit !(100 * c >= m * n) }' "$$root/cover.out" || exit 1; \
@@ -110,14 +107,14 @@ bench:
 # input is written to testdata/fuzz/<target>/ and fails the run. Fails closed: each
 # package's listing is captured on its own, so a listing that fails (a compile error)
 # fails the run instead of reading as "no targets", and the run fails unless it ran at
-# least FUZZ_MIN targets (eleven exist today). A package with no fuzz target is fine. Not
+# least FUZZ_MIN targets (nineteen exist today). A package with no fuzz target is fine. Not
 # part of verify: it takes minutes and its inputs are random.
 #
 # FUZZ_PKG limits the run to some packages (go list patterns, such as ./internal/acl); the
 # nightly workflow runs one package for each of its jobs and sets FUZZ_MIN to the number
 # of targets that package holds.
 FUZZTIME ?= 20s
-FUZZ_MIN ?= 11
+FUZZ_MIN ?= 19
 FUZZ_PKG ?= ./...
 
 fuzz:
@@ -167,9 +164,9 @@ mutate:
 # scripts/live-check.sh fails the run if a live test skipped (it checked nothing) or
 # did not reach its closing line, and prints only the lines that hold no tailnet value.
 #
-# The go test timeout is 1500s. Each of the 53 calls may take up to 90s (live_test.go),
+# The go test timeout is 1500s. Each of the 55 calls may take up to 90s (live_test.go),
 # so a run in which most calls time out needs longer; a run that runs out of time ends
-# without a pass line, which fails, and the log is withheld. 53 is the most processes a
+# without a pass line, which fails, and the log is withheld. 55 is the most processes a
 # run starts: one for each tool; the calls made on their answers (the version pair's diff,
 # the pseudonym test, an empty patch and a baseline patch); doctor --probe; and two that
 # happen only when they apply: the GitOps oracle's diff (the policy is managed outside the
@@ -218,13 +215,15 @@ vet:
 	GOOS=windows $(GO) vet ./...
 	$(GO) vet scripts/mutate.go
 	$(GO) vet scripts/recipes.go
+	$(GO) vet scripts/mcpb.go
 	GOOS=windows $(GO) vet scripts/mutate.go
 	GOOS=windows $(GO) vet scripts/recipes.go
+	GOOS=windows $(GO) vet scripts/mcpb.go
 
 fmt-check:
 	@out="$$(gofmt -l .)" || exit 1; if [ -n "$$out" ]; then echo "gofmt needed:"; echo "$$out"; exit 1; fi
 
-# staticcheck v0.8.1 cannot read go1.27.3 export data. Lint results do not depend
+# staticcheck v0.8.1 cannot read go1.27.4 export data. Lint results do not depend
 # on the patch release, so it runs under go1.27.1; builds and govulncheck use the
 # toolchain pinned in go.mod.
 lint:
@@ -236,6 +235,7 @@ lint-extra:
 	$(GO) run $(GOLANGCI) run ./...
 	$(GO) run $(GOLANGCI) run scripts/mutate.go
 	$(GO) run $(GOLANGCI) run scripts/recipes.go
+	$(GO) run $(GOLANGCI) run scripts/mcpb.go
 
 # Checks the workflow files: syntax, expressions, permissions and the shell in run:
 # steps; and, with shellcheck itself, the scripts in scripts/. The fenced yaml, sh and

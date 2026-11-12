@@ -1,0 +1,14 @@
+{
+  "manifest_version": "0.3",
+  "name": "tailkeeper",
+  "version": "{{VERSION}}",
+  "description": "Read-only Tailscale tools for MCP clients",
+  "author": {"name": "tailkeeper contributors"},
+  "license": "Apache-2.0",
+  "server": {
+    "type": "binary",
+    "entry_point": "server/tailkeeper",
+    "mcp_config": {"command": "${__dirname}/server/tailkeeper", "args": ["mcp"]}
+  },
+  "compatibility": {"platforms": ["darwin"]}
+}

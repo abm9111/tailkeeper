@@ -413,16 +413,22 @@ func TestTheReadmeToolCountMatchesTheRegistry(t *testing.T) {
 	localN, _ := strconv.Atoi(m[3])
 	reg := registry.New()
 	tools.Register(reg)
-	var api, local, alpha int
+	var api, local, offline, alpha int
 	for _, tool := range reg.All() {
-		if tool.Meta.Area == "local" {
+		switch tool.Meta.Tier {
+		case registry.TierLocal:
 			local++
-		} else {
+		case registry.TierRead:
 			api++
+		case registry.TierOffline:
+			offline++
 		}
 		if tool.Meta.Stage == registry.StageAlpha {
 			alpha++
 		}
+	}
+	if offline != 1 || !strings.Contains(para, "one credential-free build-info tool") {
+		t.Errorf("offline tools: %d; README must name the build-info tool separately", offline)
 	}
 	if apiN != api || localN != local || alphaN != alpha {
 		t.Fatalf("README says %d API tools, %d of them alpha, and %d local tools; registry has %d, %d alpha, and %d", apiN, alphaN, localN, api, alpha, local)

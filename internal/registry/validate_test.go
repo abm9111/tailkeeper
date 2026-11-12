@@ -6,6 +6,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/abm9111/tailkeeper/internal/config"
 	"github.com/abm9111/tailkeeper/internal/tkerr"
 )
 
@@ -155,6 +156,49 @@ func TestNeedsCredential(t *testing.T) {
 		Validate(json.RawMessage(`{"name":"x"}`))
 	if !p.NeedsCredential(Given{"offline": true}) {
 		t.Error("an input without RunsOffline was taken to run offline")
+	}
+}
+
+// configOfflineIn can say only from the configuration that it asks nothing: here, a setting.
+type configOfflineIn struct {
+	Name string `json:"name"`
+}
+
+func (configOfflineIn) RunsOfflineIn(env *Env, g Given) bool { return !g["file"] && env.Config == nil }
+
+func TestNeedsCredentialInAsksTheInputThatReadsTheConfiguration(t *testing.T) {
+	run := func(context.Context, *Env, configOfflineIn) (checkedOut, error) { return checkedOut{}, nil }
+	optional := readMeta("cfg_get", "cfg", "get")
+	optional.Credential = CredOptional
+	p, err := Define(optional, run).Validate(json.RawMessage(`{"name":"x"}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	withConfig := &Env{Config: &config.Loaded{}}
+	for _, c := range []struct {
+		name string
+		env  *Env
+		g    Given
+		want bool
+	}{
+		{"nothing set, no file", &Env{}, nil, false},
+		{"a configuration that names something", withConfig, nil, true},
+		{"a file on the command line", &Env{}, Given{"file": true}, true},
+		{"no environment: asked as NeedsCredential asks", nil, nil, true},
+	} {
+		if got := p.NeedsCredentialIn(c.env, c.g); got != c.want {
+			t.Errorf("%s: NeedsCredentialIn = %v, want %v", c.name, got, c.want)
+		}
+	}
+	// A read tool needs the credential whatever its input says, and a local tool never does.
+	rd, _ := Define(readMeta("rd2_get", "rd2", "get"), run).Validate(json.RawMessage(`{"name":"x"}`))
+	if !rd.NeedsCredentialIn(&Env{}, nil) {
+		t.Error("a read tool was taken to run offline")
+	}
+	local := Meta{Name: "loc2_get", Area: "loc2", Verb: "get", Summary: "s", Tier: TierLocal, Stage: StageGA, Credential: CredNone}
+	lp, _ := Define(local, run).Validate(json.RawMessage(`{"name":"x"}`))
+	if lp.NeedsCredentialIn(withConfig, nil) {
+		t.Error("a local tool needs the credential")
 	}
 }
 

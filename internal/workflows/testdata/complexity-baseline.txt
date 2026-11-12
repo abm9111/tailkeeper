@@ -1,0 +1,99 @@
+# The complexity ratchet's baseline (see complexity_test.go): every function under cmd/ and
+# internal/ that scores above 15, with its score, written when the ratchet was added.
+# One function a line: the score, the file and the function, separated by tabs, sorted by
+# file and then function.
+#
+# This file only shrinks. A function that falls is lowered here (and deleted at 15 or
+# below); a function that rises, or one that is new and above 15, fails the test and is
+# split. Nothing here is raised or added by hand without the owner's ruling, and no flag
+# rewrites it.
+#
+# Score: 1, plus 1 for each if, for, range, case of a switch or select other than default,
+# && and ||; a function literal counts toward the function that holds it. This is the rule
+# of gocyclo, which VIGIL ran with min-complexity 15.
+52	internal/acl/atoms.go	(*atomBuilder).addRule
+22	internal/acl/comments.go	scanText
+18	internal/acl/diff.go	(*comparer).formatCounts
+19	internal/acl/diff.go	(*comparer).page
+27	internal/acl/diff.go	Diff
+44	internal/acl/diff_text.go	(*comparer).materialise
+21	internal/acl/locate.go	Locate
+21	internal/acl/normal.go	(*NormalForm).writeShown
+45	internal/acl/shapes.go	(*nfBuilder).assertions
+29	internal/acl/shapes.go	(*nfBuilder).nodeAttrParts
+16	internal/acl/shapes.go	(*nfBuilder).nodeAttrs
+23	internal/acl/shapes.go	(*nfBuilder).setArray
+28	internal/acl/summary.go	Summarise
+22	internal/acl/summary.go	syncedGroups
+24	internal/acl/transform.go	AppendTests
+17	internal/acl/widening.go	(*comparer).postureRemoved
+59	internal/acl/widening.go	(*comparer).sshWidening
+23	internal/api/apitest/fake.go	(*Fake).serve
+18	internal/api/apitest/spy.go	firstToken
+17	internal/api/client.go	(*Client).do
+18	internal/audit/audit.go	verifyLines
+17	internal/audit/rotate.go	(*Log).Rotate
+24	internal/cli/cli.go	(*Runner).audit
+17	internal/cli/cli.go	(*Runner).doctor
+18	internal/cli/cli.go	(*Runner).run
+45	internal/cli/cli.go	(*Runner).tool
+20	internal/cli/flags.go	(*binding).addCLI
+32	internal/cli/flags.go	(*binding).arguments
+29	internal/cli/flags.go	(*binding).check
+21	internal/cli/flags.go	bind
+25	internal/cli/flags.go	parseCLITag
+30	internal/cli/format_markdown.go	formatMarkdown
+16	internal/cli/format_markdown.go	mdEscape
+24	internal/cli/render.go	renderStruct
+22	internal/config/config.go	(Config).Validate
+18	internal/config/config.go	walkKeys
+17	internal/docsgen/docsgen.go	Markdown
+17	internal/doctor/doctor.go	canaryVerdict
+23	internal/doctor/doctor.go	scopeChecks
+21	internal/doctor/probes_policy.go	kindProbes
+16	internal/doctor/starter.go	WriteStarter
+24	internal/guard/guard.go	Scan
+16	internal/local/runner.go	(*Runner).Run
+23	internal/mcpserver/server.go	New
+20	internal/probe/command.go	command
+21	internal/probe/command.go	parseArgs
+19	internal/probe/probes.go	h1
+17	internal/probe/report.go	Render
+27	internal/registry/registry.go	(*Registry).Add
+18	internal/safefile/safefile.go	windowsNameProblem
+37	internal/sanitize/personal.go	(Masker).emails
+25	internal/sanitize/personal.go	(Masker).mask
+18	internal/sanitize/personal.go	bitsEnd
+21	internal/sanitize/personal.go	endsPublicQuad
+19	internal/sanitize/personal.go	firstIsPublic
+32	internal/sanitize/personal.go	maskWindows
+18	internal/sanitize/personal.go	quotedWord
+36	internal/sanitize/personal.go	starts
+24	internal/sanitize/personal.go	taggedPaths
+20	internal/sanitize/sanitize.go	collect
+19	internal/sanitize/sanitize.go	escape
+16	internal/sanitize/sanitize.go	unsafeRune
+20	internal/sanitize/sanitize.go	walk
+16	internal/skeleton/skeleton.go	(*walker).walk
+59	internal/tools/acl_diff.go	aclDiff
+28	internal/tools/acl_history.go	aclHistory
+19	internal/tools/acl_subjects_subst.go	stringsOf
+19	internal/tools/acl_test_input.go	checkPostureAttrs
+18	internal/tools/acl_test_input.go	splitDestination
+20	internal/tools/acl_test_posture.go	posturesOf
+20	internal/tools/acl_test_ssh.go	deriveSSHVerdicts
+24	internal/tools/acl_test_tool.go	(ACLTestOutput).Report
+17	internal/tools/acl_test_tool.go	(ACLTestOutput).verdictLine
+23	internal/tools/acl_test_tool.go	checkACLTest
+17	internal/tools/acl_test_verdicts.go	deriveVerdicts
+18	internal/tools/acl_validate.go	parseInvariants
+29	internal/tools/acl_validate_online.go	(*validation).online
+16	internal/tools/acl_validate_patch.go	(*validation).prepatch
+26	internal/tools/acl_validate_patch.go	countPatchTests
+16	internal/tools/acl_validate_patch.go	tripwireWhere
+29	internal/tools/devices.go	devicesList
+21	internal/tools/dns_policy.go	readPolicyDNS
+24	internal/tools/local.go	localPing
+16	internal/tools/local.go	localSyspolicy
+44	internal/tools/logs.go	auditLog
+17	internal/tools/logs.go	networkFlowLogs

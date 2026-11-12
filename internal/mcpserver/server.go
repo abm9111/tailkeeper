@@ -124,14 +124,11 @@ func New(a *app.App, o Options) (*mcp.Server, error) {
 		env.API = env.API.WithMaxBody(maxBody)
 	}
 	h := &handler{app: a, env: &env, warn: o.Warn, shutdown: o.Shutdown, slots: make(chan struct{}, maxInFlight)}
-	// A key that is set but malformed or unreadable leaves masking on without
-	// pseudonyms or digests; say so once, since nothing in a result would.
-	if env.PrivacyErr != nil && o.Warn != nil {
-		fe := tkerr.From(env.PrivacyErr)
-		if fe == nil {
-			fe = tkerr.New(tkerr.PrivacyKeyUnavailable, "the privacy key could not be read", "")
-		}
-		o.Warn("tailkeeper: the privacy key is malformed or unreadable (" + string(fe.Code) + "): results are masked without pseudonyms and audit_log leaves out digests: " + sanitize.String(fe.Message, sanitize.DefaultMax))
+	// A key that is set but malformed or unreadable, or that looks set and did not load,
+	// leaves masking on without pseudonyms or digests; say so once, since nothing in a
+	// result would. The command line says the same before each tool command.
+	if n := a.PrivacyNotice(); n != "" && o.Warn != nil {
+		o.Warn(n)
 	}
 	// known holds the URIs registered below. It is filled before New returns and
 	// only read afterwards, so it needs no lock.
@@ -150,7 +147,7 @@ func New(a *app.App, o Options) (*mcp.Server, error) {
 				if t, ok := hiddenByName[r.Params.Name]; ok {
 					err := tkerr.New(tkerr.ToolHidden, t.Meta.Name+" is not advertised by this server: "+hiddenReason(t.Meta, o),
 						"ask the owner to change that setting, or use an advertised tool")
-					h.record(t, requester("mcp", r.Session), time.Now(), nil, err)
+					h.record(t, requester("mcp", r.Session), time.Now(), nil, err, "")
 					return ErrorResult(err), nil
 				}
 			}
@@ -375,23 +372,23 @@ func (h *handler) call(t registry.Tool) mcp.ToolHandler {
 		start := time.Now()
 		if len(req.Params.Arguments) > maxArguments {
 			err := tkerr.New(tkerr.ValidationFailed, "arguments exceed 1 MiB", "")
-			h.record(t, requester("mcp", req.Session), start, nil, err)
+			h.record(t, requester("mcp", req.Session), start, nil, err, "")
 			return ErrorResult(err), nil
 		}
 		free, err := h.acquire(ctx)
 		if err != nil {
-			h.record(t, requester("mcp", req.Session), start, nil, err)
+			h.record(t, requester("mcp", req.Session), start, nil, err, "")
 			return ErrorResult(err), nil
 		}
 		defer free()
-		out, err := t.Call(ctx, h.env, req.Params.Arguments)
+		out, callID, err := t.CallWithID(withCaller(ctx, "mcp", req.Session), h.env, req.Params.Arguments)
 		body, encErr := []byte(nil), error(nil)
 		if err == nil {
 			if body, encErr = json.Marshal(out); encErr != nil {
 				err = tkerr.Wrap(tkerr.Internal, encErr, "cannot encode the result", "")
 			}
 		}
-		h.record(t, requester("mcp", req.Session), start, body, err)
+		h.record(t, requester("mcp", req.Session), start, body, err, callID)
 		if err != nil {
 			return ErrorResult(err), nil
 		}
@@ -484,18 +481,18 @@ func (h *handler) resource(t registry.Tool, uri, input string) mcp.ResourceHandl
 		start := time.Now()
 		free, err := h.acquire(ctx)
 		if err != nil {
-			h.record(t, requester("mcp-resource", req.Session), start, nil, err)
+			h.record(t, requester("mcp-resource", req.Session), start, nil, err, "")
 			return nil, errors.New(errorText(tkerr.From(err)))
 		}
 		defer free()
-		out, err := t.Call(ctx, h.env, args)
+		out, callID, err := t.CallWithID(withCaller(ctx, "mcp-resource", req.Session), h.env, args)
 		var body []byte
 		if err == nil {
 			if body, err = json.Marshal(out); err != nil {
 				err = tkerr.Wrap(tkerr.Internal, err, "cannot encode the result", "")
 			}
 		}
-		h.record(t, requester("mcp-resource", req.Session), start, body, err)
+		h.record(t, requester("mcp-resource", req.Session), start, body, err, callID)
 		if err != nil {
 			return nil, errors.New(errorText(tkerr.From(err)))
 		}
@@ -509,6 +506,14 @@ func (h *handler) resource(t registry.Tool, uri, input string) mcp.ResourceHandl
 		}
 		return &mcp.ReadResourceResult{Contents: contents}, nil
 	}
+}
+
+// withCaller names the caller of the tool calls made under ctx, as the framework sees it: the
+// kind of request and the client's sanitized name. The tool's arguments have no part in it.
+func withCaller(ctx context.Context, kind string, ss *mcp.ServerSession) context.Context {
+	who := requester(kind, ss)
+	client, _ := who["client"].(string)
+	return registry.WithCaller(ctx, registry.Caller{Kind: kind, Client: client})
 }
 
 // requester identifies the caller for the audit log. The client name is chosen by
@@ -532,9 +537,12 @@ func requester(kind string, ss *mcp.ServerSession) map[string]any {
 // each outage: it re-arms when a read is recorded again, so a brief lock timeout
 // cannot use it up before a lasting failure. Calls racing at an outage's start
 // may warn more than once.
-func (h *handler) record(t registry.Tool, who map[string]any, start time.Time, body []byte, err error) {
+func (h *handler) record(t registry.Tool, who map[string]any, start time.Time, body []byte, err error, callID string) {
 	f := map[string]any{"tool": t.Meta.Name, "tier": string(t.Meta.Tier), "requester": who,
 		"ms": time.Since(start).Milliseconds(), "status": "ok", "bytes": len(body)}
+	if callID != "" {
+		f["call"] = callID
+	}
 	if err != nil {
 		f["status"], f["code"] = "error", string(tkerr.From(err).Code)
 	}

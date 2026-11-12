@@ -22,6 +22,7 @@ import (
 	"github.com/abm9111/tailkeeper/internal/local"
 	"github.com/abm9111/tailkeeper/internal/privacy"
 	"github.com/abm9111/tailkeeper/internal/sanitize"
+	"github.com/abm9111/tailkeeper/internal/security"
 	"github.com/abm9111/tailkeeper/internal/tkerr"
 	"github.com/abm9111/tailkeeper/internal/tripwire"
 )
@@ -112,6 +113,16 @@ type Env struct {
 	Privacy    *privacy.Key
 	PrivacyErr error
 	Now        func() time.Time
+	// RecordObservation writes the audit record of one source a security collection reads,
+	// and returns an error when the record is not written. It is required, not best effort:
+	// a collection records an attempt before it asks a source and the outcome after, and
+	// stops at the first record that fails. nil means the surface keeps no such record, and a
+	// collection then refuses to run. The caller, the tool and the call an event belongs to
+	// come from the context, which the framework sets (CallOf); an event carries no text of
+	// the caller's.
+	RecordObservation func(context.Context, security.CollectionEvent) error
+	// RecordPack appends required shape-gated pack metadata for the current call.
+	RecordPack func(context.Context, PackRecord) error
 }
 
 // ResultStringMax is the byte cap on one untrusted string in a result. Pseudonym
@@ -128,11 +139,14 @@ func (e *Env) UntrustedRefs(s string) []string {
 // Display rewrites ptr, which a tool owns, into what a result shows: masked
 // unless the owner opted in, then escaped and capped. Mask comes before the cap:
 // an address cut short by it would no longer parse and would keep its first
-// octets. A tool that needs the bytes a caller will see (a sort key, say) runs it
-// on a deep copy.
+// octets. But it does not read all of a long string: only a bounded window of
+// it (sanitize.MaskCapped), cut where no address, email or credential shape runs
+// across, so that a hostile string of megabytes costs what the window costs and a
+// token the window ends in is dropped whole, never shown half-masked. A tool that
+// needs the bytes a caller will see (a sort key, say) runs it on a deep copy.
 func (e *Env) Display(ptr any) {
 	if !e.ShowPersonalData() {
-		e.Masker().Mask(ptr)
+		e.Masker().MaskCapped(ptr, ResultStringMax)
 	}
 	sanitize.Fields(ptr, ResultStringMax)
 }

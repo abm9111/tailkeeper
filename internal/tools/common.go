@@ -16,6 +16,7 @@ import (
 
 // Register adds every M1 tool to r.
 func Register(r *registry.Registry) {
+	r.MustAdd(selfTools()...)
 	r.MustAdd(deviceTools()...)
 	r.MustAdd(settingsTools()...)
 	r.MustAdd(dnsTools()...)
@@ -26,6 +27,7 @@ func Register(r *registry.Registry) {
 	r.MustAdd(integrationTools()...)
 	r.MustAdd(localTools()...)
 	r.MustAdd(aclTools()...)
+	r.MustAdd(securityTools()...)
 }
 
 func readMeta(name, area, verb, summary string, scopes ...string) registry.Meta {

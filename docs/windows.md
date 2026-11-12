@@ -29,6 +29,8 @@ A path is printed as it was typed, a space included, in the text layout and in M
 
 On Windows the name is refused before the file is opened. Refused: a UNC path; a path whose prefix is `\\?\`, `\\.\` or `\??\` (a `/` counts as a `\`, including a mix of the two); a device name (`CON`, `PRN`, `AUX`, `NUL`, `CONIN$`, `CONOUT$`, `COM` or `LPT` with a digit 0 to 9, and `COM` or `LPT` with a superscript 1, 2 or 3), in any directory, with any extension, in any case; an alternate data stream (a colon after the drive letter). Other platforms do not apply that name check.
 
+The same name check applies to a credential file: the `file` provider's path, a `file:` reference, an OIDC `tokenFile` and the file that holds the privacy key, all read through the checked private-file reader, and to the configuration file when it is read. On Windows such a read is refused with `config_unsafe`, before the file is opened, when its path is a UNC path, a `\\?\`, `\\.\` or `\??\` path, a device name or an alternate data stream. (Before this check only a file given to a command was held to it.)
+
 ## Tests that do not run on Windows
 
 The suite runs on Windows in CI (the `test-os` job). These tests do not run there, each for the reason given. `scripts/windows-skips.sh` compares the first list with the tests that report SKIP in that job, by package and test name, and the job fails when they differ, so the list is kept true; a test that stops skipping, or a new one that skips, must change it. A test in the second list is not compiled on Windows, which `internal/workflows/windows_test.go` checks against the source.
@@ -89,6 +91,7 @@ The suite runs on Windows in CI (the `test-os` job). These tests do not run ther
 - `TestStrictModeChecksTheDirectoryAndSecretModes` (`internal/config`): Windows has no strict mode (`docs/design.md` §4).
 - `TestLoadReadsOnlyTheFileTheCheckApproved` (`internal/config`): Windows has no strict mode (`docs/design.md` §4).
 - `TestReadSecretFileChecksAndReadsTheSameFile` (`internal/config`): Windows has no strict mode (`docs/design.md` §4).
+- `TestIndirectionRejectsSymlinkAndReplacement` (`internal/creds`): Windows symlink creation requires privileges; checked-reader reparse tests cover rejection separately.
 - `TestASystemWithoutReadSecretFileStillReadsThroughTheCheckedFile` (`internal/creds`): Windows has no strict mode (`docs/design.md` §4).
 - `TestUnknownDaemonVersionWarns` (`internal/doctor`): the stand-in `tailscale` CLI is a POSIX shell script.
 - `TestEnvironmentIsBuiltNotInherited` (`internal/local`): the stand-in `tailscale` CLI is a POSIX shell script.
@@ -135,6 +138,20 @@ The suite runs on Windows in CI (the `test-os` job). These tests do not run ther
 - `TestLongHealthMessagesAreMaskedBeforeTheyAreCut` (`internal/tools`): the stand-in `tailscale` CLI is a POSIX shell script.
 - `TestLongErrorsAreMaskedBeforeTheyAreCut` (`internal/tools`): the stand-in `tailscale` CLI is a POSIX shell script.
 - `TestTailnetNameIsMaskedOnlyWhenItIsALogin` (`internal/tools`): the stand-in `tailscale` CLI is a POSIX shell script.
+- `TestCollectionPreservesEveryDecisionFieldPresenceAndVersionOrigin` (`internal/tools`): the stand-in `tailscale` CLI is a POSIX shell script.
+- `TestAbsentLocalSSHPreferenceIsNoFact` (`internal/tools`): the stand-in `tailscale` CLI is a POSIX shell script.
+- `TestAffectedLocalAndAPIFleetKnownPositive` (`internal/tools`): the stand-in `tailscale` CLI is a POSIX shell script.
+- `TestLocalScopeAsksTheAPINothing` (`internal/tools`): the stand-in `tailscale` CLI is a POSIX shell script.
+- `TestLocalNetmapDoesNotClaimFleetCoverage` (`internal/tools`): the stand-in `tailscale` CLI is a POSIX shell script.
+- `TestNoSourceIsAskedBeforeItsAttemptIsRecorded` (`internal/tools`): the stand-in `tailscale` CLI is a POSIX shell script.
+- `TestLocalFactsJoinAFleetCollectionOnlyIfTheNodeIsInTheListedTailnet` (`internal/tools`): the stand-in `tailscale` CLI is a POSIX shell script.
+- `TestALocalNodeTheListNamesTwiceIsStillInTheTailnet` (`internal/tools`): the stand-in `tailscale` CLI is a POSIX shell script.
+- `TestALocalCollectionNeedsNoListToJoinTheNodesFacts` (`internal/tools`): the stand-in `tailscale` CLI is a POSIX shell script.
+- `TestSourceErrorTextWithACredentialShapeReachesNothing` (`internal/tools`): the stand-in `tailscale` CLI is a POSIX shell script.
+- `TestVersionsCoverageNeedsAVersionOfTheDaemonOrTheAPIForEveryDevice` (`internal/tools`): the stand-in `tailscale` CLI is a POSIX shell script.
+- `TestVersionsCoverageNamesTheDevicesWithoutAVersion` (`internal/tools`): the stand-in `tailscale` CLI is a POSIX shell script.
+- `TestFeaturesCoverageNamesWhatNoSourceGivesAndWhatADeviceLacks` (`internal/tools`): the stand-in `tailscale` CLI is a POSIX shell script.
+- `TestANodeListedBeyondTheRoomStillJoinsItsLocalFacts` (`internal/tools`): the stand-in `tailscale` CLI is a POSIX shell script.
 - `TestWindowsSkipCheckJudgesALog` (`internal/workflows`): the check it runs is a POSIX shell script.
 - `TestWindowsSkipCheckKnowsATestByPackageAndName` (`internal/workflows`): the check it runs is a POSIX shell script.
 - `TestReleaseNotesCheckJudgesALog` (`internal/workflows`): the check it runs is a POSIX shell script.
@@ -157,13 +174,86 @@ The suite runs on Windows in CI (the `test-os` job). These tests do not run ther
 - `TestTheResultStepPassesOnlyWhenTheLiveJobSucceededAndTheOfflineJobWasSkipped` (`internal/workflows`): the workflow step is a bash script.
 - `TestReleaseRefusesAnythingButAPublicRepository` (`internal/workflows`): the release workflow's check is a POSIX shell command, which the test runs with `sh`.
 - `TestTheCronFileBaselineIsThePolicyTextAndDiffReadsIt` (`internal/cli`): the recipe's lines are a POSIX shell script that runs `jq`.
+- `TestIndirectionRejectsUnsafeOwnerModeAndOversize/env-id/mode` (`internal/creds`): Windows does not enforce POSIX ownership and mode privacy.
+- `TestIndirectionRejectsUnsafeOwnerModeAndOversize/env-key/mode` (`internal/creds`): Windows does not enforce POSIX ownership and mode privacy.
+- `TestIndirectionRejectsUnsafeOwnerModeAndOversize/env-secret/mode` (`internal/creds`): Windows does not enforce POSIX ownership and mode privacy.
+- `TestIndirectionRejectsUnsafeOwnerModeAndOversize/exec/mode` (`internal/creds`): Windows does not enforce POSIX ownership and mode privacy.
+- `TestIndirectionRejectsUnsafeOwnerModeAndOversize/file/mode` (`internal/creds`): Windows does not enforce POSIX ownership and mode privacy.
+- `TestIndirectionRejectsUnsafeOwnerModeAndOversize/oidc-env/mode` (`internal/creds`): Windows does not enforce POSIX ownership and mode privacy.
+- `TestIndirectionRejectsUnsafeOwnerModeAndOversize/oidc-file/mode` (`internal/creds`): Windows does not enforce POSIX ownership and mode privacy.
+- `TestIndirectionRejectsUnsafeOwnerModeAndOversize/privacy-env/mode` (`internal/creds`): Windows does not enforce POSIX ownership and mode privacy.
+- `TestIndirectionRejectsUnsafeOwnerModeAndOversize/privacy-exec/mode` (`internal/creds`): Windows does not enforce POSIX ownership and mode privacy.
+- `TestIndirectionRejectsUnsafeOwnerModeAndOversize/privacy-file/mode` (`internal/creds`): Windows does not enforce POSIX ownership and mode privacy.
+- `TestAScanTellsTheCollectionWhichFeaturesTheCatalogRequires/every_source_whole` (`internal/tools`): the stand-in tailscale CLI is a POSIX shell script.
+- `TestNoFindingsWithMissingCoverageIsIncomplete/a_rule_still_pending` (`internal/tools`): the stand-in tailscale CLI is a POSIX shell script.
+- `TestNoFindingsWithMissingCoverageIsIncomplete/a_source_failed` (`internal/tools`): the stand-in tailscale CLI is a POSIX shell script.
+- `TestNoFindingsWithMissingCoverageIsIncomplete/every_source_whole,_intent_not_requested:_complete_and_0` (`internal/tools`): the stand-in tailscale CLI is a POSIX shell script.
+- `TestScanNoInvariantsIgnoresConfiguredFile/a_readable_file_is_not_read_for_its_digest` (`internal/tools`): the stand-in tailscale CLI is a POSIX shell script.
+- `TestScanWithConfiguredInvariantsIsPartialAndCarriesDigest/the_same_fleet,_now_partial` (`internal/tools`): the stand-in tailscale CLI is a POSIX shell script.
+- `TestScanWithoutInvariantsHasIntentNotRequested/nothing_configured:_not_requested,_and_the_scan_can_be_complete` (`internal/tools`): the stand-in tailscale CLI is a POSIX shell script.
+- `TestSecurityScanOutputHoldsNoUnkeyedIdentifierOrRawDeviceReference/privacy_key_false` (`internal/tools`): the stand-in tailscale CLI is a POSIX shell script.
+- `TestSecurityScanOutputHoldsNoUnkeyedIdentifierOrRawDeviceReference/privacy_key_true` (`internal/tools`): the stand-in tailscale CLI is a POSIX shell script.
+- `TestThisNodesAPIRowWithNoDaemonVersionClearsNoRunningDaemonRuleUnlessGuarded/connected,_last_seen_31_minutes_ago` (`internal/tools`): the stand-in tailscale CLI is a POSIX shell script.
+- `TestThisNodesAPIRowWithNoDaemonVersionClearsNoRunningDaemonRuleUnlessGuarded/connected_and_fresh:_the_API_speaks_for_the_daemon` (`internal/tools`): the stand-in tailscale CLI is a POSIX shell script.
+- `TestThisNodesAPIRowWithNoDaemonVersionClearsNoRunningDaemonRuleUnlessGuarded/connection_not_reported` (`internal/tools`): the stand-in tailscale CLI is a POSIX shell script.
+- `TestThisNodesAPIRowWithNoDaemonVersionClearsNoRunningDaemonRuleUnlessGuarded/disconnected` (`internal/tools`): the stand-in tailscale CLI is a POSIX shell script.
 <!-- windows-skipped:end -->
 
 ### Not compiled on Windows
 
-These files carry `//go:build !windows`, except `internal/doctor/starter_unix_test.go`, which carries `//go:build unix`. Their tests need the file lock (`syscall.Flock`), rotation, FIFOs or the change time of a file, or (the `unix` file) a symbolic link and a POSIX file mode, none of which Windows has in this build.
+The extracted MCPB process tests carry `//go:build darwin` and execute only on macOS. Other listed files carry `//go:build !windows`, except `internal/doctor/starter_unix_test.go`, which carries `//go:build unix`. These fixtures require Unix shell execution, file-locking, rotation, FIFO, change-time or private-mode semantics, or reliable symbolic-link creation.
 
 <!-- windows-excluded:begin -->
+- `TestExecutedReleaseReproduction` (`internal/workflows`): executes the release workflow with Bash and Unix archive tools.
+- `TestBuiltPackReplayRedactDoNotStartExecProvider` (`internal/cli`): uses private pack files and Unix provider process semantics.
+- `TestPackInterruptedCommandsDoNotPublish` (`internal/tools`): private pack files require Unix ownership and mode checks.
+- `TestArchiveSBOMRejectsSymlinkThin` (`internal/releasebundle`): archive input fixtures require Unix symbolic-link creation and semantics.
+- `TestArchiveSBOMRejectsSymlinkThinDirectory` (`internal/releasebundle`): archive input fixtures require Unix symbolic-link creation and semantics.
+- `TestMCPBBundledServerInSpacedPathWithMinimalPATH` (`cmd/tailkeeper`): executes the extracted Mach-O server and requires Darwin.
+- `TestMCPBUnlockedExecWrapperKeepsStdio` (`cmd/tailkeeper`): executes the extracted Mach-O server and requires Darwin.
+- `TestMCPBCompleteInheritedCredentialSkipsWrapper` (`cmd/tailkeeper`): executes the extracted Mach-O server and requires Darwin.
+- `TestMCPBMissingEnvironmentIsVisible` (`cmd/tailkeeper`): executes the extracted Mach-O server and requires Darwin.
+- `TestMCPBLockedExecWrapperRefusesWithoutInheritedCredential` (`cmd/tailkeeper`): executes the extracted Mach-O server and requires Darwin.
+- `TestMCPBNonExecutableServerRefused` (`cmd/tailkeeper`): executes the extracted Mach-O server and requires Darwin.
+- `TestMCPBProviderReferencesRemainExternal` (`internal/cli`): synthetic native provider fixtures require Unix private-file and wrapper semantics.
+- `TestMCPBSystemConfigPrecedence` (`internal/cli`): synthetic native provider fixtures require Unix private-file and wrapper semantics.
+- `TestBuildRejectsSymlinkDocument` (`internal/releasebundle`): symbolic-link refusal requires Unix link creation and semantics.
+- `TestVerifyRejectsSymlinkThinBuildDirectory` (`internal/releasebundle`): symbolic-link refusal requires Unix link creation and semantics.
+- `TestVerifyRejectsSymlinkThinInput` (`internal/releasebundle`): symbolic-link refusal requires Unix link creation and semantics.
+- `TestPublicDemoAdvisoryApplicability` (`internal/cli`): synthetic demos share Unix private-pack ownership and mode fixtures.
+- `TestPublicDemoExcessiveAccess` (`internal/cli`): synthetic demos share Unix private-pack ownership and mode fixtures.
+- `TestPublicDemoCorrectionVerification` (`internal/cli`): synthetic demos share Unix private-pack ownership and mode fixtures.
+- `TestSecurityVerifyCancelledPreflightIsIncomplete` (`internal/cli`): shares Unix-only verification fixtures with private-file ownership and mode checks.
+- `TestSecurityVerifyClassifiesMissingCredentialBeforeContext` (`internal/cli`): shares Unix-only verification fixtures with private-file ownership and mode checks.
+- `TestSecurityVerifyCorrectionDemo` (`internal/cli`): shares Unix-only verification fixtures with private-file ownership and mode checks.
+- `TestSecurityVerifyInvalidCorrectionPrecedesMissingAudit` (`internal/cli`): shares Unix-only verification fixtures with private-file ownership and mode checks.
+- `TestSecurityVerifyMasksCorrectionTextAfterPackReload` (`internal/cli`): shares Unix-only verification fixtures with private-file ownership and mode checks.
+- `TestSecurityVerifyMasksEmbeddedRuleAfterReload` (`internal/tools`): shares Unix-only verification fixtures with private-file ownership and mode checks.
+- `TestSecurityVerifyMissingAuditStopsBeforeCollection` (`internal/cli`): shares Unix-only verification fixtures with private-file ownership and mode checks.
+- `TestSecurityVerifyReadAuditWarningDoesNotChangeRecordedVerdict` (`internal/cli`): shares Unix-only verification fixtures with private-file ownership and mode checks.
+- `TestSecurityVerifyRefusalsDoNotCollect` (`internal/cli`): shares Unix-only verification fixtures with private-file ownership and mode checks.
+- `TestSecurityVerifyRefusesDifferentContextWithoutCollection` (`internal/cli`): shares Unix-only verification fixtures with private-file ownership and mode checks.
+- `TestSecurityVerifyReportsContradictionAndRequiresFinalAudit` (`internal/cli`): shares Unix-only verification fixtures with private-file ownership and mode checks.
+- `TestSecurityVerifyRerunsOnlyUnchangedCurrentIntent` (`internal/cli`): shares Unix-only verification fixtures with private-file ownership and mode checks.
+- `TestSecurityVerifyTextNamesExpectedFactAndRole` (`internal/cli`): shares Unix-only verification fixtures with private-file ownership and mode checks.
+- `TestSecurityVerifyUsesCredentialedBuilder` (`internal/cli`): shares Unix-only verification fixtures with private-file ownership and mode checks.
+- `TestPackCLIRefusesTamperingAndReportsNonreproduction` (`internal/cli`): private pack files require Unix ownership and mode checks.
+- `TestPackStoppedEarlyMapsToCLIExitOne` (`internal/cli`): the pack command test fixture is Unix-only.
+- `TestPackToolsAbsentFromBuiltMCP` (`internal/cli`): the isolated process environment uses Unix home and path conventions.
+- `TestPackPrivacyMatrixAcrossReplay` (`internal/cli`): private pack files require Unix ownership and mode checks.
+- `TestPackExportRefusesUnsafeDestinations` (`internal/tools`): symbolic links and private file checks require Unix.
+- `TestPackOfflineCommandsNeverOpenCredentialFile` (`internal/cli`): private pack files require Unix ownership and mode checks.
+- `TestPackConcurrentExportsPreserveIdentityAndBytes` (`internal/tools`): private pack files require Unix ownership and mode checks.
+- `TestPackRedactPublishesWhenReadAuditFails` (`internal/cli`): private pack files require Unix ownership and mode checks.
+- `TestPackExportAndReplayAreNotAssessmentGates` (`internal/cli`): private pack files require Unix ownership and mode checks.
+- `TestPackExportAccessAndAudit` (`internal/cli`): private pack files require Unix ownership and mode checks.
+- `TestPackExportPrivacyFailurePrecedesCollection` (`internal/tools`): private pack files require Unix ownership and mode checks.
+- `TestPackExportRequiresAPIBeforeCollection` (`internal/tools`): the owner pack fixture shares a Unix-only test file.
+- `TestPackCommandsThroughCLI` (`internal/cli`): private pack files require Unix ownership and mode checks.
+- `TestPackExportAuditBeforePublicationAndReplay` (`internal/tools`): private pack files require Unix ownership and mode checks.
+- `TestPackExportRefusesPublicationOnAuditFailure` (`internal/tools`): private pack files require Unix ownership and mode checks.
+- `TestPackToolsAreOwnerOnly` (`internal/tools`): the owner pack fixture shares a Unix-only test file.
+- `TestSecretDescriptorRejectsDifferentPathApproval` (`internal/config`): ancestor symlink switching and Unix private permission checks.
 - `TestRecordDoesNotRetryAnUnavailableLog` (`internal/app`): holds the audit log's file lock with `syscall.Flock`.
 - `TestAppendGivesUpOnAStuckLock` (`internal/audit`): holds the file lock from the test with `syscall.Flock`.
 - `TestRotateKeepsTheArchiveAndContinuesTheChain` (`internal/audit`): rotation and the archives it makes; `audit rotate` is refused on Windows.
@@ -203,15 +293,27 @@ These files carry `//go:build !windows`, except `internal/doctor/starter_unix_te
 - `TestUnrecordedReadsWarnInTheAuditLogCheck` (`internal/doctor`): holds the audit log's file lock with `syscall.Flock`.
 - `TestTheStarterFileIsMode0600AndAnExistingFileASymlinkAndADirectoryAreRefused` (`internal/doctor`): needs a symbolic link and a POSIX file mode, which this build does not check.
 - `TestAuditWarningRearmsAfterRecovery` (`internal/mcpserver`): holds the audit log's file lock with `syscall.Flock`.
+- `TestPrivateExactCap` (`internal/safefile`): exercises private-file ownership and POSIX permissions, which Windows cannot verify.
+- `TestPrivateFailureCleanup` (`internal/safefile`): exercises private-file ownership and POSIX permissions, which Windows cannot verify.
+- `TestPrivateLifecycle` (`internal/safefile`): exercises private-file ownership and POSIX permissions, which Windows cannot verify.
+- `TestPrivateOwnerInfo` (`internal/safefile`): exercises private-file ownership and POSIX permissions, which Windows cannot verify.
+- `TestPrivateParentReplacement` (`internal/safefile`): exercises private-file ownership and POSIX permissions, which Windows cannot verify.
+- `TestPrivatePostLinkFailure` (`internal/safefile`): exercises private-file ownership and POSIX permissions, which Windows cannot verify.
+- `TestPrivateReadReplacement` (`internal/safefile`): exercises private-file ownership and POSIX permissions, which Windows cannot verify.
+- `TestPrivateSafety` (`internal/safefile`): exercises private-file ownership and POSIX permissions, which Windows cannot verify.
+- `TestPrivateUmask` (`internal/safefile`): exercises private-file ownership and POSIX permissions, which Windows cannot verify.
 - `TestAFifoIsRefusedNotWaitedOn` (`internal/safefile`): needs FIFOs (`syscall.Mkfifo`).
 - `TestAFifoSwappedInAfterTheInspectionIsRefusedNotWaitedOn` (`internal/safefile`): needs FIFOs (`syscall.Mkfifo`) and `O_NOFOLLOW`.
 - `TestTheConfiguredInvariantsFileIsReadWithOwnershipChecks` (`internal/tools`): reads the owner and group of a file from `syscall.Stat_t`, which Windows lacks.
+- `TestSelfInfoBesideAnExecProviderNeverStartsTheWrapper` (`cmd/tailkeeper`): the stand-in wrapper is a POSIX shell script, and the `exec` provider re-executes with `execve`, which Windows lacks.
 - `TestAPipedPolicyReachesTheProcessThatHoldsTheCredential` (`internal/cli`): the stand-in wrapper is a POSIX shell script, and the `exec` provider re-executes with `execve`, which Windows lacks.
 - `TestAnOfflineCommandReadsItsOwnStandardInputAndSkipsTheWrapper` (`internal/cli`): the stand-in wrapper is a POSIX shell script.
 - `TestABadPathNeverStartsTheStandInWrapper` (`internal/cli`): the stand-in wrapper is a POSIX shell script.
 - `TestAPolicyFromStandardInputPassesThroughTheExecWrapper` (`internal/cli`): the stand-in wrapper is a POSIX shell script, and the `exec` provider re-executes with `execve`, which Windows lacks.
 - `TestADiffOfAPipedPolicyPassesThroughTheExecWrapperOnlyWhenItNeedsTheCredential` (`internal/cli`): the stand-in wrapper is a POSIX shell script.
 - `TestABadPathNeverStartsTheWrapperForThePolicyCommands` (`internal/cli`): the stand-in wrapper is a POSIX shell script.
+- `TestAScanWithEveryRequestedCoverageCompleteExitsZero` (`internal/cli`): the stand-in `tailscale` command is a POSIX shell script.
+- `TestAScanGivenAnIntentIsPartialThroughTheCommandLine` (`internal/cli`): the stand-in `tailscale` command is a POSIX shell script.
 - `TestHelperProcess` (`internal/cli`): the process the stand-in wrapper starts; it runs only for the three tests that start it with the test tool.
 - `TestHelperACLProcess` (`internal/cli`): the process the stand-in wrapper starts for the policy commands; it runs only for the three tests that start it with them.
 <!-- windows-excluded:end -->

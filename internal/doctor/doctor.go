@@ -22,6 +22,7 @@ import (
 	"github.com/abm9111/tailkeeper/internal/privacy"
 	"github.com/abm9111/tailkeeper/internal/registry"
 	"github.com/abm9111/tailkeeper/internal/sanitize"
+	"github.com/abm9111/tailkeeper/internal/security"
 	"github.com/abm9111/tailkeeper/internal/tkerr"
 	"github.com/abm9111/tailkeeper/internal/tools"
 	"github.com/abm9111/tailkeeper/internal/tripwire"
@@ -168,6 +169,7 @@ func run(ctx context.Context, in Input) Report {
 		privacyCheck(&r, a)
 	}
 	localChecks(ctx, &r, a)
+	catalogChecks(ctx, &r, a, in.Now)
 	auditChecks(&r, a, rl.err)
 	return r
 }
@@ -175,18 +177,22 @@ func run(ctx context.Context, in Input) Report {
 // privacyCheck reports the privacy key (spec §7.6). It never shows key material.
 func privacyCheck(r *Report, a *app.App) {
 	const name = "privacy key"
-	switch {
-	case a.Env.PrivacyErr != nil:
+	switch a.PrivacyState() {
+	case app.PrivacyFailed:
 		r.addErr(name, Fail, a.Env.PrivacyErr)
-	case a.Env.ShowPersonalData():
+	case app.PrivacyUnused:
 		r.add(name, Info, "personal data is shown whole (personalData: show); the privacy key is not used", "")
-	case a.Provider.Provider == "oidc":
-		r.add(name, Info, "oidc stores no secret, so there is no privacy key; masked values carry no pseudonym, filters cannot name a masked value, and audit_log leaves out its digests", "")
-	case a.Env.Privacy != nil:
+	case app.PrivacyNotStored:
+		r.add(name, Info, "oidc stores no secret, so there is no privacy key; "+app.NoPrivacyKey, "")
+	case app.PrivacyLoaded:
 		r.add(name, OK, "loaded: masked values carry pseudonyms, and audit_log digests are keyed", "")
 	default:
-		r.add(name, Warn, "none: masked values carry no pseudonym, filters cannot name a masked value, and audit_log leaves out its digests",
-			"add "+privacy.EnvKey+" (generate it with openssl rand -hex 32) where the read credential is kept")
+		// The condition the start-up warnings use; with a reason, it is the same warning.
+		detail := "none: " + app.NoPrivacyKey
+		if a.PrivacyNote != "" {
+			detail = "none (" + a.PrivacyNote + "): " + app.NoPrivacyKey
+		}
+		r.add(name, Warn, detail, "add "+privacy.EnvKey+" (generate it with openssl rand -hex 32) where the read credential is kept")
 	}
 }
 
@@ -257,7 +263,7 @@ func call(ctx context.Context, a *app.App, name, args string, out any) error {
 		return tkerr.New(tkerr.Internal, "tool "+name+" is not registered", "")
 	}
 	start := time.Now()
-	res, err := t.Call(ctx, a.Env, json.RawMessage(args))
+	res, err := t.Call(registry.WithCaller(ctx, registry.Caller{Kind: "doctor"}), a.Env, json.RawMessage(args))
 	var b []byte
 	if err == nil {
 		b, err = json.Marshal(res)
@@ -616,6 +622,138 @@ func localChecks(ctx context.Context, r *Report, a *app.App) {
 		return
 	}
 	r.add("local tailscale", OK, detail, "")
+}
+
+// catalogWarnWithin is how close to its expiry the catalog built into the binary starts to warn:
+// a scan judges by it, and by then the owner has to re-check the vendor's bulletins and renew
+// its dates.
+const catalogWarnWithin = 14 * 24 * time.Hour
+
+// catalogRenewal is what to do about a catalog that expires soon or has expired. Only a new
+// build carries a new catalog, so the fix is the owner's.
+const catalogRenewal = "re-check the vendor's security bulletins for advisories newer than the catalog, renew its dates (expires_at in data/advisories) and ship a new build"
+
+// reviewRenewal is what to do about approved rules whose review is not fresh: they cannot clear
+// a device until someone reviews them again.
+const reviewRenewal = "review the rules again and renew their review dates (review_expires_at in data/advisories), then ship a new build"
+
+// clockCheck is what to do about a catalog that is not valid yet.
+const clockCheck = "check this machine's clock, and the catalog's issued_at in data/advisories"
+
+// catalogChecks is the local summary of the security assessment: the catalog built into the
+// binary (its revision, a digest prefix, its expiry and the rules it holds by review state)
+// and whether an intent set is configured. It reads the catalog and the file by the code a
+// scan uses, makes no request, records no source and scans nothing.
+func catalogChecks(ctx context.Context, r *Report, a *app.App, now time.Time) {
+	if now.IsZero() {
+		now = time.Now()
+	}
+	sum, err := tools.ScanCatalogSummary(now)
+	catalogReport(r, sum, err, now)
+	intentReport(ctx, r, a)
+}
+
+// catalogReport files the catalog row. A catalog that does not load is a failure, not a
+// warning: it can only be a bug of the build, and no scan can run without it.
+func catalogReport(r *Report, sum tools.CatalogSummary, err error, now time.Time) {
+	const catalog = "advisory catalog"
+	if err != nil {
+		r.addErr(catalog, Fail, err)
+		return
+	}
+	st, detail, fix := catalogRow(sum, now)
+	r.add(catalog, st, detail, fix)
+}
+
+// intentReport files the intent row. With no configuration loaded it cannot know what the
+// configuration names, so it is skipped, as the other rows that need the configuration are. The
+// digest is shown by the rule of the other digests of a policy (the scan's): a prefix of the keyed
+// one while personal data is masked and a key is loaded, of the plain one with personalData show,
+// and none, with the reason, while masked with no key.
+func intentReport(ctx context.Context, r *Report, a *app.App) {
+	const intent = "intent set"
+	if a.Loaded == nil {
+		r.skipped("no configuration", intent)
+		return
+	}
+	in, err := tools.ConfiguredIntentSummary(ctx, a.Env)
+	switch {
+	case err != nil:
+		r.addErr(intent, Fail, err)
+	case !in.Configured:
+		r.add(intent, Info, "none configured: a scan does not request intent", "")
+	default:
+		n := fmt.Sprintf("%d expectations", in.Expectations)
+		if in.Expectations == 1 {
+			n = "1 expectation"
+		}
+		named := "digest " + tools.ShortDigest(in.Digest, 8)
+		if in.Digest == "" {
+			named = "no digest (personal data is masked and no privacy key is loaded)"
+		}
+		r.add(intent, Info, fmt.Sprintf("configured: %s, %s; a scan requests it and nothing judges it yet, so a scan with it is partial", n, named), "")
+	}
+}
+
+// catalogRow lays out what the scan says of the catalog at now: expired or not yet valid, and
+// the approved rules whose review is not fresh, both as the summary has them from the scan's own
+// predicates, and the days left to the expiry, which is the doctor's own warning. It fails when
+// the catalog is expired, warns for anything else the scan counts as not fresh and for an expiry
+// within the warning period, and gives each cause its fix.
+func catalogRow(sum tools.CatalogSummary, now time.Time) (Status, string, string) {
+	detail := fmt.Sprintf("revision %d, digest %s, %d rules (%d approved, %d pending, %d withdrawn)",
+		sum.Revision, digestPrefix(sum.Digest), sum.Rules, sum.Approved, sum.Pending, sum.Withdrawn)
+	status := OK
+	var fixes []string
+	cause := func(s Status, note, fix string) {
+		if s == Fail || status == OK {
+			status = s
+		}
+		detail += "; " + note
+		if fix != "" && !slices.Contains(fixes, fix) {
+			fixes = append(fixes, fix)
+		}
+	}
+	expires := sum.ExpiresAt.UTC().Format("2006-01-02")
+	left := sum.ExpiresAt.Sub(now)
+	switch {
+	case sum.State == security.CatalogExpired:
+		cause(Fail, "expired on "+expires+": a scan judges by a catalog that is no longer fresh", catalogRenewal)
+	case sum.State == security.CatalogNotYetValid:
+		cause(Warn, fmt.Sprintf("not yet valid: issued on %s, after this machine's clock; expires %s (%s)", sum.IssuedAt.UTC().Format("2006-01-02"), expires, daysLeft(left)), clockCheck)
+	case left <= catalogWarnWithin:
+		cause(Warn, fmt.Sprintf("expires %s (%s)", expires, daysLeft(left)), catalogRenewal)
+	default:
+		detail += fmt.Sprintf("; expires %s (%s)", expires, daysLeft(left))
+	}
+	if n := sum.StaleReviews; n > 0 {
+		who := "1 approved rule has a review that is not fresh, so it cannot clear a device"
+		if n > 1 {
+			who = fmt.Sprintf("%d approved rules have a review that is not fresh, so they cannot clear a device", n)
+		}
+		cause(Warn, who, reviewRenewal)
+	}
+	return status, detail, strings.Join(fixes, "; ")
+}
+
+// digestPrefix is the first eight hexadecimal digits of a digest.
+func digestPrefix(d string) string {
+	if len(d) > 8 {
+		return d[:8]
+	}
+	return d
+}
+
+// daysLeft says how long is left, in whole days.
+func daysLeft(d time.Duration) string {
+	switch n := int(d / (24 * time.Hour)); n {
+	case 0:
+		return "less than 1 day left"
+	case 1:
+		return "1 day left"
+	default:
+		return fmt.Sprintf("%d days left", n)
+	}
 }
 
 // rotateAt is the audit log size at which doctor suggests a rotation. A read

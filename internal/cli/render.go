@@ -14,7 +14,8 @@ import (
 )
 
 // render prints a tool output for people: the rows field (tk:"rows") as a table of
-// its tk:"col" fields, then every other non-empty top-level field as name: value.
+// its tk:"col" fields, then every other non-empty top-level field as name: value (a field
+// tagged tk:"none" is printed when empty too, as none).
 // Every string is escaped here too, not only the fields the registry marks
 // untrusted, so no value can break the layout (escaping is idempotent).
 func render(w io.Writer, out any) error {
@@ -61,6 +62,13 @@ func renderStruct(w io.Writer, v reflect.Value, out any) error {
 			continue
 		}
 		if isEmpty(fv) {
+			if sanitize.HasTag(f.Tag, "none") {
+				// An empty list is an answer: print it, so that it cannot be taken for a
+				// field the text left out.
+				if _, err := fmt.Fprintf(w, "%s: none\n", jsonName(f)); err != nil {
+					return err
+				}
+			}
 			continue
 		}
 		if _, err := fmt.Fprintf(w, "%s: %s\n", jsonName(f), cell(fv)); err != nil {

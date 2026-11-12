@@ -15,7 +15,7 @@ var wantTools = []string{
 	"log_streaming_get", "network_flow_logs", "oauth_app_get", "oauth_apps_list",
 	"posture_integration_get", "posture_integrations_list", "service_get", "services_list",
 	"settings_get", "user_get", "user_invite_get", "user_invites_list", "users_list",
-	"webhook_get", "webhooks_list",
+	"webhook_get", "webhooks_list", "tailkeeper_info", "security_scan",
 	"local_dns_query", "local_dns_status", "local_funnel_status", "local_ip", "local_lock_status",
 	"local_metrics", "local_netcheck", "local_ping", "local_prefs", "local_serve_status",
 	"local_status", "local_syspolicy", "local_version", "local_whoami", "local_whois",
@@ -38,8 +38,8 @@ func TestRegisterAll(t *testing.T) {
 	if !slices.Equal(got, want) {
 		t.Fatalf("registered tools differ:\n got %v\nwant %v", got, want)
 	}
-	if tiers[registry.TierRead] != 31 || tiers[registry.TierLocal] != 15 || len(tiers) != 2 {
-		t.Fatalf("tiers = %v, want 31 read and 15 local", tiers)
+	if tiers[registry.TierRead] != 32 || tiers[registry.TierLocal] != 15 || tiers[registry.TierOffline] != 1 || len(tiers) != 3 {
+		t.Fatalf("tiers = %v, want 32 read, 15 local and 1 offline", tiers)
 	}
 }
 
@@ -53,8 +53,8 @@ func TestReadsProfileHidesAlphaUnlessEnabled(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(without) != 44 || len(with) != 46 {
-		t.Fatalf("reads profile: %d tools without alpha, %d with; want 44 and 46", len(without), len(with))
+	if len(without) != 46 || len(with) != 48 {
+		t.Fatalf("reads profile: %d tools without alpha, %d with; want 46 and 48", len(without), len(with))
 	}
 	for _, tool := range without {
 		if tool.Meta.Stage == registry.StageAlpha {

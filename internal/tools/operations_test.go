@@ -1,6 +1,7 @@
 package tools_test
 
 import (
+	"context"
 	"fmt"
 	"net/http"
 	"slices"
@@ -13,6 +14,7 @@ import (
 	"github.com/abm9111/tailkeeper/internal/api/openapi"
 	"github.com/abm9111/tailkeeper/internal/privacy"
 	"github.com/abm9111/tailkeeper/internal/registry"
+	"github.com/abm9111/tailkeeper/internal/security"
 )
 
 // operationCalls are, for every tool that calls the API, the arguments of calls
@@ -29,6 +31,7 @@ var operationCalls = map[string][]string{
 	"device_get":                {`{"device":"nAAA1CNTRL"}`, `{"device":"host-a"}`},
 	"devices_list":              {`{}`},
 	"device_posture_attributes": {`{"device":"host-a"}`},
+	"security_scan":             {`{"scope":"fleet"}`},
 	"device_routes":             {`{"device":"nAAA1CNTRL"}`, `{"device":"host-a","includeHa":true}`},
 	"dns_get":                   {`{}`},
 	"device_invite_get":         {`{"id":"i1"}`},
@@ -163,7 +166,9 @@ func TestEveryToolSendsExactlyTheOperationsItDeclares(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		env := &registry.Env{API: f.Client(t), Privacy: key, Now: func() time.Time { return now }}
+		env := &registry.Env{API: f.Client(t), Privacy: key, Now: func() time.Time { return now },
+			// A security scan records each source it reads, and refuses to run where it cannot.
+			RecordObservation: func(context.Context, security.CollectionEvent) error { return nil }}
 		for _, args := range calls {
 			// A tool may fail, as one given no usable answer does; it must still
 			// have sent the requests it declares.

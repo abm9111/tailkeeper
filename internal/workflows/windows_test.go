@@ -153,7 +153,8 @@ func windowsDocProblems(skipped, excluded, onWindows, notOnWindows map[string]st
 		if _, both := excluded[name]; both {
 			add("%s is listed both as skipped and as not compiled on Windows", name)
 		}
-		if got, ok := onWindows[name]; !ok {
+		parent := strings.SplitN(name, "/", 2)[0]
+		if got, ok := onWindows[parent]; !ok {
 			add("docs/windows.md lists %s (%s) as skipped on Windows, but no test file compiled there declares it", name, pkg)
 		} else if got != pkg {
 			add("%s: docs/windows.md says package %s, it is in %s", name, pkg, got)
@@ -277,6 +278,8 @@ func TestWindowsSkipCheckJudgesALog(t *testing.T) {
 	const one = "=== RUN   TestOne\n    a_test.go:9: a shell script\n--- SKIP: TestOne (0.00s)\nok  \tgithub.com/example/mod/pkg/a\t0.1s\n"
 	const two = "=== RUN   TestTwo\n--- SKIP: TestTwo (0.00s)\nok  \tgithub.com/example/mod/pkg/b\t0.1s\n"
 	docPath := write("doc.md", doc)
+	childDoc := write("children.md", "<!-- windows-skipped:begin -->\n- `TestParent/one` (`pkg/a`): shell.\n- `TestParent/two` (`pkg/a`): shell.\n<!-- windows-skipped:end -->\n")
+	const children = "=== RUN   TestParent\n    --- SKIP: TestParent/one (0.00s)\n    --- SKIP: TestParent/two (0.00s)\n--- PASS: TestParent (0.00s)\nok  \tgithub.com/example/mod/pkg/a\t0.1s\n"
 
 	for _, c := range []struct {
 		name string
@@ -286,6 +289,10 @@ func TestWindowsSkipCheckJudgesALog(t *testing.T) {
 		out  string
 	}{
 		{"exactly the listed tests", pass + one + two + "ok  \tpkg/a\t0.1s\n", docPath, 0, "2 tests skipped, exactly the 2"},
+		{"passing parent and listed children", children, childDoc, 0, "2 tests skipped, exactly the 2"},
+		{"new child under passing parent", strings.Replace(children, "--- PASS: TestParent", "    --- SKIP: TestParent/new (0.00s)\n--- PASS: TestParent", 1), childDoc, 1, "TestParent/new skipped"},
+		{"listed child passes", strings.Replace(children, "    --- SKIP: TestParent/two (0.00s)\n", "    --- PASS: TestParent/two (0.00s)\n", 1), childDoc, 1, "TestParent/two, which did not skip"},
+		{"same children in another package", strings.Replace(children, "pkg/a", "pkg/b", 1), childDoc, 1, "TestParent/one skipped"},
 		{"the same, with CRLF line ends as on Windows", strings.ReplaceAll(pass+one+two, "\n", "\r\n"), docPath, 0, "2 tests skipped, exactly the 2"},
 		{"a skip line with no duration and a CR, as a stripped CR leaves \"TestOne\\r\"", strings.ReplaceAll("--- PASS: TestPassing (0.00s)\n--- SKIP: TestOne\nok  \tpkg/a\t0.1s\n--- SKIP: TestTwo\nok  \tpkg/b\t0.1s\n", "\n", "\r\n"), docPath, 0, "2 tests skipped, exactly the 2"},
 		{"a document with CRLF line ends, whose markers are only found without the CR", pass + one + two, write("crlf.md", strings.ReplaceAll(doc, "\n", "\r\n")), 0, "2 tests skipped, exactly the 2"},
@@ -507,6 +514,12 @@ func isWindowsCondition(cond ast.Expr) bool {
 					found = true
 				}
 			}
+		case *ast.UnaryExpr:
+			if n.Op == token.NOT {
+				if sel, ok := n.X.(*ast.SelectorExpr); ok && sel.Sel.Name == "StrictModeEnforced" {
+					found = true
+				}
+			}
 		case *ast.CallExpr:
 			if sel, isSel := n.Fun.(*ast.SelectorExpr); isSel {
 				for _, p := range windowsPredicates {
@@ -689,6 +702,25 @@ func skippingTests(t *testing.T, root string) (onWindows, anywhere, everywhere m
 					}
 					f := scanSkips(fn.Body, compiledOnWindows(dir, e.Name()))
 					facts[fn.Name.Name] = &f
+					if strings.HasPrefix(fn.Name.Name, "Test") || strings.HasPrefix(fn.Name.Name, "Fuzz") {
+						child := &skipFacts{}
+						ast.Inspect(fn.Body, func(n ast.Node) bool {
+							if call, ok := n.(*ast.CallExpr); ok && len(call.Args) == 2 {
+								sel, isSelector := call.Fun.(*ast.SelectorExpr)
+								lit, isLiteral := call.Args[1].(*ast.FuncLit)
+								if !isSelector || sel.Sel.Name != "Run" || !isLiteral {
+									return true
+								}
+								cf := scanSkips(lit.Body, compiledOnWindows(dir, e.Name()))
+								child.windows = child.windows || cf.windows
+								child.any = child.any || cf.any
+								child.every = child.every || cf.every
+								child.callees = append(child.callees, cf.callees...)
+							}
+							return true
+						})
+						facts[fn.Name.Name+"/"] = child
+					}
 				}
 			}
 			if len(facts) == 0 {
@@ -773,24 +805,34 @@ func skipListProblems(skipped, reasons map[string]string, onWindows, anywhere, e
 	listedEverywhere := map[string]bool{}
 	for name, pkg := range skipped {
 		key := pkg + "." + name
+		evidence := key
+		if parent, _, child := strings.Cut(name, "/"); child {
+			evidence = pkg + "." + parent + "/"
+		}
 		if strings.Contains(reasons[name], "skipped on every platform") {
 			listedEverywhere[key] = true
-			if !anywhere[key] {
+			if !anywhere[evidence] {
 				add("docs/windows.md lists %s (%s) as skipped on every platform, but no skip call was found in it", name, pkg)
 			}
 			continue
 		}
 		listed[key] = true
-		if !onWindows[key] {
+		if !onWindows[evidence] {
 			add("docs/windows.md lists %s (%s) as skipped on Windows, but it has no skip under a test for Windows", name, pkg)
 		}
 	}
 	for key := range onWindows {
+		if strings.HasSuffix(key, "/") {
+			continue // Individual dynamic child names are checked against the Windows log.
+		}
 		if !listed[key] {
 			add("%s skips on Windows and docs/windows.md does not list it", key)
 		}
 	}
 	for key := range everywhere {
+		if strings.HasSuffix(key, "/") {
+			continue
+		}
 		if !listedEverywhere[key] {
 			add("%s skips unless it is asked for, and docs/windows.md does not list it as skipped on every platform", key)
 		}
@@ -865,6 +907,13 @@ func TestOnlyInASubtest(t *testing.T) {
 			t.Skip("subtest")
 		}
 	})
+}
+func TestSubtestViaHelper(t *testing.T) {
+	t.Run("a", func(t *testing.T) { outer(t) })
+}
+func TestUnrelatedClosure(t *testing.T) {
+	f := func() { if runtime.GOOS == "windows" { t.Skip("not a subtest") } }
+	_ = f
 }
 func TestNotWindows(t *testing.T) {
 	if runtime.GOOS != "windows" {
@@ -947,7 +996,15 @@ func TestLiveViaWrapper(t *testing.T) { liveWrapper(t) }
 			t.Errorf("%s skips on Windows and was not found: %v", name, onWindows)
 		}
 	}
-	for _, name := range []string{"TestOnlyInASubtest", "TestNotWindows", "TestNeverSkips"} {
+	for _, name := range []string{"TestOnlyInASubtest", "TestSubtestViaHelper"} {
+		if !onWindows["internal/x."+name+"/"] {
+			t.Errorf("%s has a Windows child skip and was not found: %v", name, onWindows)
+		}
+	}
+	if onWindows["internal/x.TestUnrelatedClosure/"] {
+		t.Error("an unrelated closure was mistaken for a subtest")
+	}
+	for _, name := range []string{"TestOnlyInASubtest", "TestSubtestViaHelper", "TestNotWindows", "TestNeverSkips"} {
 		if onWindows["internal/x."+name] {
 			t.Errorf("%s does not skip on Windows and was found: %v", name, onWindows)
 		}
@@ -1419,5 +1476,30 @@ func TestNoExec(t *testing.T) {}
 	}
 	if strings.Contains(problems, "TestE") {
 		t.Errorf("a listed, skipping shell test is refused:\n%s", problems)
+	}
+}
+
+// A documented child belongs to its declared parent, but does not mean the parent skipped.
+func TestWindowsDocumentationResolvesChildrenWithoutEquatingTheirParent(t *testing.T) {
+	skipped := map[string]string{"TestParent/first": "internal/x", "TestParent/second": "internal/x"}
+	on := map[string]string{"TestParent": "internal/x"}
+	if got := windowsDocProblems(skipped, nil, on, nil); len(got) != 0 {
+		t.Errorf("children of a compiled parent refused: %v", got)
+	}
+	if got := windowsDocProblems(map[string]string{"TestParent/first": "internal/y"}, nil, on, nil); len(got) == 0 {
+		t.Error("child attributed to the wrong package accepted")
+	}
+	if got := windowsDocProblems(map[string]string{"TestMissing/first": "internal/x"}, nil, on, nil); len(got) == 0 {
+		t.Error("child of an undeclared parent accepted")
+	}
+	facts := map[string]bool{"internal/x.TestParent/": true}
+	if got := skipListProblems(skipped, nil, facts, nil, nil); len(got) != 0 {
+		t.Errorf("child skip evidence rejected: %v", got)
+	}
+	if got := skipListProblems(map[string]string{"TestParent": "internal/x"}, nil, facts, nil, nil); len(got) == 0 {
+		t.Error("child skip evidence accepted as a parent skip")
+	}
+	if got := skipListProblems(map[string]string{"TestParent/first": "internal/y"}, nil, facts, nil, nil); len(got) == 0 {
+		t.Error("child skip evidence accepted in another package")
 	}
 }

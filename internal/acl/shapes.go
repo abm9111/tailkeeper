@@ -14,6 +14,22 @@ var (
 	nodeAttrSetFields = map[string]bool{"target": true, "attr": true, "ipPool": true}
 )
 
+// PolicyTestKeys says which keys of a test (ssh false) or of an SSH test (ssh true) the normal
+// form reads as which field, the current spelling first and the deprecated one after it. A
+// test's source may be written user as well as src, and a test's accept list allow as well as
+// accept (an SSH test's source is src alone). The rule for two spellings of one field is the
+// normal form's own: of the spellings of the source the first one present is the source and
+// any other is an unread field, kept whole; of the spellings of a list all are read, and their
+// entries are asserted together. The normal form reads the keys from this table, and a reader
+// of a policy's tests other than the normal form takes the aliases from it, so that no second
+// copy of them can drift. The result is the caller's own: a fresh map and fresh slices.
+func PolicyTestKeys(ssh bool) map[string][]string {
+	if ssh {
+		return map[string][]string{"src": {"src"}, "dst": {"dst"}, "accept": {"accept", "allow"}, "deny": {"deny"}, "check": {"check"}}
+	}
+	return map[string][]string{"src": {"src", "user"}, "proto": {"proto"}, "srcPostureAttrs": {"srcPostureAttrs"}, "accept": {"accept", "allow"}, "deny": {"deny"}}
+}
+
 // elements reads a section's value as an array, or keeps it whole.
 func (b *nfBuilder) elements(s *nfSec, lv *hujson.Value, top int) (*hujson.Array, error) {
 	arr, ok := lv.Value.(*hujson.Array)
@@ -210,11 +226,8 @@ func (b *nfBuilder) assertions(el *hujson.Value, ssh bool) ([]string, error) {
 		}
 		return nil, false
 	}
-	srcNames := []string{"src", "user"}
-	if ssh {
-		srcNames = []string{"src"}
-	}
-	srcs, ok := take(srcNames...)
+	keys := PolicyTestKeys(ssh)
+	srcs, ok := take(keys["src"]...)
 	if !ok {
 		return whole()
 	}
@@ -238,16 +251,15 @@ func (b *nfBuilder) assertions(el *hujson.Value, ssh bool) ([]string, error) {
 	var groups []group
 	var dsts []string
 	if ssh {
-		dsts, _ = take("dst")
+		dsts, _ = take(keys["dst"]...)
 	}
-	for _, g := range [][2]string{{"accept", "accept"}, {"allow", "accept"}, {"deny", "deny"}, {"check", "check"}} {
-		if g[0] == "check" && !ssh {
-			continue
-		}
-		if f := by[g[0]]; f != nil && !used[g[0]] {
-			if l, ok := stringList(f); ok {
-				used[g[0]] = true
-				groups = append(groups, group{g[1], l})
+	for _, polarity := range []string{"accept", "deny", "check"} {
+		for _, name := range keys[polarity] { // an SSH test alone has check
+			if f := by[name]; f != nil && !used[name] {
+				if l, ok := stringList(f); ok {
+					used[name] = true
+					groups = append(groups, group{polarity, l})
+				}
 			}
 		}
 	}
