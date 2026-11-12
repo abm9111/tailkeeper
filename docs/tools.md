@@ -172,7 +172,9 @@ List devices with server-side and client-side filters.
 | `authorized` | boolean |  | filter on authorized (server-side) |
 | `ephemeral` | boolean |  | filter on isEphemeral (server-side) |
 | `hostname` | string |  | exact hostname (server-side); while personal data is masked, refused if it contains an email address or a public IP address |
+| `limit` | integer |  | page size, at most 512; 0 returns the kept rows |
 | `nameContains` | string |  | case-insensitive substring of name or hostname as the result shows them, where an email or public address is masked while personal data is masked (client-side) |
+| `offset` | integer |  | rows to skip |
 | `online` | boolean |  | filter on connectedToControl (server-side) |
 | `os` | string |  | exact OS name, for example linux, macOS, windows (server-side) |
 | `staleDays` | integer |  | only devices not connected and last seen more than this many days ago (client-side) |

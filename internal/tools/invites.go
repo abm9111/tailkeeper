@@ -80,11 +80,11 @@ func deviceInvitesList(ctx context.Context, env *registry.Env, in DeviceRef) (De
 	if err != nil {
 		return DeviceInvitesOutput{}, err
 	}
-	var invites []DeviceInvite
-	if err := get(ctx, env, api.Path("device/%s/device-invites", id), nil, &invites); err != nil {
+	invites, err := collectArray[DeviceInvite](ctx, env, api.Path("device/%s/device-invites", id), "device invite")
+	if err != nil {
 		return DeviceInvitesOutput{}, err
 	}
-	return DeviceInvitesOutput{NodeID: id, Invites: nonNil(invites), Count: len(invites)}, nil
+	return DeviceInvitesOutput{NodeID: id, Invites: invites, Count: len(invites)}, nil
 }
 
 func deviceInviteGet(ctx context.Context, env *registry.Env, in InviteRef) (DeviceInvite, error) {
@@ -100,11 +100,11 @@ func userInvitesList(ctx context.Context, env *registry.Env, _ NoInput) (UserInv
 	if err != nil {
 		return UserInvitesOutput{}, err
 	}
-	var invites []UserInvite
-	if err := get(ctx, env, path, nil, &invites); err != nil {
+	invites, err := collectArray[UserInvite](ctx, env, path, "user invite")
+	if err != nil {
 		return UserInvitesOutput{}, err
 	}
-	return UserInvitesOutput{Invites: nonNil(invites), Count: len(invites)}, nil
+	return UserInvitesOutput{Invites: invites, Count: len(invites)}, nil
 }
 
 func userInviteGet(ctx context.Context, env *registry.Env, in InviteRef) (UserInvite, error) {

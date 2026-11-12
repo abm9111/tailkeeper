@@ -222,6 +222,24 @@ func (c *Client) Get(ctx context.Context, path string, q url.Values, out any) er
 	})
 }
 
+// GetRead performs a GET like Get and hands the bounded body to read. A list tool
+// uses it to decode one row at a time: decoding a whole array of empty objects into
+// structs costs gigabytes for a body the size cap still allows.
+func (c *Client) GetRead(ctx context.Context, path string, q url.Values, read func(io.Reader) error) error {
+	if err := checkPath(path); err != nil {
+		return err
+	}
+	full := c.base.String() + path
+	if len(q) > 0 {
+		full += "?" + q.Encode()
+	}
+	return c.retry(ctx, func() error {
+		return c.do(ctx, http.MethodGet, full, nil, "", "application/json", false, func(body io.Reader, _ *http.Response) error {
+			return read(body)
+		})
+	})
+}
+
 // errTrailingData is the error of a body that holds more than one JSON value.
 var errTrailingData = errors.New("the API response has more data after its JSON value")
 
