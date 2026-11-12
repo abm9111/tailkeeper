@@ -47,6 +47,12 @@ func (s *strValue) Set(v string) error {
 	return nil
 }
 
+// isIntField reports a plain int or a pointer to one. A pointer keeps an omitted
+// flag distinct from 0.
+func isIntField(ft reflect.Type) bool {
+	return ft.Kind() == reflect.Int || ft.Kind() == reflect.Pointer && ft.Elem().Kind() == reflect.Int
+}
+
 type intValue struct {
 	set bool
 	v   int
@@ -317,7 +323,7 @@ func bind(fs *flag.FlagSet, t reflect.Type, describe func(jsonName string) strin
 			if p.required {
 				requiredStrings = append(requiredStrings, name)
 			}
-		case ft.Kind() == reflect.Int, ft.Kind() == reflect.Pointer && ft.Elem().Kind() == reflect.Int:
+		case isIntField(ft):
 			p.value = &intValue{}
 		case ft.Kind() == reflect.Bool, ft.Kind() == reflect.Pointer && ft.Elem().Kind() == reflect.Bool:
 			p.value = &boolValue{}
