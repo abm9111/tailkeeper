@@ -192,14 +192,12 @@ func webhooksList(ctx context.Context, env *registry.Env, _ NoInput) (WebhooksOu
 	if err != nil {
 		return WebhooksOutput{}, err
 	}
-	var r struct {
-		Webhooks []apiWebhook `json:"webhooks"`
-	}
-	if err := get(ctx, env, path, nil, &r); err != nil {
+	rows, err := collectField[apiWebhook](ctx, env, path, nil, "webhooks", "webhook")
+	if err != nil {
 		return WebhooksOutput{}, err
 	}
 	out := WebhooksOutput{Webhooks: []Webhook{}}
-	for _, w := range r.Webhooks {
+	for _, w := range rows {
 		out.Webhooks = append(out.Webhooks, toWebhook(w))
 	}
 	out.Count = len(out.Webhooks)
@@ -219,13 +217,11 @@ func postureList(ctx context.Context, env *registry.Env, _ NoInput) (PostureInte
 	if err != nil {
 		return PostureIntegrationsOutput{}, err
 	}
-	var r struct {
-		Integrations []PostureIntegration `json:"integrations"`
-	}
-	if err := get(ctx, env, path, nil, &r); err != nil {
+	rows, err := collectField[PostureIntegration](ctx, env, path, nil, "integrations", "posture integration")
+	if err != nil {
 		return PostureIntegrationsOutput{}, err
 	}
-	return PostureIntegrationsOutput{Integrations: nonNil(r.Integrations), Count: len(r.Integrations)}, nil
+	return PostureIntegrationsOutput{Integrations: rows, Count: len(rows)}, nil
 }
 
 func postureGetOne(ctx context.Context, env *registry.Env, in IDRef) (PostureIntegration, error) {
@@ -241,13 +237,11 @@ func servicesList(ctx context.Context, env *registry.Env, _ NoInput) (ServicesOu
 	if err != nil {
 		return ServicesOutput{}, err
 	}
-	var r struct {
-		VIPServices []Service `json:"vipServices"`
-	}
-	if err := get(ctx, env, path, nil, &r); err != nil {
+	rows, err := collectField[Service](ctx, env, path, nil, "vipServices", "service")
+	if err != nil {
 		return ServicesOutput{}, err
 	}
-	return ServicesOutput{Services: nonNil(r.VIPServices), Count: len(r.VIPServices)}, nil
+	return ServicesOutput{Services: rows, Count: len(rows)}, nil
 }
 
 func serviceGet(ctx context.Context, env *registry.Env, in ServiceRef) (Service, error) {
@@ -267,13 +261,11 @@ func oauthAppsList(ctx context.Context, env *registry.Env, _ NoInput) (OAuthApps
 	if err != nil {
 		return OAuthAppsOutput{}, err
 	}
-	var r struct {
-		OAuthApps []OAuthApp `json:"oauthApps"`
-	}
-	if err := get(ctx, env, path, nil, &r); err != nil {
+	rows, err := collectField[OAuthApp](ctx, env, path, nil, "oauthApps", "OAuth app")
+	if err != nil {
 		return OAuthAppsOutput{}, err
 	}
-	return OAuthAppsOutput{Apps: nonNil(r.OAuthApps), Count: len(r.OAuthApps)}, nil
+	return OAuthAppsOutput{Apps: rows, Count: len(rows)}, nil
 }
 
 func oauthAppGet(ctx context.Context, env *registry.Env, in IDRef) (OAuthApp, error) {

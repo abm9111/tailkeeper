@@ -132,6 +132,82 @@ func skipJSON(dec *json.Decoder) error {
 	return nil
 }
 
+// readTopRows reads a body whose one JSON value is an array, one element at a time.
+func readTopRows(body io.Reader, row func(json.RawMessage) error) (n int, tooMany bool, err error) {
+	dec := json.NewDecoder(body)
+	if err := readOneArray(dec, func(raw json.RawMessage) error {
+		n++
+		if n > maxListRows {
+			tooMany = true
+		}
+		return row(raw)
+	}); err != nil {
+		return n, tooMany, err
+	}
+	if _, err := dec.Token(); !errors.Is(err, io.EOF) {
+		return n, tooMany, errors.New("the API response has more data after its JSON value")
+	}
+	return n, tooMany, nil
+}
+
+// collectField reads the named array of an object into at most maxListRows values.
+func collectField[T any](ctx context.Context, env *registry.Env, path string, q url.Values, field, what string) ([]T, error) {
+	var out []T
+	_, tooMany, err := readRowsKept(ctx, env, path, q, field, func(raw json.RawMessage) error {
+		if len(out) >= maxListRows {
+			return nil
+		}
+		var row T
+		if err := json.Unmarshal(raw, &row); err != nil {
+			return err
+		}
+		out = append(out, row)
+		return nil
+	})
+	if err != nil {
+		return nil, err
+	}
+	if tooMany {
+		return nil, tooManyRows(what)
+	}
+	if out == nil {
+		out = []T{}
+	}
+	return out, nil
+}
+
+// collectArray reads a body that is itself an array.
+func collectArray[T any](ctx context.Context, env *registry.Env, path, what string) ([]T, error) {
+	var out []T
+	var n int
+	var tooMany bool
+	err := getRead(ctx, env, path, nil, func(body io.Reader) error {
+		var err error
+		n, tooMany, err = readTopRows(body, func(raw json.RawMessage) error {
+			if len(out) >= maxListRows {
+				return nil
+			}
+			var row T
+			if err := json.Unmarshal(raw, &row); err != nil {
+				return err
+			}
+			out = append(out, row)
+			return nil
+		})
+		return err
+	})
+	if err != nil {
+		return nil, err
+	}
+	if tooMany || n > maxListRows {
+		return nil, tooManyRows(what)
+	}
+	if out == nil {
+		out = []T{}
+	}
+	return out, nil
+}
+
 func tooManyRows(what string) error {
 	return tkerr.New(tkerr.APIError,
 		fmt.Sprintf("the %s list has more than %d rows", what, maxListRows),
