@@ -317,7 +317,7 @@ func bind(fs *flag.FlagSet, t reflect.Type, describe func(jsonName string) strin
 			if p.required {
 				requiredStrings = append(requiredStrings, name)
 			}
-		case ft.Kind() == reflect.Int:
+		case ft.Kind() == reflect.Int, ft.Kind() == reflect.Pointer && ft.Elem().Kind() == reflect.Int:
 			p.value = &intValue{}
 		case ft.Kind() == reflect.Bool, ft.Kind() == reflect.Pointer && ft.Elem().Kind() == reflect.Bool:
 			p.value = &boolValue{}
