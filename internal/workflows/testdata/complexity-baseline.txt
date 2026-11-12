@@ -91,7 +91,7 @@
 16	internal/tools/acl_validate_patch.go	(*validation).prepatch
 26	internal/tools/acl_validate_patch.go	countPatchTests
 16	internal/tools/acl_validate_patch.go	tripwireWhere
-29	internal/tools/devices.go	devicesList
+23	internal/tools/devices.go	devicesList
 21	internal/tools/dns_policy.go	readPolicyDNS
 24	internal/tools/local.go	localPing
 16	internal/tools/local.go	localSyspolicy

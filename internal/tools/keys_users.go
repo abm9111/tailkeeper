@@ -2,6 +2,7 @@ package tools
 
 import (
 	"context"
+	"encoding/json"
 	"net/url"
 	"slices"
 
@@ -150,15 +151,24 @@ func keysList(ctx context.Context, env *registry.Env, _ NoInput) (KeysListOutput
 	if err != nil {
 		return KeysListOutput{}, err
 	}
-	var r struct {
-		Keys []apiKey `json:"keys"`
-	}
-	if err := get(ctx, env, path, url.Values{"all": {"true"}}, &r); err != nil {
+	out := KeysListOutput{Keys: []Key{}, Coverage: map[string]string{}}
+	var row apiKey
+	_, tooMany, err := readRowsKept(ctx, env, path, url.Values{"all": {"true"}}, "keys", func(raw json.RawMessage) error {
+		if len(out.Keys) >= maxListRows {
+			return nil
+		}
+		row = apiKey{}
+		if err := json.Unmarshal(raw, &row); err != nil {
+			return err
+		}
+		out.Keys = append(out.Keys, toKey(row))
+		return nil
+	})
+	if err != nil {
 		return KeysListOutput{}, err
 	}
-	out := KeysListOutput{Keys: []Key{}, Coverage: map[string]string{}}
-	for _, k := range r.Keys {
-		out.Keys = append(out.Keys, toKey(k))
+	if tooMany {
+		return KeysListOutput{}, tooManyRows("key")
 	}
 	out.Count = len(out.Keys)
 	c, err := env.RequireAPI()
@@ -232,13 +242,26 @@ func usersList(ctx context.Context, env *registry.Env, in UsersListInput) (Users
 	if err != nil {
 		return UsersListOutput{}, err
 	}
-	var r struct {
-		Users []User `json:"users"`
-	}
-	if err := get(ctx, env, path, url.Values{"type": {typ}, "role": {role}}, &r); err != nil {
+	users := make([]User, 0)
+	var row User
+	_, tooMany, err := readRowsKept(ctx, env, path, url.Values{"type": {typ}, "role": {role}}, "users", func(raw json.RawMessage) error {
+		if len(users) >= maxListRows {
+			return nil
+		}
+		row = User{}
+		if err := json.Unmarshal(raw, &row); err != nil {
+			return err
+		}
+		users = append(users, row)
+		return nil
+	})
+	if err != nil {
 		return UsersListOutput{}, err
 	}
-	return UsersListOutput{Users: nonNil(r.Users), Count: len(r.Users), Type: typ}, nil
+	if tooMany {
+		return UsersListOutput{}, tooManyRows("user")
+	}
+	return UsersListOutput{Users: users, Count: len(users), Type: typ}, nil
 }
 
 func userGet(ctx context.Context, env *registry.Env, in UserRef) (User, error) {

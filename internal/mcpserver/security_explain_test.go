@@ -76,8 +76,8 @@ func TestExplainIsNotReachableOverMCP(t *testing.T) {
 // The budget of the tool list is the one it was before the command existed: the command adds no
 // tool definition to it.
 func TestExplainLeavesTheToolListBudgetAlone(t *testing.T) {
-	if toolListBudget != 111528 {
-		t.Errorf("toolListBudget = %d; it was 111528 before security explain, which adds no tool to the list", toolListBudget)
+	if toolListBudget != 111921 {
+		t.Errorf("toolListBudget = %d; security explain adds no tool, so a change here is a change to some other tool's definition", toolListBudget)
 	}
 	total, sizes := definitionSizes(t)
 	if _, ok := sizes["security_explain"]; ok {

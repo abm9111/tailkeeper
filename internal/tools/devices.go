@@ -3,6 +3,7 @@ package tools
 import (
 	"context"
 	"encoding/json"
+	"io"
 	"net/netip"
 	"net/url"
 	"slices"
@@ -146,12 +147,18 @@ type DevicesListInput struct {
 	NameContains string   `json:"nameContains,omitempty" jsonschema:"case-insensitive substring of name or hostname as the result shows them, where an email or public address is masked while personal data is masked (client-side)"`
 	StaleDays    int      `json:"staleDays,omitempty" jsonschema:"only devices not connected and last seen more than this many days ago (client-side)"`
 	AllFields    bool     `json:"allFields,omitempty" jsonschema:"request fields=all: routes, connectivity, SSH, cloned-state flag"`
+	Limit        int      `json:"limit,omitempty" jsonschema:"page size, at most 512; 0 returns the kept rows"`
+	Offset       int      `json:"offset,omitempty" jsonschema:"rows to skip"`
 }
 
 // DevicesListOutput lists devices.
 type DevicesListOutput struct {
 	Devices       []Device `json:"devices" tk:"rows"`
 	Count         int      `json:"count"`
+	Total         int      `json:"total" jsonschema:"matching rows"`
+	Truncated     bool     `json:"truncated" jsonschema:"true when more rows match than this page returns"`
+	Limit         int      `json:"limit"`
+	Offset        int      `json:"offset"`
 	Fields        string   `json:"fields"`
 	ServerFilters []string `json:"serverFilters"`
 	ClientFilters []string `json:"clientFilters"`
@@ -219,6 +226,12 @@ func (in DevicesListInput) Check() error {
 	if in.StaleDays < 0 || in.StaleDays > 3650 {
 		return validationf("staleDays must be between 0 and 3650")
 	}
+	if in.Limit < 0 || in.Limit > maxListRows {
+		return validationf("limit must be between 0 and 512")
+	}
+	if in.Offset < 0 {
+		return validationf("offset must be 0 or more")
+	}
 	for _, tag := range lower(in.Tags) {
 		if !strings.HasPrefix(tag, "tag:") || len(tag) < 5 || strings.ContainsAny(tag, " \t,") {
 			return validationf("tags must look like tag:name")
@@ -269,12 +282,6 @@ func devicesList(ctx context.Context, env *registry.Env, in DevicesListInput) (D
 	if err != nil {
 		return DevicesListOutput{}, err
 	}
-	var resp struct {
-		Devices []apiDevice `json:"devices"`
-	}
-	if err := get(ctx, env, path, q, &resp); err != nil {
-		return DevicesListOutput{}, err
-	}
 	needle := strings.ToLower(in.NameContains)
 	if needle != "" {
 		client = append(client, "nameContains")
@@ -286,28 +293,87 @@ func devicesList(ctx context.Context, env *registry.Env, in DevicesListInput) (D
 		client = append(client, "user (pseudonym)")
 	}
 	cutoff := env.Clock().Add(-time.Duration(in.StaleDays) * 24 * time.Hour)
-	out := DevicesListOutput{Fields: fields, ServerFilters: sorted(server), ClientFilters: client, Devices: []Device{}}
-	for _, a := range resp.Devices {
-		name, hostname := shownNames(env, a)
-		if needle != "" && !strings.Contains(strings.ToLower(name), needle) && !strings.Contains(strings.ToLower(hostname), needle) {
-			continue
+	var (
+		kept  []Device
+		extra int
+		row   apiDevice
+	)
+	_, _, err = readRowsKept(ctx, env, path, q, "devices", func(raw json.RawMessage) error {
+		row = apiDevice{}
+		if err := json.Unmarshal(raw, &row); err != nil {
+			return err
 		}
-		if in.StaleDays > 0 && !stale(a, cutoff) {
-			continue
+		if !deviceMatches(env, row, needle, cutoff, in.StaleDays, userRef) {
+			return nil
 		}
-		if userRef != "" && !slices.Contains(wholeRefs(env, a.User), userRef) {
-			continue
+		if len(kept) >= maxListRows {
+			extra++
+			return nil
 		}
-		out.Devices = append(out.Devices, toDevice(a, fields))
-	}
-	sort.Slice(out.Devices, func(i, j int) bool {
-		if out.Devices[i].Name != out.Devices[j].Name {
-			return out.Devices[i].Name < out.Devices[j].Name
-		}
-		return out.Devices[i].NodeID < out.Devices[j].NodeID
+		kept = append(kept, toDevice(row, fields))
+		return nil
 	})
-	out.Count = len(out.Devices)
-	return out, nil
+	if err != nil {
+		return DevicesListOutput{}, err
+	}
+	page, total, truncated := pageDevices(kept, extra, in.Limit, in.Offset)
+	return DevicesListOutput{
+		Devices: page, Count: len(page), Total: total, Truncated: truncated,
+		Limit: in.Limit, Offset: in.Offset,
+		Fields: fields, ServerFilters: sorted(server), ClientFilters: client,
+	}, nil
+}
+
+func deviceMatches(env *registry.Env, row apiDevice, needle string, cutoff time.Time, staleDays int, userRef string) bool {
+	name, hostname := shownNames(env, row)
+	if needle != "" && !strings.Contains(strings.ToLower(name), needle) && !strings.Contains(strings.ToLower(hostname), needle) {
+		return false
+	}
+	if staleDays > 0 && !stale(row, cutoff) {
+		return false
+	}
+	if userRef != "" && !slices.Contains(wholeRefs(env, row.User), userRef) {
+		return false
+	}
+	return true
+}
+
+func pageDevices(kept []Device, extra, limit, offset int) (page []Device, total int, truncated bool) {
+	sort.Slice(kept, func(i, j int) bool {
+		if kept[i].Name != kept[j].Name {
+			return kept[i].Name < kept[j].Name
+		}
+		return kept[i].NodeID < kept[j].NodeID
+	})
+	if limit == 0 {
+		limit = len(kept)
+	}
+	if offset > len(kept) {
+		offset = len(kept)
+	}
+	end := offset + limit
+	if end > len(kept) {
+		end = len(kept)
+	}
+	page = kept[offset:end]
+	if page == nil {
+		page = []Device{}
+	}
+	return page, len(kept) + extra, extra > 0 || end < len(kept)
+}
+
+// readRowsKept reads the named array one row at a time. It does not stop at
+// maxListRows: the caller counts or discards the rest so a huge body is not decoded
+// into one slice.
+func readRowsKept(ctx context.Context, env *registry.Env, path string, q url.Values, field string, row func(json.RawMessage) error) (int, bool, error) {
+	var n int
+	var tooMany bool
+	err := getRead(ctx, env, path, q, func(body io.Reader) error {
+		var err error
+		n, tooMany, err = readRows(body, field, row)
+		return err
+	})
+	return n, tooMany, err
 }
 
 // shownNames returns a device's name and hostname as a result shows them, masked

@@ -69,6 +69,10 @@ const maxInFlight = 4
 // 64 MiB.
 const maxBody = 8 << 20
 
+// maxMCPResult is the largest JSON result an MCP call returns. The frame carries
+// it twice, and a Go MCP SDK client rejects a line over 16 MiB.
+const maxMCPResult = 7 << 20
+
 // Options selects what the server advertises.
 type Options struct {
 	Profile     string
@@ -386,6 +390,11 @@ func (h *handler) call(t registry.Tool) mcp.ToolHandler {
 		if err == nil {
 			if body, encErr = json.Marshal(out); encErr != nil {
 				err = tkerr.Wrap(tkerr.Internal, encErr, "cannot encode the result", "")
+			} else if len(body) > maxMCPResult {
+				// The result is sent twice, as structured content and as text. Past
+				// about 7 MiB the frame can exceed the Go MCP SDK's 16 MiB line limit.
+				err = tkerr.New(tkerr.ValidationFailed, "the result exceeds 7 MiB", "narrow the request with filters or a smaller limit")
+				body = nil
 			}
 		}
 		h.record(t, requester("mcp", req.Session), start, body, err, callID)
