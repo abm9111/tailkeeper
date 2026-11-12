@@ -153,7 +153,8 @@ func TestLocalPingRefusesNonTailnetTargets(t *testing.T) {
 	cli := newFakeCLI(t)
 	reg := newRegistry(t)
 	for _, args := range []string{`{"target":"8.8.8.8"}`, `{"target":"example.com"}`, `{"target":"-c"}`,
-		`{"target":"100.64.0.11","count":11}`, `{"target":"100.64.0.11","mode":"udp"}`} {
+		`{"target":"100.64.0.11","count":11}`, `{"target":"100.64.0.11","count":0}`,
+		`{"target":"100.64.0.11","timeoutSeconds":0}`, `{"target":"100.64.0.11","mode":"udp"}`} {
 		if _, err := call(t, reg, cli.env(), "local_ping", args); code(err) != tkerr.ValidationFailed {
 			t.Errorf("%s: err = %v", args, err)
 		}
@@ -424,6 +425,7 @@ func TestLocalUnrecognizedOutputIsAnError(t *testing.T) {
 		{"local_status", `{}`, "status --json --peers=false", `{}`},
 		{"local_status", `{}`, "status --json --peers=false", `null`},
 		{"local_whoami", `{}`, "whoami --json", `{}`},
+		{"local_whoami", `{}`, "whoami --json", `{"Node":null}`},
 		{"local_whois", `{"address":"100.64.0.11"}`, "whois --json 100.64.0.11", `{}`},
 		{"local_version", `{}`, "version --json --daemon", `{}`},
 		{"local_dns_status", `{}`, "dns status --json", `{}`},

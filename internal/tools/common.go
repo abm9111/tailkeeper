@@ -92,7 +92,9 @@ func filterRefused(env *registry.Env, name string, takesIDs bool) error {
 		takes = "an exact ID or a pseudonym (p:…)"
 	}
 	hint := "pass the pseudonym shown after a masked value, or the masked value itself; the owner can set personalData to show"
-	if keyless(env) {
+	if env != nil && env.PrivacyErr != nil {
+		hint = "the privacy key is malformed or unreadable; tailkeeper doctor says why"
+	} else if keyless(env) {
 		hint = keylessHint
 	}
 	if takesIDs {
@@ -103,6 +105,16 @@ func filterRefused(env *registry.Env, name string, takesIDs bool) error {
 }
 
 func validationf(msg string) error { return tkerr.New(tkerr.ValidationFailed, msg, "") }
+
+// userFilterRefused is filterRefused for devices_list's user filter, which also
+// accepts tagged-devices.
+func userFilterRefused(env *registry.Env) error {
+	err := filterRefused(env, "user", false)
+	if fe := tkerr.From(err); fe != nil {
+		fe.Message = strings.Replace(fe.Message, "takes a pseudonym (p:…)", "takes a pseudonym (p:…), the masked value that carries one, or tagged-devices", 1)
+	}
+	return err
+}
 
 func sortedKeys[V any](m map[string]V) []string {
 	out := make([]string, 0, len(m))

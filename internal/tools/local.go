@@ -97,8 +97,12 @@ func decodeCLI(stdout []byte, out any, keys, args []string) error {
 		return unrecognized(args, "null")
 	}
 	for _, k := range keys {
-		if _, ok := top[k]; !ok {
+		raw, ok := top[k]
+		if !ok {
 			return unrecognized(args, "JSON without "+k)
+		}
+		if bytes.Equal(bytes.TrimSpace(raw), []byte("null")) {
+			return unrecognized(args, "JSON with null "+k)
 		}
 	}
 	return nil
@@ -432,8 +436,8 @@ func localIP(ctx context.Context, env *registry.Env, in LocalIPInput) (LocalIPOu
 // PingInput configures local_ping.
 type PingInput struct {
 	Target         string `json:"target" jsonschema:"literal tailnet IP of the peer"`
-	Count          int    `json:"count,omitempty" jsonschema:"1-10 (default 3)"`
-	TimeoutSeconds int    `json:"timeoutSeconds,omitempty" jsonschema:"per ping, 1-8 (default 5)"`
+	Count          *int   `json:"count,omitempty" jsonschema:"1-10 (default 3)"`
+	TimeoutSeconds *int   `json:"timeoutSeconds,omitempty" jsonschema:"per ping, 1-8 (default 5)"`
 	Mode           string `json:"mode,omitempty" jsonschema:"disco (default), tsmp, icmp or peerapi"`
 	AllPings       bool   `json:"allPings,omitempty" jsonschema:"send every ping; by default (like the CLI) disco pings stop at the first direct reply"`
 }
@@ -528,18 +532,28 @@ func ParsePing(out []byte) PingResult {
 
 func ms(d time.Duration) float64 { return float64(d) / float64(time.Millisecond) }
 
+// pingBound turns an omitted count or timeout into its default and refuses 0,
+// which encoding/json cannot tell from omitted on a plain int.
+func pingBound(v *int, def, lo, hi int) (int, error) {
+	if v == nil {
+		return def, nil
+	}
+	if *v < lo || *v > hi {
+		return 0, validationf("count must be 1-10 and timeoutSeconds 1-8")
+	}
+	return *v, nil
+}
+
 func localPing(ctx context.Context, env *registry.Env, in PingInput) (PingOutput, error) {
 	if err := tailnetAddress(in.Target, false); err != nil {
 		return PingOutput{}, err
 	}
-	count, timeout := in.Count, in.TimeoutSeconds
-	if count == 0 {
-		count = 3
+	count, err := pingBound(in.Count, 3, 1, 10)
+	if err != nil {
+		return PingOutput{}, validationf("count must be 1-10 and timeoutSeconds 1-8")
 	}
-	if timeout == 0 {
-		timeout = 5
-	}
-	if count < 1 || count > 10 || timeout < 1 || timeout > 8 {
+	timeout, err := pingBound(in.TimeoutSeconds, 5, 1, 8)
+	if err != nil {
 		return PingOutput{}, validationf("count must be 1-10 and timeoutSeconds 1-8")
 	}
 	mode := in.Mode
