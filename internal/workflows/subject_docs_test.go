@@ -235,7 +235,7 @@ func TestTheSubjectDocsCheckRefusesEachWrongStatement(t *testing.T) {
 
 // namesMissingClause reports whether a problem line says that a clause containing want is lacking.
 func namesMissingClause(problems, want string) bool {
-	for _, line := range strings.Split(problems, "\n") {
+	for line := range strings.SplitSeq(problems, "\n") {
 		if strings.Contains(line, " lacks: ") && strings.Contains(line, want) {
 			return true
 		}
@@ -269,7 +269,7 @@ func readRepoFile(t *testing.T, path string) string {
 }
 
 func lineStarting(page, prefix string) string {
-	for _, line := range strings.Split(page, "\n") {
+	for line := range strings.SplitSeq(page, "\n") {
 		if strings.HasPrefix(line, prefix) {
 			return line
 		}
@@ -279,7 +279,7 @@ func lineStarting(page, prefix string) string {
 
 func countPrefixes(page string, prefixes []string) int {
 	n := 0
-	for _, line := range strings.Split(page, "\n") {
+	for line := range strings.SplitSeq(page, "\n") {
 		for _, prefix := range prefixes {
 			if strings.HasPrefix(line, prefix) {
 				n++
@@ -291,15 +291,12 @@ func countPrefixes(page string, prefixes []string) int {
 }
 
 func sectionUnder(page, heading string) string {
-	i := strings.Index(page, heading)
-	if i < 0 {
+	_, rest, found := strings.Cut(page, heading)
+	if !found {
 		return ""
 	}
-	rest := page[i+len(heading):]
-	if j := strings.Index(rest, "\n## "); j >= 0 {
-		return rest[:j]
-	}
-	return rest
+	section, _, _ := strings.Cut(rest, "\n## ")
+	return section
 }
 
 // postingSentenceProblems returns, for each line of a document that names the validate
@@ -308,7 +305,7 @@ func sectionUnder(page, heading string) string {
 // documents there. The count of lines checked is returned so a document that no longer
 // has such a line cannot pass by having nothing to check.
 func postingSentenceProblems(doc, text string) (problems []string, checked int) {
-	for _, line := range strings.Split(text, "\n") {
+	for line := range strings.SplitSeq(text, "\n") {
 		if !strings.Contains(line, "POST .../acl/validate") || !strings.Contains(line, "`acl_test`") {
 			continue
 		}
@@ -370,6 +367,12 @@ func TestAgentRulesDocumentImportKeepsThePostingCheckEffective(t *testing.T) {
 			path := filepath.Join(root, tt.doc)
 			if tt.link {
 				if err := os.Symlink("AGENTS.md", path); err != nil {
+					// Outside CI a Windows account may lack the symbolic-link privilege; the
+					// case then checks nothing, so it says SKIP rather than PASS. Any other
+					// error, and every error in CI, fails.
+					if os.Getenv("CI") == "" && symlinkPrivilegeMissing(err) {
+						t.Skipf("this account lacks the symbolic-link privilege: %v", err)
+					}
 					t.Fatal(err)
 				}
 			} else if err := os.WriteFile(path, []byte(tt.body), 0o600); err != nil {

@@ -14,6 +14,21 @@ It distinguishes this binary from `local version`, which reports Tailscale versi
 Empty assessment schema/capability lists mean that assessment is not implemented.
 See [security coverage](docs/security/coverage.md) for evidence and deployment limits.
 
+## Quick start
+
+Tailkeeper lets you inspect your Tailscale network from the command line or an MCP client. For example, after setup, ask your assistant to list your tailnet's devices. Tailkeeper only reads: apart from the credential's token request, its only request other than GET asks Tailscale to validate a policy, which changes nothing (see the status line above). Review the privacy limits above and below before connecting an agent.
+
+1. **Install.** With Go 1.27.4 or later, run:
+
+   ```sh
+   go install github.com/abm9111/tailkeeper/cmd/tailkeeper@latest
+   ```
+
+   Ensure Go's binary directory is on your `PATH`: `GOBIN` if set, otherwise `GOPATH/bin`. That binary is built on your machine, so the release checks under [Verify a release](#verify-a-release) do not cover it; for a binary you can verify, download an archive as described under [Install](#install).
+2. **Check the install.** Run `tailkeeper version` and `tailkeeper scopes`. A Go-installed binary reports `tailkeeper dev`; `scopes` lists the read permissions each tool needs. Neither command needs a Tailscale credential.
+3. **Connect Tailscale.** Create an OAuth client with read scopes, then follow [Configure](#configure) to set up a secret-manager wrapper and run `tailkeeper doctor`.
+4. **Connect your assistant.** Follow [Use](#use) for Claude Code, Cursor, VS Code, or Codex, then ask it to list your devices. Device names and some other network details are not masked; see [What it does differently](#what-it-does-differently) and `SECURITY.md` before sharing output.
+
 ## What it does differently
 
 - **One registry, two surfaces.** Every tool is an MCP tool and a CLI command with the same parameters, validation and output. MCP lists the alpha tools only with `--enable-alpha`.
@@ -285,7 +300,7 @@ The three tools listed as unavailable were not exercised: `user_invites_list` an
 - `docs/dependencies.md`: every package the binary links (generated; `make deps-check` fails on any change until it is reviewed).
 - `docs/recipes/`: credential wrappers for two secret managers, a GitHub Actions check of a policy change, and a scheduled policy check.
 - `CHANGELOG.md`: what each release changed. `SECURITY.md`: how to report a vulnerability. `CONTRIBUTING.md`: how to work on the code.
-- `CLAUDE.md`: the rules for agents working in this repository.
+- `AGENTS.md`: the rules for agents working in this repository. `CLAUDE.md` imports it and adds the Claude-specific MCP smoke test.
 
 ## License
 
