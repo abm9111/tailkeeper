@@ -103,6 +103,7 @@ One subtest skips outside CI only, so it is in neither list: the `symlink` case 
 - `TestClassifiesDaemonStates` (`internal/local`): the stand-in `tailscale` CLI is a POSIX shell script.
 - `TestVersionSkewWarning` (`internal/local`): the stand-in `tailscale` CLI is a POSIX shell script.
 - `TestVersionSkewWarningIgnoresABuildSuffix` (`internal/local`): the stand-in `tailscale` CLI is a POSIX shell script.
+- `TestAChildOverTheOutputCapIsStoppedAtOnce` (`internal/local`): the stand-in `tailscale` CLI is a POSIX shell script.
 - `TestRateLimit` (`internal/local`): the stand-in `tailscale` CLI is a POSIX shell script.
 - `TestRunRefusesMisuse` (`internal/local`): the stand-in `tailscale` CLI is a POSIX shell script.
 - `TestTimeoutNamesTheSubcommand` (`internal/local`): the stand-in `tailscale` CLI is a POSIX shell script.

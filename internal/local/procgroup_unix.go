@@ -8,7 +8,8 @@ import (
 )
 
 // configureProcessGroup puts the CLI in its own process group and kills the whole
-// group when the context ends, so no child survives a timeout.
+// group when the context ends. A descendant that leaves the group (setsid) survives the
+// kill; Run's WaitDelay only stops it from waiting for such a process.
 func configureProcessGroup(cmd *exec.Cmd) {
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
 	cmd.Cancel = func() error {
