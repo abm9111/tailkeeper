@@ -56,6 +56,16 @@ func TestDevicesListFiltersAndDropsUndeclaredFields(t *testing.T) {
 	}
 }
 
+func TestDevicesListTreatsAnUnparsableLastSeenAsStale(t *testing.T) {
+	f, reg, env := apiEnv(t)
+	f.JSON("GET", devicesPath, 200, `{"devices":[{"id":"9","nodeId":"nBAD9CNTRL","name":"odd","hostname":"odd","os":"linux","connectedToControl":false,"lastSeen":"not-a-time","authorized":true}]}`)
+	var out tools.DevicesListOutput
+	mustCall(t, reg, env, "devices_list", `{"staleDays":30}`, &out)
+	if out.Count != 1 || out.Devices[0].NodeID != "nBAD9CNTRL" {
+		t.Fatalf("devices = %+v", out.Devices)
+	}
+}
+
 func TestDevicesListStaleAndSanitized(t *testing.T) {
 	f, reg, env := apiEnv(t)
 	f.JSON("GET", devicesPath, 200, deviceFixture())

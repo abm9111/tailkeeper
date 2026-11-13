@@ -4,7 +4,7 @@ What each release of tailkeeper changed. Versions follow semantic versioning; un
 
 ## Unreleased — foundations
 
-- The MCP definition byte budget (`toolListBudget`) rises from 111,528 to 111,921 bytes for `devices_list` paging: `limit`, `offset`, `total` and `truncated`. Growth remains checked with the existing 1,024-byte slack limit.
+- The MCP definition byte budget (`toolListBudget`) rises from 111,528 to 111,921 bytes for `devices_list` paging: `limit`, `offset`, `total` and `truncated`, and from 111,921 to 111,939 bytes because `local_ping` takes `count` and `timeoutSeconds` as pointers so that 0 is refused and an omitted value stays the default. `local_ping` input `$.count` and `$.timeoutSeconds` may be null when omitted. Growth remains checked with the existing 1,024-byte slack limit.
 - Built with Go 1.27.4: Go 1.27.3's `net/http` can crash an HTTP/1 server on a MaxBytesReader header race (GO-2026-6859). Tailkeeper does not serve HTTP. The pin tracks that Go security release.
 
 - All credential `file:` indirections, OIDC `tokenFile` reads and privacy-key file references use the checked private-file reader, capped at 1 MiB. Shared-readable secret mounts must migrate to private regular files or an exec provider. Unix owner/mode checks and Windows ACL limitations are documented in SECURITY.md.

@@ -252,7 +252,7 @@ func devicesList(ctx context.Context, env *registry.Env, in DevicesListInput) (D
 		}
 		user, userRef = "", p
 	} else if in.User != "" && !env.ShowPersonalData() && !sanitize.IsTaggedDevices(in.User) {
-		return DevicesListOutput{}, filterRefused(env, "user", false)
+		return DevicesListOutput{}, userFilterRefused(env)
 	}
 	if in.Hostname != "" && !env.ShowPersonalData() && sanitize.MaskText(in.Hostname) != in.Hostname {
 		// An exact match on text the result masks would confirm a guess at it.
@@ -397,7 +397,10 @@ func stale(a apiDevice, cutoff time.Time) bool {
 		return true
 	}
 	t, err := time.Parse(time.RFC3339Nano, a.LastSeen)
-	return err == nil && t.Before(cutoff)
+	if err != nil {
+		return true
+	}
+	return t.Before(cutoff)
 }
 
 func sorted(ss []string) []string {
