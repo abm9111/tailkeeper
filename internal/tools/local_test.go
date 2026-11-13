@@ -52,7 +52,7 @@ func TestLocalStatusClassifiesPathsAndHidesEndpoints(t *testing.T) {
 			t.Errorf("%s path = %q, want %q", host, paths[host], w)
 		}
 	}
-	if out.PeerCount != 4 || out.PeerScope != "network_map" || out.Self == nil || out.Self.Path != "" || !out.MagicDNSEnabled || out.NeedsLogin {
+	if out.PeerCount == nil || *out.PeerCount != 4 || out.PeerScope != "network_map" || out.Self == nil || out.Self.Path != "" || out.MagicDNSEnabled == nil || !*out.MagicDNSEnabled || out.NeedsLogin {
 		t.Errorf("status = %+v", out)
 	}
 	if out.Health[0] != `warning\u{001B}[2J` {
@@ -62,6 +62,16 @@ func TestLocalStatusClassifiesPathsAndHidesEndpoints(t *testing.T) {
 		if p.HostName == "derp-peer" && p.LastHandshake != "" {
 			t.Errorf("zero handshake time shown as %q", p.LastHandshake)
 		}
+	}
+}
+
+func TestLocalStatusOmitsUnreadCounts(t *testing.T) {
+	cli := newFakeCLI(t)
+	cli.on("status --json --peers=false", 0, `{"BackendState":"Running","Version":"1.102.4-tTEST"}`, "")
+	var out tools.LocalStatusOutput
+	s := mustCall(t, newRegistry(t), cli.env(), "local_status", `{}`, &out)
+	if out.PeerCount != nil || out.MagicDNSEnabled != nil || strings.Contains(s, "peerCount") || strings.Contains(s, "magicDnsEnabled") {
+		t.Fatalf("unread counts were reported: %+v %s", out, s)
 	}
 }
 
