@@ -138,6 +138,14 @@ func TestVersionSkewWarning(t *testing.T) {
 	}
 }
 
+func TestVersionSkewWarningIgnoresABuildSuffix(t *testing.T) {
+	r := runner(fakeCLI(t, `echo 'Warning: client version "1.104.5-t73a48057a" != tailscaled server version "1.104.5-t788384763-gd9218e278"' >&2; echo '{}'`))
+	res, err := r.Run(context.Background(), 5*time.Second, "version", "--json", "--daemon")
+	if err != nil || len(res.Warnings) != 0 {
+		t.Fatalf("Warnings = %v, err = %v; want none when only the build suffix differs", res.Warnings, err)
+	}
+}
+
 func TestRateLimit(t *testing.T) {
 	now := time.Date(2026, 10, 10, 9, 0, 0, 0, time.UTC)
 	r := runner(fakeCLI(t, `echo ok`))

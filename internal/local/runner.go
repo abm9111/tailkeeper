@@ -125,6 +125,23 @@ func (r *Runner) Env() []string {
 
 var skewRE = regexp.MustCompile(`client version "([^"]+)" != tailscaled server version "([^"]+)"`)
 
+// skewWarning words the CLI's version warning, or returns "" when the CLI said none or the
+// two versions share a release.
+func skewWarning(stderr string) string {
+	m := skewRE.FindStringSubmatch(stderr)
+	if m == nil || releaseOf(m[1]) == releaseOf(m[2]) {
+		return ""
+	}
+	return "cli " + m[1] + " differs from daemon " + m[2]
+}
+
+// releaseOf cuts a long version ("1.104.5-t73a48057a") to its release ("1.104.5"). The CLI
+// compares the whole string, so a build suffix alone makes it warn; that is not a skew.
+func releaseOf(v string) string {
+	v, _, _ = strings.Cut(v, "-")
+	return v
+}
+
 // waitDelay bounds how long Run waits for the CLI's output pipes to close once the
 // CLI has exited or been killed. Without it, a descendant still holding them (one
 // left running in the background, or one outside the process group) would keep
@@ -165,8 +182,8 @@ func (r *Runner) Run(ctx context.Context, timeout time.Duration, args ...string)
 	start := time.Now()
 	err := cmd.Run()
 	res := Result{Stdout: stdout.Bytes(), Stderr: stderr.String(), Duration: time.Since(start)}
-	if m := skewRE.FindStringSubmatch(res.Stderr); m != nil {
-		res.Warnings = append(res.Warnings, "cli "+m[1]+" differs from daemon "+m[2])
+	if w := skewWarning(res.Stderr); w != "" {
+		res.Warnings = append(res.Warnings, w)
 	}
 	if cmd.ProcessState != nil {
 		res.Exit = cmd.ProcessState.ExitCode()
