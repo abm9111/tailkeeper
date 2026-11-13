@@ -4,6 +4,7 @@ What each release of tailkeeper changed. Versions follow semantic versioning; un
 
 ## Unreleased — foundations
 
+- `audit_log` accepts a cursor when the filters are repeated as an empty list instead of absent, or in another order; it refused them as changed. `device_routes` with `includeHa` no longer reads the device list for a device that enables only exit routes, which have no failover peer.
 - A local CLI child whose standard output passes the size cap is stopped when the cap first overflows and the call ends as `local_output_unrecognized`; it ran until it exited or the 30 s timeout (95 s for ping) and ended as `local_timeout`. Standard error is still cut at its own cap without stopping the child. Two comments now say what the code does: a descendant that leaves the process group survives the kill, and `local_prefs` decodes into a map but shows only its allowlisted keys.
 - `devices_list` and `device_get` omit `expires` for a device whose `keyExpiryDisabled` is true: the API still returns the date the key would have expired, which read as an expired key. The schema text is unchanged (the tool list is at its byte budget).
 - A local CLI warning that its version differs from the daemon's is dropped when only the build suffix differs (`1.104.5-t73a48057a` against `1.104.5-t788384763-gd9218e278`); `local_version`'s `skew` already compared the release alone.

@@ -240,6 +240,17 @@ func TestDeviceRoutesHAByNumericIDSkipsSelfAndExitRoutes(t *testing.T) {
 	}
 }
 
+func TestDeviceRoutesHAForAnExitOnlyDeviceReadsNoDeviceList(t *testing.T) {
+	f, reg, env := apiEnv(t)
+	f.JSON("GET", "/api/v2/device/1001/routes", 200, `{"advertisedRoutes":["0.0.0.0/0","::/0"],"enabledRoutes":["0.0.0.0/0","::/0"]}`)
+	// No route for the device list: a request for it would fail the call.
+	var out tools.DeviceRoutesOutput
+	mustCall(t, reg, env, "device_routes", `{"device":"1001","includeHa":true}`, &out)
+	if len(out.HAPeers) != 0 {
+		t.Errorf("HA peers = %+v", out.HAPeers)
+	}
+}
+
 func TestDeviceRouteAndRegionTextIsSanitized(t *testing.T) {
 	f, reg, env := apiEnv(t)
 	esc := jsonString("evil" + r(0x1B) + "[2J")

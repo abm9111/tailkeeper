@@ -497,7 +497,8 @@ func deviceRoutes(ctx context.Context, env *registry.Env, in DeviceRoutesInput) 
 		NodeID: id, Advertised: adv, Enabled: en, Pending: minus(adv, en), Latent: minus(en, adv),
 		ExitNodeAdvertised: isExit(adv), ExitNodeEnabled: isExit(en),
 	}
-	if in.IncludeHA && len(en) > 0 {
+	mine := nonExitSet(en)
+	if in.IncludeHA && len(mine) > 0 {
 		path, err := tailnetPath(env, "/devices")
 		if err != nil {
 			return DeviceRoutesOutput{}, err
@@ -507,12 +508,6 @@ func deviceRoutes(ctx context.Context, env *registry.Env, in DeviceRoutesInput) 
 		}
 		if err := get(ctx, env, path, url.Values{"fields": {"all"}}, &resp); err != nil {
 			return DeviceRoutesOutput{}, err
-		}
-		mine := map[string]bool{}
-		for _, p := range en {
-			if !isExit([]string{p}) {
-				mine[p] = true
-			}
 		}
 		for _, d := range resp.Devices {
 			if d.NodeID == id || d.ID == id {
@@ -526,6 +521,17 @@ func deviceRoutes(ctx context.Context, env *registry.Env, in DeviceRoutesInput) 
 		}
 	}
 	return out, nil
+}
+
+// nonExitSet is the enabled routes that are not exit routes: only those can have a failover peer.
+func nonExitSet(en []string) map[string]bool {
+	mine := map[string]bool{}
+	for _, p := range en {
+		if !isExit([]string{p}) {
+			mine[p] = true
+		}
+	}
+	return mine
 }
 
 func normPrefixes(in []string) []string {

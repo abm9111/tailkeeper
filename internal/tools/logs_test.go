@@ -31,6 +31,24 @@ const auditFixture = `{"logs":[
  "old":{"acls":[{"action":"accept"}]},"new":null}
 ]}`
 
+func TestAuditLogCursorIgnoresAnEmptyFilterListAndTheOrderOfAFilter(t *testing.T) {
+	f, reg, env := apiEnv(t)
+	f.JSON("GET", tailnetPath+"/logging/configuration", 200, auditFixture)
+	var first tools.AuditLogOutput
+	mustCall(t, reg, env, "audit_log", `{"limit":2,"event":["A","B"]}`, &first)
+	if first.NextCursor == "" {
+		t.Fatal("no next cursor from the first page")
+	}
+	for _, args := range []string{
+		`{"limit":2,"event":["B","A"],"actor":[],"target":[],"origin":[],"cursor":"` + first.NextCursor + `"}`,
+		`{"limit":2,"event":["A","B"],"cursor":"` + first.NextCursor + `"}`,
+	} {
+		if _, err := call(t, reg, env, "audit_log", args); err != nil {
+			t.Errorf("the same filters written another way were refused: %v (%s)", err, args)
+		}
+	}
+}
+
 func TestAuditLogPagesWithoutLossOrRepeats(t *testing.T) {
 	f, reg, env := apiEnv(t)
 	f.JSON("GET", tailnetPath+"/logging/configuration", 200, auditFixture)

@@ -315,6 +315,17 @@ const flowMaxSpan = time.Hour
 // another setting, or another privacy key, the cursor's position inside such a
 // run would mean something else. The key enters only as a keyed hash of a
 // constant, itself hashed.
+// filterSet is a filter list as a set for the cursor fingerprint: an absent list and an empty one
+// are the same, and so are two orders of the same values. It copies; the input is the caller's.
+func filterSet(ss []string) []string {
+	out := slices.Clone(ss)
+	if out == nil {
+		out = []string{}
+	}
+	sort.Strings(out)
+	return out
+}
+
 func auditFilters(env *registry.Env, in AuditLogInput, limit int) string {
 	mode := "show"
 	if !env.ShowPersonalData() {
@@ -323,7 +334,7 @@ func auditFilters(env *registry.Env, in AuditLogInput, limit int) string {
 			mode += ":" + env.Privacy.Digest([]byte("audit_log cursor"))
 		}
 	}
-	b, _ := json.Marshal([]any{in.Actor, in.Target, in.Event, lower(in.Origin), limit, in.IncludeValues, mode})
+	b, _ := json.Marshal([]any{filterSet(in.Actor), filterSet(in.Target), filterSet(in.Event), filterSet(lower(in.Origin)), limit, in.IncludeValues, mode})
 	sum := sha256.Sum256(b)
 	return hex.EncodeToString(sum[:8])
 }
