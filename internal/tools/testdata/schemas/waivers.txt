@@ -9,3 +9,5 @@
 # backticks (an enum value need not be repeated; a removed tool needs only its
 # name). A line that excuses no break found now is an error: the release PR
 # clears the lines whose change is now in the baseline.
+2026-11-12 local_ping input $.count type-changed an omitted count stays the default and 0 is refused
+2026-11-12 local_ping input $.timeoutSeconds type-changed an omitted timeout stays the default and 0 is refused

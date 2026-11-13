@@ -93,7 +93,7 @@
 16	internal/tools/acl_validate_patch.go	tripwireWhere
 23	internal/tools/devices.go	devicesList
 21	internal/tools/dns_policy.go	readPolicyDNS
-24	internal/tools/local.go	localPing
+20	internal/tools/local.go	localPing
 16	internal/tools/local.go	localSyspolicy
 44	internal/tools/logs.go	auditLog
 17	internal/tools/logs.go	networkFlowLogs
