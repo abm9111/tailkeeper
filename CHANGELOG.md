@@ -4,6 +4,7 @@ What each release of tailkeeper changed. Versions follow semantic versioning; un
 
 ## Unreleased — foundations
 
+- `audit_log` leaves out an entry whose `eventTime` it cannot read and says how many in `note`; one such entry failed the whole call with `api_error`, so no window that held it could be read. `network_flow_logs` says in `note` why `loggingEnabled` is `unknown`: the settings request's error code, or that the settings did not say.
 - `audit_log` accepts a cursor when the filters are repeated as an empty list instead of absent, or in another order; it refused them as changed. `device_routes` with `includeHa` no longer reads the device list for a device that enables only exit routes, which have no failover peer.
 - A local CLI child whose standard output passes the size cap is stopped when the cap first overflows and the call ends as `local_output_unrecognized`; it ran until it exited or the 30 s timeout (95 s for ping) and ended as `local_timeout`. Standard error is still cut at its own cap without stopping the child. Two comments now say what the code does: a descendant that leaves the process group survives the kill, and `local_prefs` decodes into a map but shows only its allowlisted keys.
 - `devices_list` and `device_get` omit `expires` for a device whose `keyExpiryDisabled` is true: the API still returns the date the key would have expired, which read as an expired key. The schema text is unchanged (the tool list is at its byte budget).

@@ -31,6 +31,22 @@ const auditFixture = `{"logs":[
  "old":{"acls":[{"action":"accept"}]},"new":null}
 ]}`
 
+func TestAuditLogSkipsAnEntryWithAnUnreadableEventTimeAndSaysSo(t *testing.T) {
+	f, reg, env := apiEnv(t)
+	f.JSON("GET", tailnetPath+"/logging/configuration", 200, `{"logs":[
+{"eventTime":"2026-10-10T10:00:00Z","origin":"CONFIG_API","action":"UPDATE","target":{"name":"good1"}},
+{"eventTime":"not-a-time","origin":"CONFIG_API","action":"UPDATE","target":{"name":"bad"}},
+{"eventTime":"2026-10-10T11:00:00Z","origin":"CONFIG_API","action":"UPDATE","target":{"name":"good2"}}]}`)
+	var out tools.AuditLogOutput
+	mustCall(t, reg, env, "audit_log", `{}`, &out)
+	if out.Count != 2 || out.Entries[0].Target.Name != "good1" || out.Entries[1].Target.Name != "good2" {
+		t.Fatalf("entries = %+v", out.Entries)
+	}
+	if !strings.Contains(out.Note, "1 entry with an unreadable eventTime") {
+		t.Errorf("note = %q, want it to say one entry was left out", out.Note)
+	}
+}
+
 func TestAuditLogCursorIgnoresAnEmptyFilterListAndTheOrderOfAFilter(t *testing.T) {
 	f, reg, env := apiEnv(t)
 	f.JSON("GET", tailnetPath+"/logging/configuration", 200, auditFixture)
@@ -333,6 +349,9 @@ func TestFlowLogsUnknownWhenSettingsUnreadable(t *testing.T) {
 	mustCall(t, reg, env, "network_flow_logs", `{"maxRecords":5}`, &out)
 	if out.Status != "ok" || out.LoggingEnabled != "unknown" || out.Count != 1 {
 		t.Fatalf("out = %+v", out)
+	}
+	if !strings.Contains(out.Note, "the settings request failed (") {
+		t.Errorf("note = %q, want it to give the reason loggingEnabled is unknown", out.Note)
 	}
 	if fl := out.Records[0].Flows; len(fl) != 2 || fl[0].Kind != "virtual" || fl[0].Proto != "tcp" || fl[1].Kind != "physical" {
 		t.Errorf("flows = %+v", fl)
