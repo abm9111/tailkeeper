@@ -73,8 +73,9 @@ func (r Read) String() string {
 
 // System is the environment and filesystem a provider reads. Tests replace it.
 type System struct {
-	// Getenv is required: Resolve panics on a System whose Getenv is nil. The CLI sets
-	// every field of its System (internal/app/app.go); a test builds one with its own.
+	// Getenv is required: with it nil, Resolve panics for the env and exec providers,
+	// and an oidc credential panics when its IDToken runs. The CLI sets every field of
+	// its System (internal/app/app.go); a test builds one with its own.
 	Getenv func(string) string
 	// ReadSecretFile checks a credential file and reads it through the file it
 	// checked, so nothing can be put in the path's place between the check and the
@@ -133,7 +134,7 @@ var ErrReexecRequired = tkerr.New(tkerr.CredentialUnavailable,
 	"the exec provider must re-run tailkeeper under its wrapper", "")
 
 // Resolve turns a configured provider into a Read credential. It needs a System with
-// Getenv set (see System); a zero System panics.
+// Getenv set (see System).
 func Resolve(ctx context.Context, p config.Provider, sys System) (Read, error) {
 	switch p.Provider {
 	case "env":
