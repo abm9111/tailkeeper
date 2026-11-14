@@ -68,10 +68,16 @@ func BenchmarkTextPolicyPage(b *testing.B) {
 	}
 }
 
+// Mask rewrites the rows in place, so each run needs rows of its own: masking the rows of the
+// run before would time the text a second pass reads (the pseudonyms it appended), not the text
+// of a result. The rows are rebuilt outside the timer, in a loop to b.N: testing.B.Loop
+// manages the timer itself (it resets it on the first call and stops it when it returns
+// false), and a StopTimer inside a Loop is a use its documentation does not describe. The
+// timer calls belong to the b.N loop, and the time measured is the same: the masking.
 func BenchmarkKeyedMask1000Rows(b *testing.B) {
 	m, _ := keyedMasker(b)
 	rows := make([]scalingRow, 1000)
-	for b.Loop() {
+	for range b.N {
 		b.StopTimer()
 		for i := range rows {
 			rows[i] = scalingRow{Login: "amy@example.com", Note: "owner bob@example.com", Tags: []string{"tag:web"}}

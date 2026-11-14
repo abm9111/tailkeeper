@@ -394,6 +394,20 @@ func TestDeviceNameFiltersAndLookupsReadTheDisplayedName(t *testing.T) {
 	if _, err := call(t, reg, env, "devices_list", `{"hostname":"build-1"}`); err != nil {
 		t.Errorf("a plain hostname is still a filter: %v", err)
 	}
+	// The control: the refusal belongs to masking. With personalData set to show the same
+	// filters are accepted and reach the server, so the refusals above are the mask's doing
+	// and not a rule about what a hostname may look like.
+	for _, guess := range []string{"amy@example.com", "203.0.113.9"} {
+		sent := len(f.Requests())
+		if _, err := call(t, reg, show(env), "devices_list", fmt.Sprintf(`{"hostname":%q}`, guess)); err != nil {
+			t.Errorf("hostname %q with masking off: %v, want it accepted", guess, err)
+			continue
+		}
+		reqs := f.Requests()
+		if len(reqs) != sent+1 || reqs[sent].Query.Get("hostname") != guess {
+			t.Errorf("hostname %q with masking off did not reach the server as a filter: %d new request(s)", guess, len(reqs)-sent)
+		}
+	}
 	if _, err := call(t, reg, env, "device_get", `{"device":"amy@example.com"}`); code(err) != tkerr.NotFound {
 		t.Errorf("device_get by a hostname the result masks: err = %v, want not_found", err)
 	}

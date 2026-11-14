@@ -2150,7 +2150,9 @@ func FuzzKeyedMaskTextMasksToItself(f *testing.F) {
 		// Text as a whole is not asserted to mask to itself, for two reasons the
 		// fuzzer found (testdata/fuzz). The first two kept inputs (0.0.1.0@0 and
 		// 100::/1000::@0) are evidence of pre-existing 0.3.0 non-idempotence in
-		// MaskText, and pass vacuously under this narrowed property. MaskAddrs can leave "203.0.113.0/24@x",
+		// MaskText, and pass vacuously under this narrowed property (what they do
+		// exercise is pinned by TestTheKeptFuzzSeedsPinWhatMaskTextDoesToThem).
+		// MaskAddrs can leave "203.0.113.0/24@x",
 		// whose "24@x" the email pass cuts to "2…@x", and the next MaskAddrs reads
 		// "/2" as a wider prefix: that is 0.3.0 behaviour, kept byte for byte. And
 		// a pseudonym ends a run of address characters, so "0@0:100::0" names its
