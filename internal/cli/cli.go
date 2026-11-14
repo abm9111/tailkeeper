@@ -1024,7 +1024,6 @@ func (r *Runner) audit(ctx context.Context, g globals, verb string, args []strin
 			Segments []segment `json:"segments"`
 		}{list}, func(w io.Writer) error {
 			for i, s := range segs {
-				name := sanitize.String(filepath.Base(s.Path), sanitize.DefaultMax)
 				var err error
 				switch {
 				case i == 0:
@@ -1032,8 +1031,10 @@ func (r *Runner) audit(ctx context.Context, g globals, verb string, args []strin
 				case s.Missing:
 					// Retention, not damage: the exit code stays 0. The first line says
 					// "chain intact" about the live log alone, so the gap is also a warning.
+					name := sanitize.String(filepath.Base(s.Path), sanitize.DefaultMax)
 					_, err = fmt.Fprintf(w, "  continues %s, which is not present, so it was not checked\n", name)
 				default:
+					name := sanitize.String(filepath.Base(s.Path), sanitize.DefaultMax)
 					_, err = fmt.Fprintf(w, "  continues %s: %d lines, chain intact\n", name, s.Lines)
 				}
 				if err != nil {
