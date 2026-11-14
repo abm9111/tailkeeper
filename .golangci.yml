@@ -23,14 +23,17 @@ linters:
       # Tests write fixtures with fixed permissions, run the binary they built, walk the
       # repository's own files, seed a generator and name credential-shaped fixtures.
       # Only the rules that fire on such code are excused there; any other gosec rule
-      # applies to a test file as it does to the rest:
+      # applies to a test file as it does to the rest, so a new test that trips one is
+      # reported, not excused here. The list is what gosec reports over the tests with
+      # this rule removed and golangci-lint's one-issue-per-line filter off (that filter
+      # hides G702 behind G204 and G122 behind G304 on the same line), checked 2026-11-14:
       #   G101 a fixture named like a credential      G115 integer conversions in measurements
       #   G122 a Walk over the repository's files     G204, G702 a subprocess of the test binary
-      #   G30x file modes and paths of fixtures       G404 a seeded generator of test inputs
-      #   G703, G705 paths and text a loopback fake echoes
+      #   G301, G302, G304, G306 modes and paths of fixtures
+      #   G404 a seeded generator of test inputs      G703, G705 paths and text a loopback fake echoes
       - path: _test\.go
         linters: [gosec]
-        text: 'G101|G115|G122|G204|G30[0-9]|G404|G70[235]'
+        text: 'G101|G115|G122|G204|G30[1246]|G404|G70[235]'
 
       # Every other rule names the file, the rule and the shape of the line it
       # excuses, so the same rule on any other line or in any other file is still
