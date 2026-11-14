@@ -226,7 +226,7 @@ func TestNoCredentialIsReportedPerCall(t *testing.T) {
 
 func TestDeviceRoutesHAByNumericIDSkipsSelfAndExitRoutes(t *testing.T) {
 	f, reg, env := apiEnv(t)
-	f.JSON("GET", "/api/v2/device/1001/routes", 200,
+	f.JSON("GET", "/api/v2/device/nAAA1CNTRL/routes", 200,
 		`{"advertisedRoutes":["10.0.0.0/24","0.0.0.0/0"],"enabledRoutes":["10.0.0.0/24","0.0.0.0/0"]}`)
 	f.JSON("GET", devicesPath, 200, `{"devices":[
 {"id":"1001","nodeId":"nAAA1CNTRL","name":"web-1","enabledRoutes":["10.0.0.0/24","0.0.0.0/0"]},
@@ -237,6 +237,68 @@ func TestDeviceRoutesHAByNumericIDSkipsSelfAndExitRoutes(t *testing.T) {
 	mustCall(t, reg, env, "device_routes", `{"device":"1001","includeHa":true}`, &out)
 	if len(out.HAPeers) != 1 || out.HAPeers[0].NodeID != "nBBB2CNTRL" || out.HAPeers[0].Prefix != "10.0.0.0/24" {
 		t.Errorf("HA peers = %+v", out.HAPeers)
+	}
+	if out.NodeID != "nAAA1CNTRL" {
+		t.Errorf("nodeId = %q, want the node ID the numeric ID names", out.NodeID)
+	}
+}
+
+// A reference of three or more digits is read from the device list: the numeric ID of a
+// device first, then a hostname that is all digits. Each tool then asks for the device
+// by its node ID and returns that node ID in nodeId, never the digits it was given.
+func TestADigitReferenceResolvesToANodeIDByIDThenByHostname(t *testing.T) {
+	f, reg, env := apiEnv(t)
+	f.JSON("GET", devicesPath, 200, `{"devices":[
+{"id":"1001","nodeId":"nAAA1CNTRL","name":"web-1.example.ts.net","hostname":"web-1"},
+{"id":"1002","nodeId":"nBBB2CNTRL","name":"1234.example.ts.net","hostname":"1234"},
+{"id":"1003","nodeId":"nCCC3CNTRL","name":"1001.example.ts.net","hostname":"1001"},
+{"id":"5555","name":"old.example.ts.net","hostname":"old"},
+{"id":"1004","nodeId":"nDDD4CNTRL","name":"5555.example.ts.net","hostname":"5555"}
+]}`)
+	f.JSON("GET", "/api/v2/device/5555", 200, `{"id":"5555","name":"old.example.ts.net"}`)
+	f.JSON("GET", "/api/v2/device/nAAA1CNTRL", 200, `{"id":"1001","nodeId":"nAAA1CNTRL","name":"web-1.example.ts.net"}`)
+	f.JSON("GET", "/api/v2/device/nBBB2CNTRL", 200, `{"id":"1002","nodeId":"nBBB2CNTRL","name":"1234.example.ts.net"}`)
+	f.JSON("GET", "/api/v2/device/nAAA1CNTRL/attributes", 200, `{"attributes":{"custom:a":"x"},"expiries":{}}`)
+	f.JSON("GET", "/api/v2/device/nAAA1CNTRL/device-invites", 200, `[]`)
+
+	// The hostname 1234 is not a numeric ID: it was sent as one and came back not_found.
+	var dev tools.Device
+	mustCall(t, reg, env, "device_get", `{"device":"1234"}`, &dev)
+	if dev.NodeID != "nBBB2CNTRL" {
+		t.Errorf("device_get 1234 = %q, want the device whose hostname is 1234", dev.NodeID)
+	}
+	// 1001 is both a numeric ID and another device's hostname: the ID comes first, as it
+	// did when the digits went to the API as they were.
+	mustCall(t, reg, env, "device_get", `{"device":"1001"}`, &dev)
+	if dev.NodeID != "nAAA1CNTRL" {
+		t.Errorf("device_get 1001 = %q, want the device whose numeric ID is 1001", dev.NodeID)
+	}
+	var posture tools.DevicePostureOutput
+	mustCall(t, reg, env, "device_posture_attributes", `{"device":"1001"}`, &posture)
+	if posture.NodeID != "nAAA1CNTRL" || len(posture.Attributes) != 1 {
+		t.Errorf("device_posture_attributes 1001 = %+v", posture)
+	}
+	var invites tools.DeviceInvitesOutput
+	mustCall(t, reg, env, "device_invites_list", `{"device":"1001"}`, &invites)
+	if invites.NodeID != "nAAA1CNTRL" {
+		t.Errorf("device_invites_list 1001: nodeId = %q", invites.NodeID)
+	}
+	// A device whose numeric ID matches but that reports no node ID is asked for by the
+	// digits, not replaced by the device whose hostname is the same digits.
+	mustCall(t, reg, env, "device_get", `{"device":"5555"}`, &dev)
+	if dev.Name != "old.example.ts.net" {
+		t.Errorf("device_get 5555 = %+v, want the device whose numeric ID is 5555", dev)
+	}
+	for _, req := range f.Requests() {
+		if strings.Contains(req.Path, "/device/1001") || strings.Contains(req.Path, "/device/1234") {
+			t.Errorf("the digits went into a request path: %s", req.Path)
+		}
+	}
+
+	// Digits that are neither an ID nor a hostname are not_found, with the hint.
+	_, err := call(t, reg, env, "device_get", `{"device":"9999"}`)
+	if e, ok := tkerr.As(err); !ok || e.Code != tkerr.NotFound || !strings.Contains(e.Message, `"9999"`) || e.Hint == "" {
+		t.Errorf("device_get 9999: err = %v", err)
 	}
 }
 
