@@ -265,6 +265,23 @@ func TestSelect(t *testing.T) {
 	}
 }
 
+// A nil getenv is an empty environment, not a panic.
+func TestSelectWithNoEnvironmentFunction(t *testing.T) {
+	c, err := Parse([]byte(`{"defaultContext":"b","contexts":{
+	  "a":{"tailnetId":"TACNTRL","credentials":{"read":{"provider":"env"}}},
+	  "b":{"tailnetId":"TBCNTRL","credentials":{"read":{"provider":"env"}}}}}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	l := &Loaded{Config: c}
+	if name, _, err := l.Select("", nil); err != nil || name != "b" {
+		t.Errorf("a nil getenv should fall through to defaultContext, got %q, %v", name, err)
+	}
+	if name, _, err := l.Select("a", nil); err != nil || name != "a" {
+		t.Errorf("the flag should still win, got %q, %v", name, err)
+	}
+}
+
 func TestParseRejectsDuplicateAndMiscasedKeys(t *testing.T) {
 	ctx := func(id string) string {
 		return `{"tailnetId": "` + id + `", "credentials": {"read": {"provider": "env"}}}`
