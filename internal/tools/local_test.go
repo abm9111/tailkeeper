@@ -159,6 +159,26 @@ func TestLocalPingOutcomes(t *testing.T) {
 	}
 }
 
+// "no reply" on standard error is an outcome only when the CLI says so with a
+// non-zero exit. A clean exit that prints it with nothing on standard output is a
+// format tailkeeper does not know, not a ping that got no answer.
+func TestLocalPingNoReplyNeedsANonZeroExit(t *testing.T) {
+	const args = "ping --c=3 --timeout=5s --until-direct=true 100.64.0.11"
+	clean := newFakeCLI(t)
+	clean.on(args, 0, "", "no reply\n")
+	if _, err := call(t, newRegistry(t), clean.env(), "local_ping", `{"target":"100.64.0.11"}`); code(err) != tkerr.LocalOutputUnrecognized {
+		t.Errorf("clean exit, empty output, \"no reply\" on stderr: err = %v, want local_output_unrecognized", err)
+	}
+
+	failed := newFakeCLI(t)
+	failed.on(args, 1, "", "no reply\n")
+	var out tools.PingOutput
+	s := mustCall(t, newRegistry(t), failed.env(), "local_ping", `{"target":"100.64.0.11"}`, &out)
+	if !out.NoReply || len(out.Replies) != 0 {
+		t.Errorf("exit 1 with \"no reply\" on stderr = %s, want the no_reply outcome as a result", s)
+	}
+}
+
 func TestLocalPingRefusesNonTailnetTargets(t *testing.T) {
 	cli := newFakeCLI(t)
 	reg := newRegistry(t)

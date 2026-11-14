@@ -459,6 +459,22 @@ func TestPrintReportWhenStandardOutputIsGone(t *testing.T) {
 	}
 }
 
+// The doctor package escapes a hint before it is printed; the fix line escapes it again,
+// since it is the last thing between a check's text and the terminal (escaping is idempotent).
+func TestPrintReportEscapesAHintTheReportCarriesRaw(t *testing.T) {
+	const rlo, bs = "\xe2\x80\xae", "\x5c"
+	rep := doctor.Report{Checks: []doctor.Check{{Name: "audit log", Status: doctor.Warn, Detail: "d", Hint: "chmod 600 " + rlo + "evil\x1b[2J"}}}
+	h := newHarness(t, nil)
+	h.r.printReport(rep, false)
+	out := h.out.String()
+	if strings.Contains(out, rlo) || strings.Contains(out, "\x1b") {
+		t.Errorf("the report prints an invisible character raw:\n%q", out)
+	}
+	if want := "fix audit log: chmod 600 " + bs + "u{202E}evil" + bs + "u{001B}[2J\n"; !strings.Contains(out, want) {
+		t.Errorf("the fix line is not the escaped hint, want %q in:\n%q", want, out)
+	}
+}
+
 // The text form of an error keeps CI log commands out of both of its lines: a
 // message or a hint can hold text from the tailnet or from the command line.
 func TestTheTextFormOfAnErrorHoldsNoCILogCommand(t *testing.T) {

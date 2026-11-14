@@ -145,3 +145,40 @@ func TestRenderPrintsAnEmptyListTaggedNoneAsNone(t *testing.T) {
 		t.Errorf("render = %q, want %q", b.String(), want)
 	}
 }
+
+// A value that is neither a string, a number nor a list of strings is printed as its JSON,
+// and JSON leaves some characters raw that a terminal acts on: a bidirectional override, a
+// C1 control, DEL. The cell escapes them as it does a plain string, in a table row and in a
+// field.
+func TestRenderEscapesTheJSONFallbackOfACell(t *testing.T) {
+	const rlo, c1, del = "\u202e", "\u0085", "\x7f"
+	type row struct {
+		Name  string            `json:"name" tk:"col"`
+		Attrs map[string]string `json:"attrs" tk:"col"`
+	}
+	type pair struct{ K, V string }
+	type out struct {
+		Rows   []row             `json:"rows" tk:"rows"`
+		Labels map[string]string `json:"labels"`
+		Pairs  []pair            `json:"pairs"`
+	}
+	evil := map[string]string{"k" + rlo + "ey": "va" + c1 + "lue" + del + "x"}
+	var b strings.Builder
+	if err := render(&b, out{Rows: []row{{Name: "n", Attrs: evil}}, Labels: evil, Pairs: []pair{{K: rlo, V: c1 + del}}}); err != nil {
+		t.Fatal(err)
+	}
+	got := b.String()
+	for _, raw := range []string{rlo, c1, del} {
+		if strings.Contains(got, raw) {
+			t.Errorf("the text form holds the raw character %U:\n%s", []rune(raw)[0], got)
+		}
+	}
+	for want, n := range map[string]int{
+		`{"k\u{202E}ey":"va\u{0085}lue\u{007F}x"}`:  2, // the table cell and the map field
+		`[{"K":"\u{202E}","V":"\u{0085}\u{007F}"}]`: 1, // the list of structs
+	} {
+		if c := strings.Count(got, want); c != n {
+			t.Errorf("the text form holds %q %d times, want %d:\n%s", want, c, n, got)
+		}
+	}
+}

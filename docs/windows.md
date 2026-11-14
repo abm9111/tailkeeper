@@ -77,6 +77,10 @@ One subtest skips outside CI only, so it is in neither list: the `symlink` case 
 - `TestExecProviderReexecKeepsStdio` (`cmd/tailkeeper`): the `exec` provider re-executes with `execve`, which Windows lacks.
 - `TestInterruptEndsAHungCall` (`cmd/tailkeeper`): `os.Interrupt` cannot be sent to another process on Windows.
 - `TestInterruptEndsAHungLocalCall` (`cmd/tailkeeper`): `os.Interrupt` cannot be sent to another process on Windows.
+- `TestClientDisconnectEndsAHungLocalCall` (`cmd/tailkeeper`): the stand-in `tailscale` CLI is a POSIX shell script.
+- `TestSecondInterruptEndsTheServerAtOnce` (`cmd/tailkeeper`): `os.Interrupt` cannot be sent to another process on Windows.
+- `TestExecProviderReexecRunsACLICommand` (`cmd/tailkeeper`): the `exec` provider re-executes with `execve`, which Windows lacks.
+- `TestExecProviderLoopGuardStopsAWrapperThatSuppliesNothing` (`cmd/tailkeeper`): the `exec` provider re-executes with `execve`, which Windows lacks.
 - `TestReadmeChecksumStepFailsWhenItChecksNothing` (`cmd/tailkeeper`): the step it runs is a shell script.
 - `TestOperationsMatchTheDocument` (`internal/api/openapi`): compares with a copy of Tailscale's live OpenAPI document; skipped on every platform unless `TAILKEEPER_OPENAPI_LIVE` names one.
 - `TestLiveDocumentMatchesThePin` (`internal/api/openapi`): compares with a copy of Tailscale's live OpenAPI document; skipped on every platform unless `TAILKEEPER_OPENAPI_LIVE` names one.
@@ -117,6 +121,7 @@ One subtest skips outside CI only, so it is in neither list: the `symlink` case 
 - `TestLocalDaemonUnreachable` (`internal/tools`): the stand-in `tailscale` CLI is a POSIX shell script.
 - `TestLocalNetcheckRequiresDaemonAndDropsPublicIPs` (`internal/tools`): the stand-in `tailscale` CLI is a POSIX shell script.
 - `TestLocalPingOutcomes` (`internal/tools`): the stand-in `tailscale` CLI is a POSIX shell script.
+- `TestLocalPingNoReplyNeedsANonZeroExit` (`internal/tools`): the stand-in `tailscale` CLI is a POSIX shell script.
 - `TestLocalPingRefusesNonTailnetTargets` (`internal/tools`): the stand-in `tailscale` CLI is a POSIX shell script.
 - `TestLocalDNSQueryAllowlist` (`internal/tools`): the stand-in `tailscale` CLI is a POSIX shell script.
 - `TestLocalDNSQueryAllowlistBoundaries` (`internal/tools`): the stand-in `tailscale` CLI is a POSIX shell script.
@@ -263,6 +268,7 @@ The extracted MCPB process tests carry `//go:build darwin` and execute only on m
 - `TestSecretDescriptorRejectsDifferentPathApproval` (`internal/config`): ancestor symlink switching and Unix private permission checks.
 - `TestRecordDoesNotRetryAnUnavailableLog` (`internal/app`): holds the audit log's file lock with `syscall.Flock`.
 - `TestAppendGivesUpOnAStuckLock` (`internal/audit`): holds the file lock from the test with `syscall.Flock`.
+- `TestOpenLockedKeepsOneDeadlineAcrossReopens` (`internal/audit`): holds the file lock from the test with `syscall.Flock`.
 - `TestRotateKeepsTheArchiveAndContinuesTheChain` (`internal/audit`): rotation and the archives it makes; `audit rotate` is refused on Windows.
 - `TestVerifyChecksTheArchiveARotatedLogContinues` (`internal/audit`): rotation and the archives it makes; `audit rotate` is refused on Windows.
 - `TestVerifyRefusesARotatedEntryNamingNoArchive` (`internal/audit`): rotation and the archives it makes; `audit rotate` is refused on Windows.

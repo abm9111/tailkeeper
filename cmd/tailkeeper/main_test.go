@@ -179,23 +179,12 @@ func TestExecProviderReexecKeepsStdio(t *testing.T) {
 		t.Skip("the exec provider re-executes with execve, which Windows lacks")
 	}
 	env := isolated(t)
-	home := strings.TrimPrefix(env[0], "HOME=")
-	cfgDir := filepath.Join(home, ".config", "tailkeeper")
-	if runtime.GOOS == "darwin" {
-		cfgDir = filepath.Join(home, "Library", "Application Support", "tailkeeper")
-	}
-	if err := os.MkdirAll(cfgDir, 0o700); err != nil {
-		t.Fatal(err)
-	}
-	wrapper := filepath.Join(home, "wrapper.sh")
+	wrapper := filepath.Join(envHome(t, env), "wrapper.sh")
 	script := "#!/bin/sh\nTAILKEEPER_READ_CLIENT_ID=e2e-client TAILKEEPER_READ_CLIENT_SECRET=e2e-value exec \"$@\"\n"
 	if err := os.WriteFile(wrapper, []byte(script), 0o700); err != nil {
 		t.Fatal(err)
 	}
-	cfg := `{"contexts": {"e2e": {"tailnetId": "T1234CNTRL", "credentials": {"read": {"provider": "exec", "command": ["/bin/sh", "` + wrapper + `"]}}}}}`
-	if err := os.WriteFile(filepath.Join(cfgDir, "config.hujson"), []byte(cfg), 0o600); err != nil {
-		t.Fatal(err)
-	}
+	writeConfig(t, env, `{"contexts": {"e2e": {"tailnetId": "T1234CNTRL", "credentials": {"read": {"provider": "exec", "command": ["/bin/sh", "`+wrapper+`"]}}}}}`)
 	cmd := exec.Command(bin, "mcp")
 	cmd.Env = append(env, "HTTPS_PROXY=http://127.0.0.1:1", "NO_PROXY=")
 	ctx := context.Background()
@@ -227,6 +216,7 @@ func TestInterruptEndsAHungCall(t *testing.T) {
 	}
 	var mu sync.Mutex
 	var held []net.Conn
+	accepted := make(chan struct{}) // closed when the first connection arrives: the call is hanging
 	go func() {
 		for {
 			c, err := ln.Accept()
@@ -234,6 +224,9 @@ func TestInterruptEndsAHungCall(t *testing.T) {
 				return
 			}
 			mu.Lock()
+			if len(held) == 0 {
+				close(accepted)
+			}
 			held = append(held, c)
 			mu.Unlock()
 		}
@@ -250,7 +243,13 @@ func TestInterruptEndsAHungCall(t *testing.T) {
 	writeConfig(t, env, `{"contexts": {"e2e": {"tailnetId": "T1234CNTRL", "credentials": {"read": {"provider": "env"}}}}}`)
 	env = append(env, "HTTPS_PROXY=http://"+ln.Addr().String(), "NO_PROXY=",
 		"TAILKEEPER_READ_CLIENT_ID=e2e-client", "TAILKEEPER_READ_CLIENT_SECRET=e2e-value")
-	interruptDuring(t, env, "dns_get") // waits on the proxy for a token
+	interruptDuring(t, env, "dns_get", func() { // waits on the proxy for a token
+		select {
+		case <-accepted:
+		case <-time.After(15 * time.Second):
+			t.Fatal("the call never reached the proxy")
+		}
+	})
 }
 
 // TestInterruptEndsAHungLocalCall is the same for a call waiting on a local
@@ -260,6 +259,16 @@ func TestInterruptEndsAHungLocalCall(t *testing.T) {
 		t.Skip("os.Interrupt cannot be sent to another process on Windows")
 	}
 	env := isolated(t)
+	pidFile := hungLocalCLI(t, env)
+	interruptDuring(t, env, "local_status", func() { waitForPID(t, pidFile) })
+	// The hung CLI must not outlive the server.
+	requireGone(t, waitForPID(t, pidFile), "the tailscale CLI")
+}
+
+// hungLocalCLI configures env with a stand-in tailscale CLI that records its pid in
+// the file it returns and then never finishes.
+func hungLocalCLI(t *testing.T, env []string) string {
+	t.Helper()
 	dir := t.TempDir()
 	fake, pidFile := filepath.Join(dir, "tailscale"), filepath.Join(dir, "pid")
 	if err := os.WriteFile(fake, []byte("#!/bin/sh\necho $$ > "+strconv.Quote(pidFile)+"\nexec sleep 60\n"), 0o755); err != nil {
@@ -267,21 +276,51 @@ func TestInterruptEndsAHungLocalCall(t *testing.T) {
 	}
 	writeConfig(t, env, `{"contexts": {"e2e": {"tailnetId": "T1234CNTRL", "credentials": {"read": {"provider": "env"}}}},
 		"local": {"tailscaleBinary": `+strconv.Quote(fake)+`}}`)
-	interruptDuring(t, env, "local_status")
-	// The hung CLI must not outlive the server.
+	// Registered before any wait: a test that fails before it sees the CLI end must not
+	// leave the sleep running.
+	t.Cleanup(func() { killFromPIDFile(pidFile) })
+	return pidFile
+}
+
+// killFromPIDFile kills the process whose pid a stand-in CLI wrote, if it wrote one.
+func killFromPIDFile(pidFile string) {
 	b, err := os.ReadFile(pidFile)
 	if err != nil {
-		t.Fatal(err)
+		return
 	}
-	pid, err := strconv.Atoi(strings.TrimSpace(string(b)))
-	if err != nil {
-		t.Fatal(err)
+	if pid, err := strconv.Atoi(strings.TrimSpace(string(b))); err == nil && pid > 0 {
+		if p, err := os.FindProcess(pid); err == nil {
+			_ = p.Kill()
+		}
 	}
+}
+
+// waitForPID waits until the stand-in CLI has written its pid, which says the call
+// reached it, and returns the pid. A file that exists but is not yet a whole number
+// is still being written.
+func waitForPID(t *testing.T, pidFile string) int {
+	t.Helper()
+	pid := 0
+	waitFor(t, 15*time.Second, "the stand-in tailscale CLI writing its pid", func() bool {
+		b, err := os.ReadFile(pidFile)
+		if err != nil || !strings.HasSuffix(string(b), "\n") {
+			return false
+		}
+		pid, err = strconv.Atoi(strings.TrimSpace(string(b)))
+		return err == nil
+	})
+	return pid
+}
+
+// requireGone fails the test unless the process is gone within 3 seconds, and kills it
+// if it is not.
+func requireGone(t *testing.T, pid int, what string) {
+	t.Helper()
 	p, _ := os.FindProcess(pid)
 	for deadline := time.Now().Add(3 * time.Second); p.Signal(syscall.Signal(0)) == nil; time.Sleep(50 * time.Millisecond) {
 		if time.Now().After(deadline) {
 			_ = p.Kill()
-			t.Fatalf("the tailscale CLI (pid %d) outlived the server", pid)
+			t.Fatalf("%s (pid %d) outlived the server", what, pid)
 		}
 	}
 }
@@ -291,7 +330,9 @@ func TestInterruptEndsAHungLocalCall(t *testing.T) {
 func TestServeGivesInFlightCallsAGrace(t *testing.T) {
 	srv := mcp.NewServer(&mcp.Implementation{Name: "t", Version: "1"}, nil)
 	release := make(chan struct{})
+	reached := make(chan struct{}) // closed by the handler: the call is in flight
 	mcp.AddTool(srv, &mcp.Tool{Name: "hang"}, func(context.Context, *mcp.CallToolRequest, struct{}) (*mcp.CallToolResult, any, error) {
+		close(reached)
 		<-release
 		return &mcp.CallToolResult{}, nil, nil
 	})
@@ -310,7 +351,11 @@ func TestServeGivesInFlightCallsAGrace(t *testing.T) {
 	go func() {
 		_, _ = cs.CallTool(context.Background(), &mcp.CallToolParams{Name: "hang", Arguments: map[string]any{}})
 	}()
-	time.Sleep(200 * time.Millisecond)
+	select {
+	case <-reached:
+	case <-time.After(10 * time.Second):
+		t.Fatal("the call never reached the handler")
+	}
 	start := time.Now()
 	cancel()
 	select {
@@ -323,9 +368,8 @@ func TestServeGivesInFlightCallsAGrace(t *testing.T) {
 	}
 }
 
-// writeConfig writes the user configuration of the isolated environment env.
-func writeConfig(t *testing.T, env []string, cfg string) {
-	t.Helper()
+// envVars is the environment as a map.
+func envVars(env []string) map[string]string {
 	vars := map[string]string{}
 	for _, entry := range env {
 		name, value, ok := strings.Cut(entry, "=")
@@ -333,6 +377,15 @@ func writeConfig(t *testing.T, env []string, cfg string) {
 			vars[name] = value
 		}
 	}
+	return vars
+}
+
+// envHome is the home directory of an isolated environment: HOME, or USERPROFILE on
+// Windows. It looks the variable up by name, so it does not depend on where isolated
+// puts it in the list.
+func envHome(t *testing.T, env []string) string {
+	t.Helper()
+	vars := envVars(env)
 	home := vars["HOME"]
 	if runtime.GOOS == "windows" {
 		home = vars["USERPROFILE"]
@@ -340,6 +393,13 @@ func writeConfig(t *testing.T, env []string, cfg string) {
 	if home == "" {
 		t.Fatal("isolated environment lacks a home directory")
 	}
+	return home
+}
+
+// writeConfig writes the user configuration of the isolated environment env.
+func writeConfig(t *testing.T, env []string, cfg string) {
+	t.Helper()
+	vars, home := envVars(env), envHome(t, env)
 	cfgHome := vars["XDG_CONFIG_HOME"]
 	if cfgHome == "" {
 		cfgHome = filepath.Join(home, ".config")
@@ -361,9 +421,9 @@ func writeConfig(t *testing.T, env []string, cfg string) {
 	}
 }
 
-// interruptDuring starts the MCP server, calls tool, sends Ctrl-C while the call
-// hangs, and requires the server to exit promptly.
-func interruptDuring(t *testing.T, env []string, tool string) {
+// interruptDuring starts the MCP server, calls tool, waits with hung until the call is
+// known to be in flight, sends Ctrl-C, and requires the server to exit promptly.
+func interruptDuring(t *testing.T, env []string, tool string, hung func()) {
 	t.Helper()
 	cmd := exec.Command(bin, "mcp")
 	cmd.Env = env
@@ -377,7 +437,7 @@ func interruptDuring(t *testing.T, env []string, tool string) {
 		_ = cs.Close()
 	})
 	go func() { _, _ = cs.CallTool(ctx, &mcp.CallToolParams{Name: tool, Arguments: map[string]any{}}) }()
-	time.Sleep(time.Second) // the call is now hanging
+	hung()
 	ended := make(chan struct{})
 	go func() { _ = cs.Wait(); close(ended) }()
 	start := time.Now()
