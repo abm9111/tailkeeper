@@ -73,6 +73,15 @@ func run(ctx context.Context, env *registry.Env, timeout time.Duration, args ...
 	return res.Stdout, res.Warnings, nil
 }
 
+// oneCall makes the CLI runs of one tool call spend a single rate token between them.
+func oneCall(ctx context.Context, env *registry.Env, runs int) (context.Context, error) {
+	r, err := env.RequireLocal()
+	if err != nil {
+		return ctx, err
+	}
+	return r.OneCall(ctx, runs)
+}
+
 // runJSON runs the CLI and decodes its JSON output into out. The CLI's JSON format
 // is documented as unstable, so the output must also carry each of keys at its top
 // level: a renamed schema would otherwise decode to an empty, healthy-looking result.
@@ -625,6 +634,10 @@ type NetcheckOutput struct {
 }
 
 func localNetcheck(ctx context.Context, env *registry.Env, _ NoInput) (NetcheckOutput, error) {
+	ctx, err := oneCall(ctx, env, 2)
+	if err != nil {
+		return NetcheckOutput{}, err
+	}
 	if _, err := runningStatus(ctx, env); err != nil {
 		return NetcheckOutput{}, err
 	}
@@ -781,6 +794,10 @@ func localDNSQuery(ctx context.Context, env *registry.Env, in DNSQueryInput) (DN
 	}
 	// The node forwards queries it cannot answer to the tailnet's upstream
 	// resolvers, so only names the owner expects to look up are allowed.
+	ctx, err := oneCall(ctx, env, 2)
+	if err != nil {
+		return DNSQueryOutput{}, err
+	}
 	s, err := runningStatus(ctx, env)
 	if err != nil {
 		return DNSQueryOutput{}, err

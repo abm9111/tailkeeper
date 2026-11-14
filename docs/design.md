@@ -821,7 +821,7 @@ The policy is rejected as a whole, and logged `policy_invalid`, on any unknown k
   - Verified requesters (socket peer in hardened mode, signed requests, v1.1 HTTP principals) get their own buckets as well.
   - Unverified requesters, such as MCP sessions in personal mode, share one bucket, so reconnecting does not reset a limit.
   - Exceeding a bucket returns `write_limit_exceeded`.
-  - A separate bucket limits local CLI calls (30/min).
+  - A separate bucket limits local CLI calls (30/min). A tool that runs `status` before its own command (`local_netcheck`, `local_dns_query`) counts as one call.
 - **Kill switch.** A file named `DISABLED` in any configuration directory denies every write.
 - **Dry run by default.** CLI write commands print the plan and stop unless `--apply` is given.
 - **Caps.** `maxStepsPerPlan` (50), `maxChangedObjects` per rule, `planTTL` (24 h), `approvalWindow` (15 min), `privilegedReads` (`approve` or `allow`).

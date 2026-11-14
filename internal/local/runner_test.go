@@ -8,6 +8,8 @@ import (
 	"runtime"
 	"slices"
 	"strings"
+	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -175,6 +177,100 @@ func TestRateLimit(t *testing.T) {
 	now = now.Add(31 * time.Second)
 	if _, err := r.Run(context.Background(), 5*time.Second, "ip"); err != nil {
 		t.Fatalf("after refill: %v", err)
+	}
+}
+
+// A tool call that runs the CLI twice pays one token; a run past what it paid for takes its own,
+// and a context paid on one runner pays nothing on another.
+func TestOneCallPaysForItsRunsWithOneToken(t *testing.T) {
+	now := time.Date(2026, 10, 10, 9, 0, 0, 0, time.UTC)
+	r := runner("/unused")
+	r.PerMinute = 2
+	r.Now = func() time.Time { return now }
+	ctx, err := r.OneCall(context.Background(), 2)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for i := range 2 {
+		if err := r.charge(ctx); err != nil {
+			t.Fatalf("paid run %d: %v", i, err)
+		}
+	}
+	if err := r.charge(ctx); err != nil {
+		t.Fatalf("a run past the paid two should take the last token: %v", err)
+	}
+	if err := r.charge(ctx); code(err) != tkerr.LocalRateLimited {
+		t.Fatalf("bucket empty: err = %v, want local_rate_limited", err)
+	}
+	if _, err := r.OneCall(context.Background(), 2); code(err) != tkerr.LocalRateLimited {
+		t.Fatalf("OneCall on an empty bucket: err = %v, want local_rate_limited", err)
+	}
+}
+
+// A context paid on one runner pays nothing on another: checked while it still holds paid runs,
+// so a missing runner check would show as a free run on the other bucket and one fewer here.
+func TestAPaidContextDoesNotPayAnotherRunner(t *testing.T) {
+	now := time.Date(2026, 10, 10, 9, 0, 0, 0, time.UTC)
+	r, other := runner("/unused"), runner("/unused")
+	r.PerMinute, other.PerMinute = 1, 1
+	r.Now, other.Now = func() time.Time { return now }, func() time.Time { return now }
+	ctx, err := r.OneCall(context.Background(), 2)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := other.charge(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if err := other.charge(ctx); code(err) != tkerr.LocalRateLimited {
+		t.Fatalf("the other runner ran free on a context paid here: err = %v", err)
+	}
+	for i := range 2 {
+		if err := r.charge(ctx); err != nil {
+			t.Fatalf("paid run %d after another runner saw the context: %v", i, err)
+		}
+	}
+}
+
+// Concurrent runs on one paid context get exactly the paid number free, and a count out of range
+// pays fewer runs, never more.
+func TestPaidRunsAreExactUnderConcurrencyAndClamped(t *testing.T) {
+	now := time.Date(2026, 10, 10, 9, 0, 0, 0, time.UTC)
+	r := runner("/unused")
+	r.PerMinute = 1
+	r.Now = func() time.Time { return now }
+	ctx, err := r.OneCall(context.Background(), 2)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var free atomic.Int32
+	var wg sync.WaitGroup
+	for range 16 {
+		wg.Go(func() {
+			if r.charge(ctx) == nil {
+				free.Add(1)
+			}
+		})
+	}
+	wg.Wait()
+	if free.Load() != 2 {
+		t.Fatalf("%d runs went through on a context paid for 2 with an empty bucket", free.Load())
+	}
+	for _, runs := range []int{-1, 0, 100} {
+		r := runner("/unused")
+		r.PerMinute = 20
+		r.Now = func() time.Time { return now }
+		ctx, err := r.OneCall(context.Background(), runs)
+		if err != nil {
+			t.Fatal(err)
+		}
+		paid := 0
+		for r.charge(ctx) == nil {
+			paid++
+		}
+		want := min(max(runs, 0), 8) + 19
+		if paid != want {
+			t.Errorf("runs %d: %d runs before the limit, want %d", runs, paid, want)
+		}
 	}
 }
 

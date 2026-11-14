@@ -131,6 +131,7 @@ One subtest skips outside CI only, so it is in neither list: the `symlink` case 
 - `TestLocalDNSStatus` (`internal/tools`): the stand-in `tailscale` CLI is a POSIX shell script.
 - `TestNoCLIIsReportedPerCall` (`internal/tools`): the stand-in `tailscale` CLI is a POSIX shell script.
 - `TestLocalNetcheckAndDNSQueryRequireRunning` (`internal/tools`): the stand-in `tailscale` CLI is a POSIX shell script.
+- `TestLocalNetcheckAndDNSQuerySpendOneTokenEach` (`internal/tools`): the stand-in `tailscale` CLI is a POSIX shell script.
 - `TestLocalUnrecognizedOutputIsAnError` (`internal/tools`): the stand-in `tailscale` CLI is a POSIX shell script.
 - `TestLocalSyspolicyRedactsErrors` (`internal/tools`): the stand-in `tailscale` CLI is a POSIX shell script.
 - `TestLocalFlagShapedInputNeverReachesTheCLI` (`internal/tools`): the stand-in `tailscale` CLI is a POSIX shell script.
