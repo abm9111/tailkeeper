@@ -210,6 +210,7 @@ One subtest skips outside CI only, so it is in neither list: the `symlink` case 
 The extracted MCPB process tests carry `//go:build darwin` and execute only on macOS. Other listed files carry `//go:build !windows`, except `internal/doctor/starter_unix_test.go`, which carries `//go:build unix`. These fixtures require Unix shell execution, file-locking, rotation, FIFO, change-time or private-mode semantics, or reliable symbolic-link creation.
 
 <!-- windows-excluded:begin -->
+- `TestTheCLIChildDoesNotInheritAStrayDescriptor` (`internal/local`): opens a descriptor without close-on-exec through Unix system calls; on Windows os/exec passes only the standard handles.
 - `TestExecutedReleaseReproduction` (`internal/workflows`): executes the release workflow with Bash and Unix archive tools.
 - `TestBuiltPackReplayRedactDoNotStartExecProvider` (`internal/cli`): uses private pack files and Unix provider process semantics.
 - `TestPackInterruptedCommandsDoNotPublish` (`internal/tools`): private pack files require Unix ownership and mode checks.

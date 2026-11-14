@@ -4,6 +4,7 @@ What each release of tailkeeper changed. Versions follow semantic versioning; un
 
 ## Unreleased — foundations
 
+- The local `tailscale` child no longer inherits a descriptor that whatever started tailkeeper left open without close-on-exec. On Unix, before each CLI run, every descriptor above standard error that `/dev/fd` lists is marked close-on-exec; it stays open in tailkeeper. Where `/dev/fd` cannot be read (Linux without `/proc`), nothing is marked. Go already opened its own files that way, and on Windows os/exec passes only the standard handles.
 - `local_netcheck` and `local_dns_query` take one token from the local rate bucket (30 a minute) per call. They run `status` before their own command, and each run took a token, so fifteen calls a minute emptied the bucket.
 - `acl_history` reads the log past an ACL update whose `eventTime` does not parse: the entry is counted in `skipped` and not listed. `acl_diff` by version ignores such an entry and still resolves the versions beside it. Both returned `api_error`. The `acl_history` description still lists only the other reasons for `skipped`, because the tool list is at its byte budget.
 - `audit_log` leaves out an entry whose `eventTime` it cannot read and says how many in `note`; one such entry failed the whole call with `api_error`, so no window that held it could be read. `network_flow_logs` says in `note` why `loggingEnabled` is `unknown`: the settings request's error code, or that the settings did not say.
