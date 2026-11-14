@@ -53,8 +53,10 @@ type Read struct {
 	ClientSecret Secret // OAuth only
 	APIKey       Secret // API access token only
 	Audience     string // federated only
-	IDToken      func(ctx context.Context) (string, error) // federated only; nil for OAuth and API key credentials
-	Provider     string // env, file, exec or oidc
+	// IDToken is set for a federated credential only: it is nil for OAuth and API key
+	// credentials, so a caller checks Kind before it calls it.
+	IDToken  func(ctx context.Context) (string, error)
+	Provider string // env, file, exec or oidc
 }
 
 func (r Read) String() string {
