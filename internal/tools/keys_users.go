@@ -176,25 +176,39 @@ func keysList(ctx context.Context, env *registry.Env, _ NoInput) (KeysListOutput
 		return KeysListOutput{}, err
 	}
 	scopes, known := c.GrantedScopes()
-	// A token response that names no scopes says nothing about coverage.
+	out.Coverage, out.Complete = keyCoverage(out.Keys, scopes, known)
+	return out, nil
+}
+
+// keyCoverage says, for each key type, whether the credential's scopes let it list that
+// type, and whether every type was visible (nil when the scopes are unknown). A token
+// response that names no scopes says nothing about coverage. A type the scopes do not
+// cover still counts as visible when the list holds a key of it: the key was returned,
+// so the credential could see it.
+func keyCoverage(keys []Key, scopes []string, known bool) (map[string]string, *bool) {
+	coverage := map[string]string{}
 	known = known && len(scopes) > 0
+	returned := map[string]bool{}
+	for _, k := range keys {
+		returned[k.KeyType] = true
+	}
 	complete := true
 	for typ, need := range keyTypeScopes {
 		switch {
 		case !known:
-			out.Coverage[typ] = "unknown"
+			coverage[typ] = "unknown"
 		case slices.Contains(scopes, "all") || slices.Contains(scopes, "all:read") ||
-			slices.Contains(scopes, need[0]) || slices.Contains(scopes, need[1]):
-			out.Coverage[typ] = "visible"
+			slices.Contains(scopes, need[0]) || slices.Contains(scopes, need[1]) || returned[typ]:
+			coverage[typ] = "visible"
 		default:
-			out.Coverage[typ] = "not_visible"
+			coverage[typ] = "not_visible"
 			complete = false
 		}
 	}
-	if known {
-		out.Complete = &complete
+	if !known {
+		return coverage, nil
 	}
-	return out, nil
+	return coverage, &complete
 }
 
 func keyGet(ctx context.Context, env *registry.Env, in KeyRef) (Key, error) {

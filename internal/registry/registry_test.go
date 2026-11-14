@@ -253,6 +253,24 @@ func TestAddRejectsBadMetadata(t *testing.T) {
 	}
 }
 
+// The CLI key is area and verb joined by a space, so a space in either could make two
+// tools share one: "a b"+"c" and "a"+"b c".
+func TestAddRejectsASpaceInTheCLIKey(t *testing.T) {
+	r := New()
+	if err := r.Add(echoTool(readMeta("echo_get", "echo me", "get"))); err == nil || !strings.Contains(err.Error(), "no space or tab") {
+		t.Errorf("a space in the area: %v", err)
+	}
+	if err := r.Add(echoTool(readMeta("echo_get", "echo", "get it"))); err == nil || !strings.Contains(err.Error(), "no space or tab") {
+		t.Errorf("a space in the verb: %v", err)
+	}
+	if err := r.Add(echoTool(readMeta("echo_get", "echo", "get\tit"))); err == nil || !strings.Contains(err.Error(), "no space or tab") {
+		t.Errorf("a tab in the verb: %v", err)
+	}
+	if err := r.Add(echoTool(readMeta("echo_get", "echo", "get"))); err != nil {
+		t.Errorf("a plain key was refused: %v", err)
+	}
+}
+
 func TestAddChecksDeclaredOperations(t *testing.T) {
 	for _, op := range []string{"PUT /x", "GET x", "GET /a b", "DELETE /x", ""} {
 		m := readMeta("echo_ops", "echo", "ops")
