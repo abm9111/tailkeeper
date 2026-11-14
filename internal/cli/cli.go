@@ -1062,10 +1062,9 @@ func (r *Runner) audit(ctx context.Context, g globals, verb string, args []strin
 			return err
 		})
 	}
+	// On an error, Tail still returns the entries it read before it: they are printed,
+	// and the error, which names the line it stopped at, follows them.
 	entries, err := audit.Tail(a.AuditPath, *n)
-	if err != nil {
-		return r.fail(tkerr.Wrap(tkerr.AuditUnavailable, err, "cannot read "+a.AuditPath, ""), asJSON())
-	}
 	// Every entry carries the tailnet ID: show only its start, as doctor does,
 	// unless the owner opted in to whole values.
 	show := a.Loaded != nil && a.Loaded.Config.PersonalData == config.PersonalDataShow
@@ -1074,6 +1073,9 @@ func (r *Runner) audit(ctx context.Context, g globals, verb string, args []strin
 			e["tailnet"] = sanitize.MaskID(id)
 		}
 		_ = writeJSONLine(r.Stdout, e)
+	}
+	if err != nil {
+		return r.fail(err, asJSON())
 	}
 	return 0
 }

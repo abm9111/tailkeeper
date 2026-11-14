@@ -388,7 +388,9 @@ func verifyLines(r io.Reader, path string, st chainState, complete bool) (chainS
 	}
 }
 
-// Tail returns up to n of the most recent entries, oldest first.
+// Tail returns up to n of the most recent entries, oldest first. When the log cannot
+// be read to its end, it returns the entries read before the failure with the error;
+// a line over 4 MiB is named by its number, as Verify names it.
 func Tail(path string, n int) ([]map[string]any, error) {
 	f, err := os.Open(path)
 	if err != nil {
@@ -411,7 +413,13 @@ func Tail(path string, n int) ([]map[string]any, error) {
 			ring = ring[1:]
 		}
 	}
-	return ring, sc.Err()
+	switch err := sc.Err(); {
+	case errors.Is(err, bufio.ErrTooLong):
+		return ring, broken(line+1, "is longer than 4 MiB")
+	case err != nil:
+		return ring, unavailable(err, "cannot read "+path)
+	}
+	return ring, nil
 }
 
 func broken(line int, what string) error {
