@@ -171,3 +171,86 @@ func TestReleaseWorkflowPinsTheTagAndSkipsTheCache(t *testing.T) {
 		t.Errorf("release.yml names %s %d times, want 2: once on each pinned step, and not in a comment, a run step or a with: value", tagVar, n)
 	}
 }
+
+// goreleaserEnvProblems lists the environment variables of a workflow that could steer
+// GoReleaser's choice of tag, read by what they are and not only by the name
+// GORELEASER_CURRENT_TAG: a GoReleaser step may set GITHUB_TOKEN and the tag variable and
+// nothing else (GORELEASER_PREVIOUS_TAG, GORELEASER_FORCE_TOKEN, GIT_* and the like change
+// what it builds or where it publishes), and no variable whose name starts GORELEASER_ may
+// be set on the workflow, on a job or on a step that is not a GoReleaser step. Names are
+// compared without regard to case. A workflow that names GITHUB_ENV is reported too, since
+// a run step can set a variable there for the steps after it.
+func goreleaserEnvProblems(wf workflow, text string) []string {
+	var out []string
+	allowed := map[string]bool{"GITHUB_TOKEN": true, tagVar: true}
+	isOurs := func(k string) bool { return strings.HasPrefix(strings.ToUpper(k), "GORELEASER_") }
+	for k := range wf.Env {
+		if isOurs(k) {
+			out = append(out, "the workflow sets "+k+" for every job")
+		}
+	}
+	for name, j := range wf.Jobs {
+		for k := range j.Env {
+			if isOurs(k) {
+				out = append(out, name+" job sets "+k+" for every step in it")
+			}
+		}
+		for _, s := range j.Steps {
+			isGoReleaser := strings.HasPrefix(s.Uses, "goreleaser/goreleaser-action@") || strings.Contains(strings.ToLower(s.Run), "goreleaser")
+			for k := range s.Env {
+				switch {
+				case isGoReleaser && !allowed[strings.ToUpper(k)]:
+					out = append(out, name+" job, step "+s.Name+": the GoReleaser step sets "+k+", which is not GITHUB_TOKEN or "+tagVar)
+				case !isGoReleaser && isOurs(k):
+					out = append(out, name+" job, step "+s.Name+" sets "+k+" and is not a GoReleaser step")
+				}
+			}
+		}
+	}
+	if strings.Contains(strings.ToUpper(text), "GITHUB_ENV") {
+		out = append(out, "release.yml names GITHUB_ENV: a run step could set a GoReleaser variable for the steps after it")
+	}
+	sort.Strings(out)
+	return out
+}
+
+// The tag test above reads GORELEASER_CURRENT_TAG by its name, so a variable that steers
+// the tag some other way (GORELEASER_PREVIOUS_TAG, or a GoReleaser variable at the level
+// of the workflow) would pass it. This reads every environment variable of the workflow
+// instead, and fails on any a GoReleaser step is not meant to have.
+func TestReleaseWorkflowSetsNoOtherGoReleaserEnvironment(t *testing.T) {
+	wf, text := loadWorkflow(t)
+	for _, p := range goreleaserEnvProblems(wf, text) {
+		t.Error(p)
+	}
+}
+
+// The reading is run on workflows that have each fault, and on the real one's shape.
+func TestGoReleaserEnvironmentReading(t *testing.T) {
+	one := func(env map[string]string) workflow {
+		return workflow{Jobs: map[string]job{"release": {Steps: []step{{Name: "Release", Uses: "goreleaser/goreleaser-action@x", Env: env}}}}}
+	}
+	other := func(env map[string]string) workflow {
+		return workflow{Jobs: map[string]job{"a": {Steps: []step{{Name: "x", Run: "true", Env: env}}}}}
+	}
+	for _, c := range []struct {
+		name string
+		wf   workflow
+		text string
+		want int
+	}{
+		{"the real shape", one(map[string]string{"GITHUB_TOKEN": "t", tagVar: "v"}), "", 0},
+		{"another name for the tag", one(map[string]string{"GORELEASER_PREVIOUS_TAG": "v"}), "", 1},
+		{"a git variable", one(map[string]string{"GIT_DIR": "x"}), "", 1},
+		{"lower case", one(map[string]string{"goreleaser_previous_tag": "v"}), "", 1},
+		{"workflow level", workflow{Env: map[string]string{"GORELEASER_FOO": "x"}}, "", 1},
+		{"job level", workflow{Jobs: map[string]job{"a": {Env: map[string]string{"GORELEASER_FOO": "x"}}}}, "", 1},
+		{"another step", other(map[string]string{"GORELEASER_FOO": "x"}), "", 1},
+		{"an unrelated variable on another step", other(map[string]string{"FOO": "x"}), "", 0},
+		{"a run step that writes GITHUB_ENV", one(nil), "echo X=1 >> $GITHUB_ENV", 1},
+	} {
+		if got := goreleaserEnvProblems(c.wf, c.text); len(got) != c.want {
+			t.Errorf("%s: %d problems %v, want %d", c.name, len(got), got, c.want)
+		}
+	}
+}
