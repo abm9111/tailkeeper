@@ -12,7 +12,6 @@ import (
 
 	"github.com/abm9111/tailkeeper/internal/guard"
 	"github.com/abm9111/tailkeeper/internal/registry"
-	"github.com/abm9111/tailkeeper/internal/tkerr"
 )
 
 // ACLHistoryInput selects policy versions from the configuration audit log.
@@ -208,7 +207,7 @@ func historyFilters(env *registry.Env, limit int) string {
 
 // readHistory reads every ACL update in [start, end], in slices of at most 31
 // days, and returns them oldest first. An entry whose old or new is not a JSON
-// string is counted in skipped and dropped. A string over the policy cap is kept
+// string, or whose eventTime does not parse, is counted in skipped and dropped. A string over the policy cap is kept
 // for ordering, so a version id still names it, and left out of the page.
 func readHistory(ctx context.Context, env *registry.Env, start, end time.Time) ([]historyItem, int, error) {
 	var (
@@ -314,9 +313,12 @@ func readHistorySlice(ctx context.Context, env *registry.Env, start, end time.Ti
 			skipped++
 			continue
 		}
+		// The log is paged and versions are named by time, so an entry with no readable
+		// time can be neither placed nor named: it is counted and left out.
 		t, err := time.Parse(time.RFC3339Nano, l.EventTime)
 		if err != nil {
-			return nil, 0, tkerr.New(tkerr.APIError, "an audit entry has an unparsable eventTime, so the log cannot be paged", "")
+			skipped++
+			continue
 		}
 		shown, size, sha := shownPolicy(env, newText)
 		group := versionGroup(l.EventGroupID)
