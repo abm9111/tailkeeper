@@ -106,7 +106,9 @@ func As(err error) (*Error, bool) {
 	return nil, false
 }
 
-// From converts any error to an *Error, classifying unknown errors as internal.
+// From converts any error to an *Error, classifying unknown errors as internal. An
+// *Error in err's chain is returned as it is, not copied: a package-level sentinel comes
+// back as the shared pointer, so copy it before changing a field.
 func From(err error) *Error {
 	if err == nil {
 		return nil

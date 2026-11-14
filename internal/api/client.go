@@ -118,12 +118,14 @@ func New(ctx context.Context, tailnet string, cred creds.Read, opt Options) (*Cl
 			AuthStyle:    oauth2.AuthStyleInParams,
 		}
 		tokCtx := context.WithValue(ctx, oauth2.HTTPClient, plain)
+		// cc.TokenSource is already an oauth2.ReuseTokenSource, so the transport below
+		// uses rec as it is: a second one would only cache what the first caches.
 		rec := &scopeRecorder{src: cc.TokenSource(tokCtx)}
 		c.scopes = rec
 		// No http.Client Timeout here: on timeout it calls oauth2.Transport's legacy
 		// CancelRequest, which logs a deprecation warning. do applies the timeout.
 		c.http = &http.Client{
-			Transport:     &oauth2.Transport{Source: oauth2.ReuseTokenSource(nil, rec), Base: plain.Transport},
+			Transport:     &oauth2.Transport{Source: rec, Base: plain.Transport},
 			CheckRedirect: noRedirect,
 		}
 	case creds.KindAPIKey:

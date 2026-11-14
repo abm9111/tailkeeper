@@ -53,7 +53,7 @@ type Read struct {
 	ClientSecret Secret // OAuth only
 	APIKey       Secret // API access token only
 	Audience     string // federated only
-	IDToken      func(ctx context.Context) (string, error)
+	IDToken      func(ctx context.Context) (string, error) // federated only; nil for OAuth and API key credentials
 	Provider     string // env, file, exec or oidc
 }
 
@@ -71,6 +71,8 @@ func (r Read) String() string {
 
 // System is the environment and filesystem a provider reads. Tests replace it.
 type System struct {
+	// Getenv is required: Resolve panics on a System whose Getenv is nil. The CLI sets
+	// every field of its System (internal/app/app.go); a test builds one with its own.
 	Getenv func(string) string
 	// ReadSecretFile checks a credential file and reads it through the file it
 	// checked, so nothing can be put in the path's place between the check and the
@@ -122,10 +124,14 @@ func (s System) readCredentialFile(path string) ([]byte, error) {
 }
 
 // ErrReexecRequired means the exec provider must re-run tailkeeper under its wrapper.
+// It is one shared *tkerr.Error, and so are errNoCredential and errPartialCredential
+// below; tkerr.From returns the pointer it is given. Copy an error before editing a
+// field of it, or the change shows in every later use.
 var ErrReexecRequired = tkerr.New(tkerr.CredentialUnavailable,
 	"the exec provider must re-run tailkeeper under its wrapper", "")
 
-// Resolve turns a configured provider into a Read credential.
+// Resolve turns a configured provider into a Read credential. It needs a System with
+// Getenv set (see System); a zero System panics.
 func Resolve(ctx context.Context, p config.Provider, sys System) (Read, error) {
 	switch p.Provider {
 	case "env":

@@ -121,10 +121,15 @@ func (d *document) operations() []string {
 
 const liveEnv = "TAILKEEPER_OPENAPI_LIVE"
 
+// regenerate is the command that rewrites operations.txt and fingerprint.txt. Without
+// liveEnv the tests skip, and without -run a bare -update would run the whole package
+// and change nothing.
+const regenerate = liveEnv + "=<document> go test ./internal/api/openapi -run 'TestOperationsMatchTheDocument|TestLiveDocumentMatchesThePin' -update"
+
 // header is the comment block at the top of operations.txt and fingerprint.txt;
 // test names the test whose -update run writes the file.
 func header(test, sum string) string {
-	return "# Generated from Tailscale's OpenAPI document by " + test + " (go test ./internal/api/openapi -update); do not edit by hand.\n" +
+	return "# Generated from Tailscale's OpenAPI document by " + test + " (" + regenerate + "); do not edit by hand.\n" +
 		"# Document sha256 " + sum + ", fetched " + time.Now().Format("2006-01-02") + ".\n"
 }
 
