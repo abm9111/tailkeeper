@@ -309,12 +309,6 @@ const auditMaxSpan = 31 * 24 * time.Hour
 // flowMaxSpan is the longest window network_flow_logs reads.
 const flowMaxSpan = time.Hour
 
-// auditFilters fingerprints what a cursor was issued for: the filters, the page
-// size, whether previews are shown, and how entries are displayed. The last
-// decides the order of entries that share a timestamp (see displayKey), so under
-// another setting, or another privacy key, the cursor's position inside such a
-// run would mean something else. The key enters only as a keyed hash of a
-// constant, itself hashed.
 // filterSet is a filter list as a set for the cursor fingerprint: an absent list and an empty one
 // are the same, and so are two orders of the same values. It copies; the input is the caller's.
 func filterSet(ss []string) []string {
@@ -337,6 +331,12 @@ func unreadableNote(n int) string {
 	return fmt.Sprintf(" %d entries with an unreadable eventTime were left out: the log is paged by time.", n)
 }
 
+// auditFilters fingerprints what a cursor was issued for: the filters, the page
+// size, whether previews are shown, and how entries are displayed. The last
+// decides the order of entries that share a timestamp (see displayKey), so under
+// another setting, or another privacy key, the cursor's position inside such a
+// run would mean something else. The key enters only as a keyed hash of a
+// constant, itself hashed.
 func auditFilters(env *registry.Env, in AuditLogInput, limit int) string {
 	mode := "show"
 	if !env.ShowPersonalData() {

@@ -63,6 +63,15 @@ func TestAuditLogCursorIgnoresAnEmptyFilterListAndTheOrderOfAFilter(t *testing.T
 			t.Errorf("the same filters written another way were refused: %v (%s)", err, args)
 		}
 	}
+	// A control: a different filter list is still refused, so the fingerprint is not a constant.
+	for _, args := range []string{
+		`{"limit":2,"event":["A"],"cursor":"` + first.NextCursor + `"}`,
+		`{"limit":2,"event":["A","B"],"actor":["x"],"cursor":"` + first.NextCursor + `"}`,
+	} {
+		if _, err := call(t, reg, env, "audit_log", args); err == nil {
+			t.Errorf("a cursor was accepted under different filters: %s", args)
+		}
+	}
 }
 
 func TestAuditLogPagesWithoutLossOrRepeats(t *testing.T) {
