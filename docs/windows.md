@@ -110,6 +110,7 @@ One subtest skips outside CI only, so it is in neither list: the `symlink` case 
 - `TestStderrInErrorsIsSanitized` (`internal/local`): the stand-in `tailscale` CLI is a POSIX shell script.
 - `TestStderrInErrorsCannotCloseItsQuotes` (`internal/local`): the stand-in `tailscale` CLI is a POSIX shell script.
 - `TestLocalStatusClassifiesPathsAndHidesEndpoints` (`internal/tools`): the stand-in `tailscale` CLI is a POSIX shell script.
+- `TestLocalStatusOmitsUnreadCounts` (`internal/tools`): the stand-in `tailscale` CLI is a POSIX shell script.
 - `TestLocalStatusNeedsLoginHidesAuthURL` (`internal/tools`): the stand-in `tailscale` CLI is a POSIX shell script.
 - `TestLocalDaemonUnreachable` (`internal/tools`): the stand-in `tailscale` CLI is a POSIX shell script.
 - `TestLocalNetcheckRequiresDaemonAndDropsPublicIPs` (`internal/tools`): the stand-in `tailscale` CLI is a POSIX shell script.

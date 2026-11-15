@@ -230,10 +230,10 @@ type LocalStatusOutput struct {
 	Self            *LocalPeer  `json:"self,omitempty"`
 	Tailnet         string      `json:"tailnet,omitempty" tk:"untrusted" jsonschema:"the tailnet name: an organization's domain, or a person's login for a personal tailnet"`
 	MagicDNSSuffix  string      `json:"magicDnsSuffix,omitempty" tk:"untrusted"`
-	MagicDNSEnabled bool        `json:"magicDnsEnabled"`
+	MagicDNSEnabled *bool       `json:"magicDnsEnabled,omitempty" jsonschema:"present only when the local status names the tailnet"`
 	Health          []string    `json:"health" tk:"untrusted"`
 	Peers           []LocalPeer `json:"peers,omitempty" tk:"rows"`
-	PeerCount       int         `json:"peerCount"`
+	PeerCount       *int        `json:"peerCount,omitempty" jsonschema:"present only when peers were requested"`
 	PeerScope       string      `json:"peerScope,omitempty" jsonschema:"network_map: peers are those in this node's network map; devices it may not reach are absent"`
 }
 
@@ -260,7 +260,9 @@ func localStatus(ctx context.Context, env *registry.Env, in LocalStatusInput) (L
 		out.Self = &self
 	}
 	if s.CurrentTailnet != nil {
-		out.Tailnet, out.MagicDNSEnabled = s.CurrentTailnet.Name, s.CurrentTailnet.MagicDNSEnabled
+		out.Tailnet = s.CurrentTailnet.Name
+		enabled := s.CurrentTailnet.MagicDNSEnabled
+		out.MagicDNSEnabled = &enabled
 		if out.MagicDNSSuffix == "" {
 			out.MagicDNSSuffix = s.CurrentTailnet.MagicDNSSuffix
 		}
@@ -269,8 +271,9 @@ func localStatus(ctx context.Context, env *registry.Env, in LocalStatusInput) (L
 		out.Peers = append(out.Peers, toLocalPeer(s.Peer[k]))
 	}
 	sort.SliceStable(out.Peers, func(i, j int) bool { return out.Peers[i].DNSName < out.Peers[j].DNSName })
-	out.PeerCount = len(out.Peers)
 	if in.Peers || in.Active {
+		n := len(out.Peers)
+		out.PeerCount = &n
 		out.PeerScope = "network_map"
 	}
 	return out, nil

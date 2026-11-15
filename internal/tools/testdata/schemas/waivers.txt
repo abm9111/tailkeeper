@@ -11,3 +11,7 @@
 # clears the lines whose change is now in the baseline.
 2026-11-12 local_ping input $.count type-changed an omitted count stays the default and 0 is refused
 2026-11-12 local_ping input $.timeoutSeconds type-changed an omitted timeout stays the default and 0 is refused
+2026-11-13 local_status output $.magicDnsEnabled type-changed present only when the status names the tailnet
+2026-11-13 local_status output $.magicDnsEnabled required-output-lost present only when the status names the tailnet
+2026-11-13 local_status output $.peerCount type-changed present only when peers were requested
+2026-11-13 local_status output $.peerCount required-output-lost present only when peers were requested
