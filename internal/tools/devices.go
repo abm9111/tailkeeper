@@ -123,6 +123,11 @@ func toDevice(a apiDevice, fields string) Device {
 		TailnetLockError: a.TailnetLockError, MultipleConnections: a.MultipleConnections, SSHEnabled: a.SSHEnabled,
 		AdvertisedRoutes: a.AdvertisedRoutes, EnabledRoutes: a.EnabledRoutes, Distro: a.Distro, Fields: fields,
 	}
+	// With key expiry disabled the API still returns the date the key would have expired,
+	// which reads as an expired key. The schema says nothing of this: the tool list is at its budget.
+	if a.KeyExpiryDisabled {
+		d.Expires = ""
+	}
 	if cc := a.ClientConnectivity; cc != nil {
 		c := &Connectivity{HardNAT: cc.MappingVariesByDestIP, Supports: cc.ClientSupports}
 		for region, l := range cc.Latency {

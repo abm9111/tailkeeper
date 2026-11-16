@@ -66,6 +66,30 @@ func TestDevicesListTreatsAnUnparsableLastSeenAsStale(t *testing.T) {
 	}
 }
 
+func TestDevicesListOmitsAnExpiryThatDoesNotApply(t *testing.T) {
+	f, reg, env := apiEnv(t)
+	f.JSON("GET", devicesPath, 200, `{"devices":[
+{"id":"7","nodeId":"nOFF7CNTRL","name":"keeper","hostname":"keeper","os":"linux","connectedToControl":true,"lastSeen":"2026-10-10T11:59:00Z","authorized":true,"keyExpiryDisabled":true,"expires":"2026-09-23T00:00:00Z"},
+{"id":"8","nodeId":"nON8CNTRL","name":"timed","hostname":"timed","os":"linux","connectedToControl":true,"lastSeen":"2026-10-10T11:59:00Z","authorized":true,"keyExpiryDisabled":false,"expires":"2027-01-01T00:00:00Z"}]}`)
+	var out tools.DevicesListOutput
+	mustCall(t, reg, env, "devices_list", `{}`, &out)
+	if len(out.Devices) != 2 {
+		t.Fatalf("devices = %+v", out.Devices)
+	}
+	for _, d := range out.Devices {
+		switch d.NodeID {
+		case "nOFF7CNTRL":
+			if !d.KeyExpiryDisabled || d.Expires != "" {
+				t.Errorf("disabled expiry: keyExpiryDisabled = %v, expires = %q; want true and none", d.KeyExpiryDisabled, d.Expires)
+			}
+		case "nON8CNTRL":
+			if d.Expires != "2027-01-01T00:00:00Z" {
+				t.Errorf("expires = %q, want it kept when expiry is on", d.Expires)
+			}
+		}
+	}
+}
+
 func TestDevicesListStaleAndSanitized(t *testing.T) {
 	f, reg, env := apiEnv(t)
 	f.JSON("GET", devicesPath, 200, deviceFixture())

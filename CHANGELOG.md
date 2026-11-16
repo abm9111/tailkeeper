@@ -4,6 +4,8 @@ What each release of tailkeeper changed. Versions follow semantic versioning; un
 
 ## Unreleased — foundations
 
+- `devices_list` and `device_get` omit `expires` for a device whose `keyExpiryDisabled` is true: the API still returns the date the key would have expired, which read as an expired key. The schema text is unchanged (the tool list is at its byte budget).
+- A local CLI warning that its version differs from the daemon's is dropped when only the build suffix differs (`1.104.5-t73a48057a` against `1.104.5-t788384763-gd9218e278`); `local_version`'s `skew` already compared the release alone.
 - The MCP definition byte budget (`toolListBudget`) rises from 111,528 to 111,921 bytes for `devices_list` paging: `limit`, `offset`, `total` and `truncated`, from 111,921 to 111,939 bytes because `local_ping` takes `count` and `timeoutSeconds` as pointers so that 0 is refused and an omitted value stays the default, and from 111,939 to 112,051 bytes because `local_status` omits `peerCount` unless peers were requested and omits `magicDnsEnabled` unless the status names the tailnet. `local_status` output `$.peerCount` and `$.magicDnsEnabled` may be null and are no longer always present. `local_ping` input `$.count` and `$.timeoutSeconds` may be null when omitted. Growth remains checked with the existing 1,024-byte slack limit.
 - Built with Go 1.27.4: Go 1.27.3's `net/http` can crash an HTTP/1 server on a MaxBytesReader header race (GO-2026-6859). Tailkeeper does not serve HTTP. The pin tracks that Go security release.
 
