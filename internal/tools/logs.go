@@ -309,6 +309,28 @@ const auditMaxSpan = 31 * 24 * time.Hour
 // flowMaxSpan is the longest window network_flow_logs reads.
 const flowMaxSpan = time.Hour
 
+// filterSet is a filter list as a set for the cursor fingerprint: an absent list and an empty one
+// are the same, and so are two orders of the same values. It copies; the input is the caller's.
+func filterSet(ss []string) []string {
+	out := slices.Clone(ss)
+	if out == nil {
+		out = []string{}
+	}
+	sort.Strings(out)
+	return out
+}
+
+// unreadableNote says how many entries were left out for want of a readable eventTime, or nothing.
+func unreadableNote(n int) string {
+	switch n {
+	case 0:
+		return ""
+	case 1:
+		return " 1 entry with an unreadable eventTime was left out: the log is paged by time."
+	}
+	return fmt.Sprintf(" %d entries with an unreadable eventTime were left out: the log is paged by time.", n)
+}
+
 // auditFilters fingerprints what a cursor was issued for: the filters, the page
 // size, whether previews are shown, and how entries are displayed. The last
 // decides the order of entries that share a timestamp (see displayKey), so under
@@ -323,7 +345,7 @@ func auditFilters(env *registry.Env, in AuditLogInput, limit int) string {
 			mode += ":" + env.Privacy.Digest([]byte("audit_log cursor"))
 		}
 	}
-	b, _ := json.Marshal([]any{in.Actor, in.Target, in.Event, lower(in.Origin), limit, in.IncludeValues, mode})
+	b, _ := json.Marshal([]any{filterSet(in.Actor), filterSet(in.Target), filterSet(in.Event), filterSet(lower(in.Origin)), limit, in.IncludeValues, mode})
 	sum := sha256.Sum256(b)
 	return hex.EncodeToString(sum[:8])
 }
@@ -577,6 +599,7 @@ func auditLog(ctx context.Context, env *registry.Env, in AuditLogInput) (AuditLo
 		origins[strings.ToUpper(o)] = true
 	}
 	var all []timedEntry
+	unreadable := 0
 	for _, l := range r.Logs {
 		// Webhook and log-stream endpoints carry their token in the URL path, and
 		// the audit log names them (spec Appendix C): cut every URL in every
@@ -601,7 +624,9 @@ func auditLog(ctx context.Context, env *registry.Env, in AuditLogInput) (AuditLo
 		}
 		t, err := time.Parse(time.RFC3339Nano, l.EventTime)
 		if err != nil {
-			return AuditLogOutput{}, tkerr.New(tkerr.APIError, "an audit entry has an unparsable eventTime, so the log cannot be paged", "")
+			// The log is paged by time, so an entry with none cannot be placed: leave it out and say so.
+			unreadable++
+			continue
 		}
 		e := boundEntry(env, AuditEntry{
 			EventTime: versionEventTime(l.EventTime, t), DeferredAt: l.DeferredAt, EventGroupID: l.EventGroupID, Origin: l.Origin,
@@ -663,6 +688,7 @@ func auditLog(ctx context.Context, env *registry.Env, in AuditLogInput) (AuditLo
 		out.Entries = append(out.Entries, te.e)
 	}
 	out.Count = len(out.Entries)
+	out.Note += unreadableNote(unreadable)
 	for _, e := range out.Entries {
 		if actorTagsCut(e.Actor) {
 			out.Note += actorTagsNote
@@ -754,6 +780,15 @@ func (in FlowLogsInput) Check() error {
 	return nil
 }
 
+// settingsUnreadNote says why loggingEnabled is unknown: the settings request failed (with its
+// error code) or it succeeded and did not say.
+func settingsUnreadNote(err error) string {
+	if err != nil {
+		return " Whether flow logging is on is unknown: the settings request failed (" + string(tkerr.From(err).Code) + "), so zero records may mean logging is off."
+	}
+	return " Whether flow logging is on is unknown: the settings did not say, so zero records may mean logging is off."
+}
+
 func networkFlowLogs(ctx context.Context, env *registry.Env, in FlowLogsInput) (FlowLogsOutput, error) {
 	now := env.Clock()
 	start, end, err := parseWindow(now, in.Start, in.End, 15*time.Minute, flowMaxSpan)
@@ -779,6 +814,8 @@ func networkFlowLogs(ctx context.Context, env *registry.Env, in FlowLogsInput) (
 			return out, nil
 		}
 		out.LoggingEnabled = "true"
+	} else {
+		out.Note += settingsUnreadNote(err)
 	}
 	path, err := tailnetPath(env, "/logging/network")
 	if err != nil {
