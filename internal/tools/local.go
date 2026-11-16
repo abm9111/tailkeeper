@@ -22,7 +22,9 @@ import (
 // Shapes in this file follow the tailscale CLI's JSON output as defined in
 // tailscale.com v1.104 (ipnstate, tsdnsjsonv0, tslockjsonv1, ipn.ServeConfig,
 // netcheck.Report, setting.Snapshot) and were checked against a 1.102 client.
-// Only declared fields are decoded; everything else is dropped.
+// Only declared fields are decoded; everything else is dropped. The one exception is
+// local_prefs, which decodes into a map: its output is built from the prefKeys allowlist,
+// so no other key is ever shown.
 
 const localTimeout = 30 * time.Second
 

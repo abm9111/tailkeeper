@@ -174,7 +174,7 @@ func (r *Runner) Run(ctx context.Context, timeout time.Duration, args ...string)
 	if maxOut == 0 {
 		maxOut = 4 << 20
 	}
-	stdout := &capped{max: maxOut}
+	stdout := &capped{max: maxOut, stop: cancel}
 	stderr := &capped{max: 64 << 10}
 	cmd.Stdout, cmd.Stderr = stdout, stderr
 	cmd.WaitDelay = waitDelay
@@ -190,14 +190,15 @@ func (r *Runner) Run(ctx context.Context, timeout time.Duration, args ...string)
 	}
 	name := "tailscale " + args[0]
 	switch {
+	case stdout.overflow:
+		// First, because the overflow cancelled the context: the child was stopped for it.
+		return res, tkerr.New(tkerr.LocalOutputUnrecognized, "tailscale output exceeded the size cap", "")
 	case errors.Is(err, exec.ErrWaitDelay):
 		return res, tkerr.New(tkerr.LocalCommandFailed, name+" exited but left a process holding its output", "")
 	case ctx.Err() == context.DeadlineExceeded:
 		return res, tkerr.New(tkerr.LocalTimeout, name+" did not finish in "+timeout.String(), "")
 	case ctx.Err() != nil:
 		return res, tkerr.Wrap(tkerr.LocalCommandFailed, ctx.Err(), name+" was cancelled", "")
-	case stdout.overflow:
-		return res, tkerr.New(tkerr.LocalOutputUnrecognized, "tailscale output exceeded the size cap", "")
 	}
 	if err != nil {
 		var ee *exec.ExitError
@@ -266,10 +267,14 @@ type capped struct {
 	buf      bytes.Buffer
 	max      int
 	overflow bool
+	stop     func() // called the first time the cap overflows, to end a runaway child
 }
 
 func (c *capped) Write(p []byte) (int, error) {
 	if c.buf.Len()+len(p) > c.max {
+		if !c.overflow && c.stop != nil {
+			c.stop()
+		}
 		c.overflow = true
 		if room := c.max - c.buf.Len(); room > 0 {
 			c.buf.Write(p[:room])

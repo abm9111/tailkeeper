@@ -146,6 +146,19 @@ func TestVersionSkewWarningIgnoresABuildSuffix(t *testing.T) {
 	}
 }
 
+func TestAChildOverTheOutputCapIsStoppedAtOnce(t *testing.T) {
+	r := runner(fakeCLI(t, `head -c 100000 /dev/zero | tr '\0' x; sleep 30`))
+	r.MaxStdout = 1024
+	start := time.Now()
+	_, err := r.Run(context.Background(), 20*time.Second, "status", "--json")
+	if code(err) != tkerr.LocalOutputUnrecognized {
+		t.Fatalf("err = %v, want local_output_unrecognized", err)
+	}
+	if took := time.Since(start); took > 10*time.Second {
+		t.Fatalf("took %v: the child ran on after the cap overflowed", took)
+	}
+}
+
 func TestRateLimit(t *testing.T) {
 	now := time.Date(2026, 10, 10, 9, 0, 0, 0, time.UTC)
 	r := runner(fakeCLI(t, `echo ok`))
