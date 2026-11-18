@@ -215,10 +215,11 @@ func TestAnEntryWhoseTextsAreNotStringsOrAreOverTheCapIsSkippedAndCounted(t *tes
 	good := historyLine("2026-10-09T00:00:00Z", "g", "ADMIN_CONSOLE", "amy@example.com", `{"tagOwners":{}}`, `{"tagOwners":{"tag:a":[]}}`)
 	notString := `{"eventTime":"2026-10-08T00:00:00Z","eventGroupID":"g0","origin":"ADMIN_CONSOLE","old":{"tagOwners":{}},"new":"{\"tagOwners\":{}}"}`
 	huge := historyLine("2026-10-07T00:00:00Z", "g2", "ADMIN_CONSOLE", "amy@example.com", `{"tagOwners":{}}`, over)
-	serveHistory(f, historyLogs(notString, huge, good))
+	noTime := historyLine("yesterday", "g3", "ADMIN_CONSOLE", "amy@example.com", `{"tagOwners":{}}`, `{"tagOwners":{}}`)
+	serveHistory(f, historyLogs(notString, huge, noTime, good))
 	var out tools.ACLHistoryOutput
 	mustCall(t, reg, env, "acl_history", `{}`, &out)
-	if out.Count != 1 || out.Skipped != 2 || out.Versions[0].EventTime != "2026-10-09T00:00:00Z" {
+	if out.Count != 1 || out.Skipped != 3 || out.Versions[0].EventTime != "2026-10-09T00:00:00Z" {
 		t.Fatalf("count %d skipped %d versions %+v", out.Count, out.Skipped, out.Versions)
 	}
 }

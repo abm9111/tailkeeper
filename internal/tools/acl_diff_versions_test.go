@@ -110,6 +110,25 @@ func TestAVersionAgainstLiveComparesTheHistoricalTextWithTheLivePolicy(t *testin
 	}
 }
 
+// An entry with a time that does not parse, read in the same window, does not stop a version
+// beside it resolving.
+func TestAVersionResolvesBesideAnEntryWhoseTimeDoesNotParse(t *testing.T) {
+	f, reg, env := apiEnv(t)
+	when := "2026-10-08T00:00:00Z"
+	stored := `{"tagOwners":{"tag:a":["autogroup:admin"]},"acls":[{"action":"accept","src":["tag:a"],"dst":["tag:a:22"]}]}`
+	serveHistory(f, historyLogs(
+		historyLine("yesterday", "g", "ADMIN_CONSOLE", "amy@example.com", `{"tagOwners":{}}`, `{"tagOwners":{}}`),
+		historyLine(when, "g", "ADMIN_CONSOLE", "amy@example.com", `{"tagOwners":{}}`, stored),
+	))
+	serveLive(f, stored, nil, nil)
+	id := diffVersionID(when, "g", "new", 0)
+	var out tools.ACLDiffOutput
+	mustCall(t, reg, env, "acl_diff", fmt.Sprintf(`{"fromVersion":%q}`, id), &out)
+	if out.Status != "equal" || out.Old.Source != "version" || out.Old.Version != id {
+		t.Fatalf("%+v", out)
+	}
+}
+
 // A version that is no id from acl_history is refused whatever the other side holds, and the
 // refusal does not repeat it: a text that is not a policy used to end the call as a result of
 // status invalid with the version string in it, unmasked.
