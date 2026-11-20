@@ -56,8 +56,12 @@ func TestSecondInterruptEndsTheServerAtOnce(t *testing.T) {
 	// leaves it running with the pipes open. setsid does that where it exists (Linux). set -m
 	// does it on macOS, but a shell without a terminal, such as dash on Linux, turns job
 	// control off, and the sleep would stay in the group and die with the CLI.
-	script := "#!/bin/sh\nif command -v setsid >/dev/null 2>&1; then\n  setsid sleep 60 &\nelse\n  set -m\n  sleep 60 &\nfi\n" +
-		"echo $! > " + strconv.Quote(childFile) + "\necho $$ > " + strconv.Quote(readyFile) + "\nwait\n"
+	// The child writes its own pid once it is out of the group: $! is known at the fork,
+	// before setsid has run, and a Ctrl-C sent in that gap would kill the child with the CLI.
+	// Single quotes: $$ must be the inner shell's pid, not the CLI's.
+	hold := "'echo $$ > " + strconv.Quote(childFile) + "; exec sleep 60'"
+	script := "#!/bin/sh\nif command -v setsid >/dev/null 2>&1; then\n  setsid sh -c " + hold + " &\nelse\n  set -m\n  sh -c " + hold + " &\nfi\n" +
+		"echo $$ > " + strconv.Quote(readyFile) + "\nwait\n"
 	if err := os.WriteFile(fake, []byte(script), 0o755); err != nil {
 		t.Fatal(err)
 	}
