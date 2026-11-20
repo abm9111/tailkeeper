@@ -3,6 +3,7 @@ package tkerr
 import (
 	"errors"
 	"fmt"
+	"strings"
 	"testing"
 )
 
@@ -50,6 +51,40 @@ func TestFromClassifiesUnknownAsInternal(t *testing.T) {
 	}
 	if got.Message == "boom" {
 		t.Fatalf("internal cause leaked into Message: %q", got.Message)
+	}
+}
+
+// The cause of an unclassified error is kept for the program and hidden from every text that
+// reaches a user or an agent: Error(), the message and the hint never carry it, and errors.Is
+// and errors.As still find it.
+func TestFromKeepsTheCauseOutOfEveryTextButStillUnwrapsToIt(t *testing.T) {
+	const secret = "CAUSE-CANARY open /home/someone/secret: permission denied"
+	cause := errors.New(secret)
+	for name, err := range map[string]error{
+		"plain":   cause,
+		"wrapped": fmt.Errorf("reading the thing: %w", cause),
+	} {
+		got := From(err)
+		if got.Code != Internal {
+			t.Fatalf("%s: code = %s, want internal_error", name, got.Code)
+		}
+		for field, text := range map[string]string{"Error()": got.Error(), "Message": got.Message, "Hint": got.Hint} {
+			if strings.Contains(text, "CAUSE-CANARY") || strings.Contains(text, "permission denied") {
+				t.Errorf("%s: %s = %q carries the cause", name, field, text)
+			}
+		}
+		if got.Message == "" || got.Hint == "" {
+			t.Errorf("%s: the error says nothing a user can act on: message %q, hint %q", name, got.Message, got.Hint)
+		}
+		if !errors.Is(got, cause) {
+			t.Errorf("%s: errors.Is no longer finds the cause", name)
+		}
+	}
+	// A cause that is itself a classified error is not hidden: its code, message and hint stand.
+	inner := New(ScopeMissing, "missing devices:core:read", "run tailkeeper doctor")
+	got := From(fmt.Errorf("listing devices: %w", inner))
+	if got.Code != ScopeMissing || got.Message != inner.Message || got.Hint != inner.Hint {
+		t.Errorf("From(wrapped *Error) = %+v, want the classified error's own code, message and hint", got)
 	}
 }
 
