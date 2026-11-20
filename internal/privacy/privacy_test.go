@@ -19,6 +19,17 @@ func testKey(t *testing.T) *Key {
 	return k
 }
 
+// otherKey is a second key, to show that two keys name text differently. A key that does not
+// parse is a failure of the test, not a key to compare with.
+func otherKey(t *testing.T) *Key {
+	t.Helper()
+	k, err := Parse(strings.Repeat("a5", 32))
+	if err != nil {
+		t.Fatal(err)
+	}
+	return k
+}
+
 var pseudonymRE = regexp.MustCompile(`^p:[a-z2-7]{10}$`)
 
 func TestPseudonymsAreStableKeyedAndNormalized(t *testing.T) {
@@ -37,7 +48,7 @@ func TestPseudonymsAreStableKeyedAndNormalized(t *testing.T) {
 	if k.Pseudonym("bob@example.com") == a {
 		t.Error("two addresses share a pseudonym")
 	}
-	other, _ := Parse(strings.Repeat("a5", 32))
+	other := otherKey(t)
 	if other.Pseudonym("amy@example.com") == a {
 		t.Error("two keys give the same pseudonym")
 	}
@@ -52,7 +63,7 @@ func TestDigestsAreKeyedAndSeparateFromPseudonyms(t *testing.T) {
 	if !regexp.MustCompile(`^hmac-sha256:[0-9a-f]{64}$`).MatchString(d) {
 		t.Fatalf("Digest = %q", d)
 	}
-	other, _ := Parse(strings.Repeat("a5", 32))
+	other := otherKey(t)
 	if other.Digest([]byte("x")) == k.Digest([]byte("x")) {
 		t.Error("two keys give the same digest")
 	}
@@ -230,7 +241,7 @@ func TestAPIPseudonymDoesNotDecodeEscapes(t *testing.T) {
 	if !pseudonymRE.MatchString(k.APIPseudonym("Amy Lee")) {
 		t.Errorf("APIPseudonym = %q, want p: and ten base32 characters", k.APIPseudonym("Amy Lee"))
 	}
-	other, _ := Parse(strings.Repeat("a5", 32))
+	other := otherKey(t)
 	if other.APIPseudonym("amy@example.com") == amy {
 		t.Error("two keys give the same pseudonym")
 	}

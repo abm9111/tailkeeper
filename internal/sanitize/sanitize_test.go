@@ -2,6 +2,7 @@ package sanitize
 
 import (
 	"encoding/json"
+	"fmt"
 	"math/bits"
 	"reflect"
 	"runtime"
@@ -158,20 +159,61 @@ func TestUntrustedPathsRefusesShapesFieldsCannotSanitize(t *testing.T) {
 			Old json.RawMessage `json:"old"`
 		} `json:"rows"`
 	}
-	for name, typ := range map[string]reflect.Type{
-		"interface":       reflect.TypeFor[withAny](),
-		"map of structs":  reflect.TypeFor[withStructMap](),
-		"embedded struct": reflect.TypeFor[withEmbedded](),
-		"raw bytes":       reflect.TypeFor[withBytes](),
-		"raw JSON":        reflect.TypeFor[withRawJSON](),
+	// An interface that is not tagged, in a slice, behind a pointer or as the value of a map:
+	// each is a shape Fields would meet and UntrustedPaths has not checked.
+	type withAnySlice struct {
+		Rows []any `json:"rows"`
+	}
+	type withAnyPointer struct {
+		V *any `json:"v"`
+	}
+	type withAnyArray struct {
+		Rows [2]any `json:"rows"`
+	}
+	type withAnyMap struct {
+		M map[string]any `json:"m"`
+	}
+	type withPointerToSliceOfAny struct {
+		Rows *[]any `json:"rows"`
+	}
+	// An embedded struct is refused whether its type is exported or not.
+	type Base struct {
+		Name string `json:"name" tk:"untrusted"`
+	}
+	type withExportedEmbedded struct {
+		Base
+		ID string `json:"id"`
+	}
+	type withEmbeddedPointer struct {
+		*Base
+	}
+	for name, c := range map[string]struct {
+		typ  reflect.Type
+		want string // what the panic says is wrong
+	}{
+		"interface":                    {reflect.TypeFor[withAny](), "is an interface"},
+		"interface in a slice":         {reflect.TypeFor[withAnySlice](), "is an interface"},
+		"interface in an array":        {reflect.TypeFor[withAnyArray](), "is an interface"},
+		"pointer to an interface":      {reflect.TypeFor[withAnyPointer](), "is an interface"},
+		"pointer to a slice of any":    {reflect.TypeFor[withPointerToSliceOfAny](), "is an interface"},
+		"map of interfaces":            {reflect.TypeFor[withAnyMap](), "not scalars"},
+		"map of structs":               {reflect.TypeFor[withStructMap](), "not scalars"},
+		"embedded struct":              {reflect.TypeFor[withEmbedded](), "is an embedded struct"},
+		"exported embedded struct":     {reflect.TypeFor[withExportedEmbedded](), "is an embedded struct"},
+		"embedded pointer to a struct": {reflect.TypeFor[withEmbeddedPointer](), "is an embedded struct"},
+		"raw bytes":                    {reflect.TypeFor[withBytes](), "raw bytes"},
+		"raw JSON":                     {reflect.TypeFor[withRawJSON](), "raw bytes"},
 	} {
 		func() {
 			defer func() {
-				if recover() == nil {
+				switch p := recover(); {
+				case p == nil:
 					t.Errorf("%s: UntrustedPaths accepted a shape Fields cannot sanitize", name)
+				case !strings.Contains(fmt.Sprint(p), c.want):
+					t.Errorf("%s: UntrustedPaths panicked with %q, want a message with %q", name, p, c.want)
 				}
 			}()
-			UntrustedPaths(typ)
+			UntrustedPaths(c.typ)
 		}()
 	}
 }
@@ -484,5 +526,132 @@ func TestHasTagNeverFindsTheEmptyOption(t *testing.T) {
 		if got := HasTag(`tk:"untrusted, personal"`, option); got != want {
 			t.Errorf("HasTag(untrusted, personal; %q) = %v, want %v", option, got, want)
 		}
+	}
+}
+
+// A limit is a cut at one place and nowhere else. For every limit from 1 to past the end of
+// the text, on text of every shape that escaping changes: output that fits is shown whole (a
+// string of exactly the limit is not cut, whether the limit counts the text or its escapes),
+// and output that does not is the longest whole-rune part of it that leaves room for the
+// notice, followed by the notice (by the limit alone, when the limit is under the notice's
+// 14 bytes). An off-by-one in either comparison of escape moves one of these results, at the
+// one limit where the output is exactly as long as the limit.
+func TestStringAndTextCutExactlyWhereTheOutputPassesTheLimit(t *testing.T) {
+	inputs := map[string]string{
+		"ascii":          strings.Repeat("a", 40),
+		"escapes":        strings.Repeat(r(0x1B), 10),
+		"two bytes":      strings.Repeat(r(0xE9), 30),
+		"three bytes":    strings.Repeat(r(0x4E2D), 20),
+		"four bytes":     strings.Repeat(r(0x1F680), 15),
+		"mixed":          "ab" + r(0x1F680) + r(0x1B) + r(0xE9) + strings.Repeat("z", 20) + r(0x202E) + "y",
+		"not UTF-8":      strings.Repeat("\xff", 8),
+		"genuine FFFD":   strings.Repeat(r(0xFFFD), 12),
+		"lines and tabs": strings.Repeat("ab\n\t", 12),
+	}
+	checked, atEdge := 0, 0
+	for name, in := range inputs {
+		for fn, f := range map[string]func(string, int) string{"String": String, "Text": Text} {
+			full := f(in, 0)
+			for limit := 1; limit <= len(full)+3; limit++ {
+				got := f(in, limit)
+				checked++
+				var want string
+				if len(full) <= limit {
+					want = full
+					if len(full) == limit {
+						atEdge++
+					}
+				} else {
+					suffix, cut := truncatedSuffix, limit-len(truncatedSuffix)
+					if cut < 0 {
+						suffix, cut = "", limit
+					}
+					for cut > 0 && !utf8.RuneStart(full[cut]) {
+						cut--
+					}
+					want = full[:cut] + suffix
+				}
+				if got != want {
+					t.Fatalf("%s(%s, %d) = %q, want %q", fn, name, limit, got, want)
+				}
+			}
+		}
+	}
+	// The denominator: every input reached the limit where its output is exactly as long.
+	if want := 2 * len(inputs); atEdge != want {
+		t.Errorf("%d cases had output exactly as long as the limit, want %d (one for each input and function); %d results checked", atEdge, want, checked)
+	}
+}
+
+// A U+FFFD that is in the text is a character, and shown as it is. A byte that is not UTF-8
+// decodes to the same replacement rune, one byte wide, and is the only one that is escaped.
+func TestStringKeepsAGenuineReplacementCharacterAndEscapesInvalidBytes(t *testing.T) {
+	for name, c := range map[string]struct{ in, want string }{
+		"genuine":               {"a" + r(0xFFFD) + "b", "a" + r(0xFFFD) + "b"},
+		"invalid byte":          {"a\xffb", `a\u{FFFD}b`},
+		"both, in either order": {r(0xFFFD) + "\xff" + r(0xFFFD), r(0xFFFD) + `\u{FFFD}` + r(0xFFFD)},
+		"two bytes of a rune":   {"\xef\xbf", `\u{FFFD}\u{FFFD}`}, // the first two of the three bytes of U+FFFD
+		"a lone continuation":   {"\x80", `\u{FFFD}`},
+		"a cut four-byte rune":  {"\xf0\x9f\x9a", `\u{FFFD}\u{FFFD}\u{FFFD}`},
+		"genuine, repeated":     {strings.Repeat(r(0xFFFD), 5), strings.Repeat(r(0xFFFD), 5)},
+		"invalid, alone":        {"\xff", `\u{FFFD}`},
+	} {
+		for fn, f := range map[string]func(string, int) string{"String": String, "Text": Text} {
+			if got := f(c.in, 0); got != c.want {
+				t.Errorf("%s: %s(%q) = %q, want %q", name, fn, c.in, got, c.want)
+			}
+		}
+	}
+	// Under a limit, a genuine one is cut on its rune boundary like any other character.
+	// 20 bytes less the 14 of the notice leave 6, which hold two of its three-byte runes.
+	if got, want := String(strings.Repeat(r(0xFFFD), 20), 20), strings.Repeat(r(0xFFFD), 2)+truncatedSuffix; got != want {
+		t.Errorf("String(20 x U+FFFD, 20) = %q, want %q", got, want)
+	}
+}
+
+// The edges of the ranges unsafeRune lists, on both sides of each: the last rune a range
+// shows as it is and the first it escapes. The Unicode classes oracle
+// (TestEscapingCoversUnicodesInvisibleClasses) holds that every invisible rune is escaped;
+// this is the other side, that a printable rune next to a range is not taken into it.
+func TestUnsafeRuneEdgesAreEscapedInsideAndKeptOutside(t *testing.T) {
+	escaped := []rune{
+		0x00, 0x1F, 0x7F, 0x80, 0x9F, 0xA0, // C0, DEL, C1, and the first space after them
+		0x061C, 0x2028, 0x2029, 0xFEFF, // Arabic letter mark, separators, BOM
+		0x200A, 0x200B, 0x200F, // the hair space before the zero-widths, their first and last
+		0x202A, 0x202E, 0x202F, 0x2066, 0x2069, 0x206A, // bidi embeddings and isolates
+		0x034F, 0x115F, 0x1160, 0x180B, 0x180D, 0x3164, 0xFFA0, 0x2800, // blank on screen, though printable
+		0xFE00, 0xFE0F, 0xE0000, 0xE0041, 0xE007F, 0xE0100, 0xE01EF, 0xE01F0, // selectors and tags
+		0x2065, 0xFFFE, 0x10FFFF, // unassigned and non-characters
+	}
+	kept := []rune{
+		0x20, 0x21, 0x7E, 0xA1, 0xFF, // ASCII and Latin-1 around the controls
+		0x061B, 0x2010, 0x2027, 0x2030, 0x2070, // around the Arabic mark, the zero-widths, the bidi range
+		0x0300, 0x034E, 0x0350, 0x1161, 0x115E, 0x3163, 0x3165, 0xFFA1, 0x2801, 0x27FF, // beside the blank ones
+		0x180A, 0x1810, 0xFE10, 0xFE20, 0x1F680, 0x4E2D, 0xFFFD,
+	}
+	for _, cp := range escaped {
+		for fn, f := range map[string]func(string, int) string{"String": String, "Text": Text} {
+			if got := f("a"+r(cp)+"b", 0); !strings.HasPrefix(got, `a\u{`) || !strings.HasSuffix(got, `}b`) || strings.ContainsRune(got, cp) {
+				t.Errorf("%s: U+%04X is shown as %q, want it escaped", fn, cp, got)
+			}
+		}
+	}
+	for _, cp := range kept {
+		if got := String("a"+r(cp)+"b", 0); got != "a"+r(cp)+"b" {
+			t.Errorf("U+%04X is shown as %q, want it kept", cp, got)
+		}
+	}
+	// The escape is the code point in at least four upper-case hexadecimal digits.
+	for cp, want := range map[rune]string{0x00: `\u{0000}`, 0x9F: `\u{009F}`, 0x2800: `\u{2800}`, 0xE0041: `\u{E0041}`, 0x10FFFF: `\u{10FFFF}`} {
+		if got := String(r(cp), 0); got != want {
+			t.Errorf("String(U+%04X) = %q, want %q", cp, got, want)
+		}
+	}
+	// A line feed and a tab are the two that Text keeps.
+	if got := Text("a\n\tb", 0); got != "a\n\tb" {
+		t.Errorf("Text keeps %q, want the line feed and the tab", got)
+	}
+	if got := String("a\n\tb", 0); got != `a\u{000A}\u{0009}b` {
+		t.Errorf("String(%q) = %q", "a\n\tb", got)
 	}
 }

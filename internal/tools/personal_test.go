@@ -368,6 +368,17 @@ func TestFreeTextMasksPercentEncodedAndControlCharacterAddresses(t *testing.T) {
 		"actionDetails":"hint amy\u0001@example.com and ipv6:2001:db8:1::5","old":"mailto:amy%40example.com"}]}`)
 	out := mustCall(t, reg, env, "audit_log", `{"includeValues":true}`, nil)
 	absent(t, out, "amy", "2001:db8:1::5")
+	// What the mask leaves is the masked form of each address, not only the absence of the
+	// original: the control character no longer hides the local part from the mask, and the
+	// address in the text after it shows its network.
+	for _, want := range []string{
+		`"actionDetails":"hint a…@example.com and ipv6:2001:db8:1::/48"`,
+		`"oldPreview":"mailto:a…@example.com"`,
+	} {
+		if !strings.Contains(out, want) {
+			t.Errorf("the masked result lacks %s: %s", want, out)
+		}
+	}
 	// The control: with masking off the same entry shows all of it, so the text did
 	// reach the result and it is the mask that removed it.
 	shown := mustCall(t, reg, show(env), "audit_log", `{"includeValues":true}`, nil)

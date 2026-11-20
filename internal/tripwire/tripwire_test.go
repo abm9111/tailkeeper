@@ -26,6 +26,14 @@ func shapes() map[string]string {
 }
 
 func TestCheckCatchesCredentialShapes(t *testing.T) {
+	kinds := map[string]string{
+		"auth key": "tailscale key", "client": "tailscale key", "api token": "tailscale key",
+		"scim": "tailscale key", "app": "tailscale key", "in a field": "tailscale key",
+		"jwt": "JWT",
+	}
+	if len(kinds) != len(shapes()) {
+		t.Fatalf("kinds names %d shapes, and there are %d", len(kinds), len(shapes()))
+	}
 	for name, v := range shapes() {
 		err := Check([]byte(v))
 		e, ok := tkerr.As(err)
@@ -33,8 +41,22 @@ func TestCheckCatchesCredentialShapes(t *testing.T) {
 			t.Errorf("%s: err = %v, want output_withheld", name, err)
 			continue
 		}
-		if strings.Contains(e.Message, "AAAA") {
-			t.Errorf("%s: error message repeats the matched text: %q", name, e.Message)
+		// The message names the kind of shape that matched, so a report can say what leaked.
+		if want := "output withheld: it contains a " + kinds[name] + " shape"; e.Message != want {
+			t.Errorf("%s: message = %q, want %q", name, e.Message, want)
+		}
+		// Nothing of the matched text is in the error, whichever way it is read: the message,
+		// the hint, or the whole of what Error() prints. What is looked for is the whole value,
+		// the prefix of each shape and the start of its body.
+		for part, text := range map[string]string{"message": e.Message, "hint": e.Hint, "Error()": err.Error()} {
+			for _, leak := range []string{v, "tskey", "eyJ", strings.Repeat("A", 4)} {
+				if strings.Contains(text, leak) {
+					t.Errorf("%s: the %s repeats the matched text %q: %q", name, part, leak, text)
+				}
+			}
+		}
+		if e.Hint == "" {
+			t.Errorf("%s: the error tells the reader nothing to do", name)
 		}
 	}
 }
