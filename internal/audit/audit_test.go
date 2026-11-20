@@ -250,6 +250,32 @@ func TestTailShowsDamagedLines(t *testing.T) {
 	}
 }
 
+// A line over the 4 MiB read buffer is named by its number, as Verify names it, and the
+// entries read before it are still returned; it was "cannot read <path>" with no line,
+// and the caller dropped what had been read.
+func TestTailNamesALongLineAndKeepsWhatItRead(t *testing.T) {
+	l := openLog(t)
+	for i := 0; i < 3; i++ {
+		if err := l.Append("read", map[string]any{"tool": "devices_list"}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	f, err := os.OpenFile(l.Path(), os.O_APPEND|os.O_WRONLY, 0o600)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, _ = f.WriteString(strings.Repeat("x", 4<<20+1) + "\n")
+	_ = f.Close()
+	got, err := Tail(l.Path(), 2)
+	e := tkerr.From(err)
+	if e == nil || e.Code != tkerr.AuditUnavailable || !strings.Contains(e.Message, "line 4 is longer than 4 MiB") || e.Hint == "" {
+		t.Fatalf("err = %v", err)
+	}
+	if len(got) != 2 || got[1]["tool"] != "devices_list" {
+		t.Fatalf("entries read before the long line = %v", got)
+	}
+}
+
 func TestVerifyRejectsDataAfterAnEntry(t *testing.T) {
 	l := openLog(t)
 	if err := l.Append("read", map[string]any{"tool": "devices_list"}); err != nil {

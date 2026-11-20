@@ -213,6 +213,32 @@ func TestReadsAreAudited(t *testing.T) {
 
 // newDNSHarness is a harness whose fake API serves dns get, the read the audit
 // tests make to put a line in the log.
+// audit tail on a log with a line over 4 MiB prints the entries it read before it, then
+// fails with the line's number and a fix; it printed nothing and said only "cannot read".
+func TestAuditTailPrintsWhatItReadBeforeALongLine(t *testing.T) {
+	h := newDNSHarness(t)
+	h.run("dns", "get")
+	h.run("dns", "get")
+	f, err := os.OpenFile(h.app.AuditPath, os.O_APPEND|os.O_WRONLY, 0o600)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, _ = f.WriteString(strings.Repeat("x", 4<<20+1) + "\n")
+	_ = f.Close()
+	h.out.Reset()
+	h.err.Reset()
+	code := h.run("audit", "tail", "-n", "5")
+	if code != tkerr.ExitCode(tkerr.New(tkerr.AuditUnavailable, "", "")) {
+		t.Errorf("exit %d, want audit_unavailable's", code)
+	}
+	if n := strings.Count(h.out.String(), `"tool":"dns_get"`); n != 2 {
+		t.Errorf("printed %d entries read before the long line, want 2:\n%s", n, h.out)
+	}
+	if !strings.Contains(h.err.String(), "audit log line 3 is longer than 4 MiB") || !strings.Contains(h.err.String(), "fix:") {
+		t.Errorf("stderr does not name the line and a fix:\n%s", h.err)
+	}
+}
+
 func newDNSHarness(t *testing.T) *harness {
 	t.Helper()
 	f := apitest.New(t)
