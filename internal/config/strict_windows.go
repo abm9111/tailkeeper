@@ -8,11 +8,12 @@ import (
 	"github.com/abm9111/tailkeeper/internal/tkerr"
 )
 
-// StrictModeEnforced is false on Windows: CheckOwnership and CheckSecretFile only
-// refuse non-regular files there.
+// StrictModeEnforced is false on Windows: CheckOwnership and CheckSecretFile refuse a
+// file they cannot inspect and a non-regular one, and check nothing else there.
 const StrictModeEnforced = false
 
-// CheckOwnership on Windows only refuses non-regular files. Windows has no strict
+// CheckOwnership on Windows refuses a file it cannot inspect (Lstat fails) and a
+// non-regular one, and nothing else. Windows has no strict
 // mode until Windows hardened mode (spec §4): ownership and ACLs are not checked
 // and %ProgramData% comes from the environment.
 func CheckOwnership(path string, _ ...int) error {

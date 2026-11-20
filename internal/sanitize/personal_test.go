@@ -280,8 +280,8 @@ func TestMaskEmailsReadsAQuotedLocalPart(t *testing.T) {
 	checked := 0
 	for _, f := range forms {
 		for _, l := range lefts {
-			for _, r := range rights {
-				in := l + f + r
+			for _, right := range rights {
+				in := l + f + right
 				checked++
 				got := MaskText(in)
 				if strings.Contains(got, "zxkwv") {
@@ -2095,11 +2095,11 @@ func TestKeyedMaskWalksStructs(t *testing.T) {
 		Rows []row `json:"rows"`
 	}{Rows: []row{{User: "amy@example.com", Note: "ping bob@example.com", Host: "amy@example.com"}}}
 	m.Mask(&v)
-	r := v.Rows[0]
-	if r.User != "a…@example.com"+privacy.Suffix(k.Pseudonym("amy@example.com")) ||
-		r.Note != "ping b…@example.com"+privacy.Suffix(k.Pseudonym("bob@example.com")) ||
-		r.Host != "amy@example.com" {
-		t.Errorf("masked: %+v", r)
+	got := v.Rows[0]
+	if got.User != "a…@example.com"+privacy.Suffix(k.Pseudonym("amy@example.com")) ||
+		got.Note != "ping b…@example.com"+privacy.Suffix(k.Pseudonym("bob@example.com")) ||
+		got.Host != "amy@example.com" {
+		t.Errorf("masked: %+v", got)
 	}
 }
 
@@ -2367,13 +2367,13 @@ func TestIdentifierRefsAreWhatAPersonalFieldShows(t *testing.T) {
 	for _, s := range []string{"", "tagged-devices", "Tagged Devices", "a", "…", "Amy Lee", "amy@example.com", "AMY@Example.com", "a@b@c.d", long,
 		"[p:ys3mrm23sj]", "x@tskey-auth-abc123.com", string(rune(0x200b)) + "amy"} {
 		for _, limit := range []int{0, DefaultMax, 8, 20} {
-			r := struct {
+			rec := struct {
 				Name string `tk:"untrusted,personal"`
 			}{s}
-			m.Mask(&r)
-			Fields(&r, limit)
-			if got, want := m.IdentifierRefs(s, limit), distinct(shownIn(r.Name)); !slices.Equal(got, want) {
-				t.Errorf("IdentifierRefs(%.30q, %d) = %v, but the display %.60q shows %v", s, limit, got, r.Name, want)
+			m.Mask(&rec)
+			Fields(&rec, limit)
+			if got, want := m.IdentifierRefs(s, limit), distinct(shownIn(rec.Name)); !slices.Equal(got, want) {
+				t.Errorf("IdentifierRefs(%.30q, %d) = %v, but the display %.60q shows %v", s, limit, got, rec.Name, want)
 			}
 		}
 	}
@@ -2392,12 +2392,12 @@ func TestIdentifierRefsAreWhatAPersonalFieldShows(t *testing.T) {
 
 // displayOf is what a result shows for an untrusted string: Mask, then Fields.
 func displayOf(m Masker, s string, limit int) string {
-	r := struct {
+	out := struct {
 		Name string `tk:"untrusted"`
 	}{s}
-	m.Mask(&r)
-	Fields(&r, limit)
-	return r.Name
+	m.Mask(&out)
+	Fields(&out, limit)
+	return out.Name
 }
 
 // A tailnet member can write " [p:...]" into a name. If the display carried it,
@@ -2470,19 +2470,19 @@ func TestPremaskedTextIsMaskedAgainWithoutRewritingItsMarkers(t *testing.T) {
 		Note    string `json:"note" tk:"untrusted"`
 	}
 	once := m.Text("key for amy@example.com")
-	r := row{Preview: once, Note: "key for amy@example.com"}
-	m.Mask(&r)
-	if r.Preview != once || r.Note != once {
-		t.Errorf("premasked %q and raw %q, want both %q", r.Preview, r.Note, once)
+	rw := row{Preview: once, Note: "key for amy@example.com"}
+	m.Mask(&rw)
+	if rw.Preview != once || rw.Note != once {
+		t.Errorf("premasked %q and raw %q, want both %q", rw.Preview, rw.Note, once)
 	}
-	if !strings.Contains(r.Preview, privacy.Suffix(k.Pseudonym("amy@example.com"))) {
-		t.Errorf("the marker was lost: %q", r.Preview)
+	if !strings.Contains(rw.Preview, privacy.Suffix(k.Pseudonym("amy@example.com"))) {
+		t.Errorf("the marker was lost: %q", rw.Preview)
 	}
 	// A premasked field is still untrusted text, so what masking missed is masked.
-	r = row{Preview: "ping bob@example.com"}
-	m.Mask(&r)
-	if !strings.HasPrefix(r.Preview, "ping b…@example.com") {
-		t.Errorf("premasked text was not masked: %q", r.Preview)
+	rw = row{Preview: "ping bob@example.com"}
+	m.Mask(&rw)
+	if !strings.HasPrefix(rw.Preview, "ping b…@example.com") {
+		t.Errorf("premasked text was not masked: %q", rw.Preview)
 	}
 	if got, want := PersonalPaths(reflect.TypeFor[row]()), []string(nil); !reflect.DeepEqual(got, want) {
 		t.Errorf("PersonalPaths = %q", got)

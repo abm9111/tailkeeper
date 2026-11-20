@@ -71,6 +71,11 @@ func TestAppendReturnsACloseError(t *testing.T) {
 	if e := tkerr.From(err); err == nil || e.Code != tkerr.AuditUnavailable || !strings.Contains(e.Message, "closing") {
 		t.Fatalf("Append with a failing Close = %v, want audit_unavailable naming the close", err)
 	}
+	// The CLI puts "this read was not audited:" before this message, so it must say the
+	// entry is in the log and why the append is still reported as failed.
+	if m := tkerr.From(err).Message; !strings.Contains(m, "is in the log") || !strings.Contains(m, "reported as failed") {
+		t.Errorf("the message %q does not reconcile \"written\" with a failed append", m)
+	}
 	if n, err := Verify(l.Path()); err != nil || n != 1 {
 		t.Errorf("Verify = %d, %v; want the one entry that was written", n, err)
 	}

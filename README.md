@@ -128,8 +128,10 @@ tailkeeper refuses a key it does not know, a key written twice and a key whose l
 |---|---|---|
 | `env` | none | tailkeeper's own environment. The simplest, but the variables then reach every process that environment starts; on a workstation prefer `exec` or `file`. |
 | `file` | `path`, absolute | a file of `NAME=value` lines (`#` comments and blank lines ignored, surrounding quotes trimmed). On macOS and Linux it must be a regular file with no group or other access (mode 0600), owned by you or root, in a directory owned by you or root that no group or other user can write; otherwise `config_unsafe`. |
-| `exec` | `command`: an argument list whose first element is an absolute path | a wrapper that sets the variables, then runs the rest of its arguments (the example above, and `docs/recipes/`). tailkeeper re-runs itself under it, so the secret never reaches your shell. Not available on Windows: start tailkeeper under the wrapper yourself and use `env`. |
+| `exec` | `command`: an argument list whose first element is an absolute path (not cleaned: `/usr/bin/../bin/x` is accepted and runs as written) | a wrapper that sets the variables, then runs the rest of its arguments (the example above, and `docs/recipes/`). tailkeeper re-runs itself under it, so the secret never reaches your shell. Not available on Windows: start tailkeeper under the wrapper yourself and use `env`. |
 | `oidc` | `clientId` (required), `audience` (default `api.tailscale.com/<clientId>`), `tokenFile` (absolute path) | no stored secret: a workload identity token, read from `tokenFile`, else from GitHub Actions (`ACTIONS_ID_TOKEN_REQUEST_URL` and `ACTIONS_ID_TOKEN_REQUEST_TOKEN`; the job needs `permissions: id-token: write`), else from `TAILKEEPER_OIDC_TOKEN`, and exchanged for a Tailscale token. With no stored secret there is no privacy key, so masked values carry no pseudonyms. |
+
+A field a provider does not use is ignored, not refused: a `command` beside a `file` provider's `path` never runs. Only `env` refuses other fields.
 
 ```hujson
 // env: the variables are in the environment of whatever starts tailkeeper

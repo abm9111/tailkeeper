@@ -1,6 +1,7 @@
 package tools_test
 
 import (
+	"maps"
 	"slices"
 	"testing"
 
@@ -52,6 +53,19 @@ func TestKeysListCoverageFollowsGrantedScopes(t *testing.T) {
 		if !slices.Equal(visible, c.visible) || out.Complete == nil || *out.Complete != c.complete {
 			t.Errorf("scope %q: coverage %v complete %v", c.scope, out.Coverage, out.Complete)
 		}
+	}
+}
+
+// A key of a type the scopes do not cover is in the list, so that type was visible.
+func TestKeysListCoverageCountsAKeyThatWasReturned(t *testing.T) {
+	f, reg, env := apiEnv(t)
+	f.Scope = "auth_keys:read"
+	f.JSON("GET", tailnetPath+"/keys", 200, keysFixture)
+	var out tools.KeysListOutput
+	mustCall(t, reg, env, "keys_list", `{}`, &out)
+	want := map[string]string{"auth": "visible", "client": "visible", "federated": "not_visible", "api": "not_visible"}
+	if !maps.Equal(out.Coverage, want) || out.Complete == nil || *out.Complete {
+		t.Errorf("coverage %v complete %v, want %v and not complete", out.Coverage, out.Complete, want)
 	}
 }
 

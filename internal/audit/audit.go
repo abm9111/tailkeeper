@@ -71,7 +71,11 @@ type Log struct {
 	rename func(oldpath, newpath string) error
 }
 
-// Open creates the directory (0700) and file (0600) if needed.
+// Open creates the directory (0700) and file (0600) if needed. It also sets the log's
+// parent directory to mode 0700, whatever mode it had: Open owns that directory. Its
+// only caller passes the logs directory the platform defines, which always ends in
+// "tailkeeper" (see config.Dirs), so it never tightens a shared directory such as the
+// home directory. A new caller must pass a path in a directory of tailkeeper's own.
 func Open(path string, now func() time.Time) (*Log, error) {
 	if now == nil {
 		now = time.Now
@@ -113,6 +117,13 @@ func (l *Log) wait() time.Duration {
 
 // Append writes one event. fields must be JSON-marshalable and must not use the
 // reserved names v, seq, ts, prev, event or hash.
+//
+// An error does not always mean the line is missing. When Sync fails the line has been
+// written, so it is probably on disk, and when the final Close fails the line was
+// written and synced; Append still returns an error, and the caller reports the read as
+// not audited. That is the safe direction: a read may be reported as unaudited although
+// its line is in the log. Only a failed write is undone (the file is truncated to its
+// old size).
 func (l *Log) Append(event string, fields map[string]any) (err error) {
 	for k := range fields {
 		if reserved[k] {
@@ -129,7 +140,7 @@ func (l *Log) Append(event string, fields map[string]any) (err error) {
 	defer func() {
 		_ = unlockFile(f)
 		if cerr := f.Close(); cerr != nil && err == nil {
-			err = unavailable(cerr, "the entry was written and synced, but closing "+l.path+" failed")
+			err = unavailable(cerr, "the entry was written and synced and is in the log, but closing "+l.path+" failed, so the append is reported as failed")
 		}
 	}()
 	seq, prev, size, err := lastLine(f)

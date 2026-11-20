@@ -138,6 +138,9 @@ func Parse(data []byte) (Config, error) {
 	if err := dec.Decode(&c); err != nil {
 		return Config{}, tkerr.Wrap(tkerr.ConfigInvalid, err, "configuration does not match the schema: "+err.Error(), configHint)
 	}
+	// Belt and braces: hujson.Standardize already refuses trailing data, so no input
+	// reaches this check today. It stays so that a change to the parser cannot let a
+	// second document through unnoticed.
 	if dec.More() {
 		return Config{}, tkerr.New(tkerr.ConfigInvalid, "configuration has trailing data after the top-level object", "")
 	}
@@ -204,6 +207,14 @@ func (c Config) Validate() error {
 	return nil
 }
 
+// validate checks what each provider needs and, for env, that nothing else is set. For
+// file, exec and oidc it does not refuse a field the provider never reads (a command
+// beside a file path, a path beside an exec command): such a field is ignored and no
+// command runs because of it. Only the fields a provider uses count; a reader of the
+// configuration must not take an ignored command for one that runs. The exec program
+// is checked to be absolute but is not cleaned, so /usr/bin/../bin/x and //usr//bin//x
+// are accepted and run as written. Refusing either would break a configuration that
+// works today, and is the owner's decision.
 func (p Provider) validate(where string) error {
 	switch p.Provider {
 	case "env":

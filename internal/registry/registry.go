@@ -437,9 +437,25 @@ const (
 
 var scopeRE = regexp.MustCompile(`^[A-Za-z0-9_:.-]+$`)
 
+// checkKey refuses a space or tab in the area or the verb. Add joins them with a space
+// into the CLI key, so a space in either could make two commands share a key ("a b" +
+// "c" and "a" + "b c"). The registry is static, so this guards a tool added later. A
+// tool's Name is not tied to area_verb on purpose: tailkeeper_info is the self area's
+// info command.
+func checkKey(m Meta) error {
+	if strings.ContainsAny(m.Area+m.Verb, " \t") {
+		return fmt.Errorf("tool %s: area %q and verb %q must hold no space or tab", m.Name, m.Area, m.Verb)
+	}
+	return nil
+}
+
 // checkText refuses a line break in the text that docs/tools.md writes verbatim
-// as a heading and a list item, and an open-world tool without a title.
+// as a heading and a list item, and an open-world tool without a title. It also
+// checks that the area and verb make an unambiguous CLI key (checkKey).
 func checkText(m Meta) error {
+	if err := checkKey(m); err != nil {
+		return err
+	}
 	for _, f := range []struct{ name, v string }{{"summary", m.Summary}, {"notes", m.Notes}, {"title", m.Title}} {
 		if strings.ContainsAny(f.v, "\r\n") {
 			return fmt.Errorf("tool %s: %s must be one line", m.Name, f.name)

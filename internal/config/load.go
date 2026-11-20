@@ -141,10 +141,11 @@ func exists(path string) (bool, error) {
 }
 
 // Select picks the context: the flag value, then TAILKEEPER_CONTEXT, then
-// defaultContext, then the only context if there is exactly one.
+// defaultContext, then the only context if there is exactly one. A nil getenv is an
+// empty environment: the context is then chosen without TAILKEEPER_CONTEXT.
 func (l *Loaded) Select(flagValue string, getenv func(string) string) (string, Context, error) {
 	name := flagValue
-	if name == "" {
+	if name == "" && getenv != nil {
 		name = getenv("TAILKEEPER_CONTEXT")
 	}
 	if name == "" {
