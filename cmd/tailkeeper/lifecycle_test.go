@@ -52,9 +52,12 @@ func TestSecondInterruptEndsTheServerAtOnce(t *testing.T) {
 	env := isolated(t)
 	dir := t.TempDir()
 	fake, readyFile, childFile := filepath.Join(dir, "tailscale"), filepath.Join(dir, "pid"), filepath.Join(dir, "child")
-	// set -m gives the background sleep its own process group, so killing the CLI's group
-	// leaves it running with the pipes open.
-	script := "#!/bin/sh\nset -m\nsleep 60 &\necho $! > " + strconv.Quote(childFile) + "\necho $$ > " + strconv.Quote(readyFile) + "\nwait\n"
+	// The background sleep must leave the CLI's process group, so that killing the group
+	// leaves it running with the pipes open. setsid does that where it exists (Linux). set -m
+	// does it on macOS, but a shell without a terminal, such as dash on Linux, turns job
+	// control off, and the sleep would stay in the group and die with the CLI.
+	script := "#!/bin/sh\nif command -v setsid >/dev/null 2>&1; then\n  setsid sleep 60 &\nelse\n  set -m\n  sleep 60 &\nfi\n" +
+		"echo $! > " + strconv.Quote(childFile) + "\necho $$ > " + strconv.Quote(readyFile) + "\nwait\n"
 	if err := os.WriteFile(fake, []byte(script), 0o755); err != nil {
 		t.Fatal(err)
 	}
