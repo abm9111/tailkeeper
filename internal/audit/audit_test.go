@@ -3,6 +3,7 @@ package audit
 import (
 	"bytes"
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -145,39 +146,53 @@ func TestAppendReturnsTheLogErrorWhenCloseFailsToo(t *testing.T) {
 func TestVerifyDetectsTampering(t *testing.T) {
 	cases := map[string]struct {
 		mutate func([][]byte) [][]byte
-		line   string
+		line   string // the first broken line
+		why    string // what Verify says is wrong with it
 	}{
 		"modified": {func(lines [][]byte) [][]byte {
 			lines[1] = bytes.Replace(lines[1], []byte("devices_list"), []byte("devices_lisT"), 1)
 			return lines
-		}, "line 2"},
-		"removed":  {func(lines [][]byte) [][]byte { return append(lines[:1], lines[2:]...) }, "line 2"},
-		"inserted": {func(lines [][]byte) [][]byte { return append(lines[:2], append([][]byte{lines[0]}, lines[2:]...)...) }, "line 3"},
+		}, "line 2", "hash does not match its content"},
+		"removed":  {func(lines [][]byte) [][]byte { return append(lines[:1], lines[2:]...) }, "line 2", "has seq 3, want 2"},
+		"inserted": {func(lines [][]byte) [][]byte { return append(lines[:2], append([][]byte{lines[0]}, lines[2:]...)...) }, "line 3", "has seq 1, want 3"},
 	}
 	for name, c := range cases {
-		l := openLog(t)
-		for i := 0; i < 4; i++ {
-			if err := l.Append("read", map[string]any{"tool": "devices_list"}); err != nil {
+		t.Run(name, func(t *testing.T) {
+			l := openLog(t)
+			for i := 0; i < 4; i++ {
+				if err := l.Append("read", map[string]any{"tool": "devices_list"}); err != nil {
+					t.Fatal(err)
+				}
+			}
+			data, _ := os.ReadFile(l.Path())
+			lines := bytes.Split(bytes.TrimRight(data, "\n"), []byte("\n"))
+			lines = c.mutate(lines)
+			if err := os.WriteFile(l.Path(), append(bytes.Join(lines, []byte("\n")), '\n'), 0o600); err != nil {
 				t.Fatal(err)
 			}
-		}
-		data, _ := os.ReadFile(l.Path())
-		lines := bytes.Split(bytes.TrimRight(data, "\n"), []byte("\n"))
-		lines = c.mutate(lines)
-		if err := os.WriteFile(l.Path(), append(bytes.Join(lines, []byte("\n")), '\n'), 0o600); err != nil {
-			t.Fatal(err)
-		}
-		_, err := Verify(l.Path())
-		if e, ok := tkerr.As(err); !ok || e.Code != tkerr.AuditUnavailable || !strings.Contains(e.Message, c.line) {
-			t.Errorf("%s: Verify err = %v, want a break at %s", name, err, c.line)
-		}
+			_, err := Verify(l.Path())
+			if e, ok := tkerr.As(err); !ok || e.Code != tkerr.AuditUnavailable || !strings.Contains(e.Message, c.line+" "+c.why) {
+				t.Errorf("Verify err = %v, want a break at %s: %s", err, c.line, c.why)
+			}
+		})
 	}
 }
 
+// Every reserved name is refused, each with the internal code and a message that
+// names it: a name dropped from the set would let a caller overwrite the chain.
 func TestReservedFieldsRefused(t *testing.T) {
-	l := openLog(t)
-	if err := l.Append("read", map[string]any{"seq": 99}); err == nil {
-		t.Fatal("reserved field accepted")
+	for _, name := range []string{"v", "seq", "ts", "prev", "event", "hash"} {
+		t.Run(name, func(t *testing.T) {
+			l := openLog(t)
+			err := l.Append("read", map[string]any{name: 99})
+			e, ok := tkerr.As(err)
+			if !ok || e.Code != tkerr.Internal || !strings.Contains(e.Message, "audit field name "+name+" is reserved") {
+				t.Fatalf("Append with the reserved field %q = %v, want internal: audit field name %s is reserved", name, err, name)
+			}
+			if data, rerr := os.ReadFile(l.Path()); rerr != nil || len(data) != 0 {
+				t.Errorf("the log holds %q, %v after a refused field; want it empty", data, rerr)
+			}
+		})
 	}
 }
 
@@ -207,11 +222,16 @@ func TestConcurrentAppendsKeepChain(t *testing.T) {
 
 func TestAppendRefusesCorruptTail(t *testing.T) {
 	l := openLog(t)
-	if err := os.WriteFile(l.Path(), []byte("not json\n"), 0o600); err != nil {
+	corrupt := []byte("not json\n")
+	if err := os.WriteFile(l.Path(), corrupt, 0o600); err != nil {
 		t.Fatal(err)
 	}
-	if err := l.Append("read", nil); err == nil {
-		t.Fatal("Append chained onto a corrupt line")
+	err := l.Append("read", nil)
+	if e, ok := tkerr.As(err); !ok || e.Code != tkerr.AuditUnavailable || !strings.Contains(e.Message, "the last audit line is unreadable") {
+		t.Fatalf("Append chained onto a corrupt line = %v, want audit_unavailable: the last audit line is unreadable", err)
+	}
+	if after, rerr := os.ReadFile(l.Path()); rerr != nil || !bytes.Equal(after, corrupt) {
+		t.Errorf("Append changed a log it refused: %q, %v", after, rerr)
 	}
 }
 
@@ -288,6 +308,40 @@ func TestVerifyRejectsDataAfterAnEntry(t *testing.T) {
 	}
 	if _, err := Verify(l.Path()); err == nil || !strings.Contains(err.Error(), "line 1") {
 		t.Fatalf("Verify = %v, want line 1 broken", err)
+	}
+}
+
+// Verify reads a line through a 4 MiB buffer and refuses a longer one by name, at the
+// line's own number, instead of reporting it as not JSON or running out of memory.
+// Append never writes more than MaxLine, so only an edited log holds such a line.
+func TestVerifyRefusesALineOverFourMiB(t *testing.T) {
+	for _, valid := range []int{0, 2} {
+		t.Run(fmt.Sprintf("after %d valid lines", valid), func(t *testing.T) {
+			l := openLog(t)
+			for i := 0; i < valid; i++ {
+				if err := l.Append("read", map[string]any{"tool": "devices_list"}); err != nil {
+					t.Fatal(err)
+				}
+			}
+			f, err := os.OpenFile(l.Path(), os.O_WRONLY|os.O_APPEND, 0o600)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if _, err := f.WriteString(strings.Repeat("x", 5<<20) + "\n"); err != nil {
+				t.Fatal(err)
+			}
+			if err := f.Close(); err != nil {
+				t.Fatal(err)
+			}
+			n, err := Verify(l.Path())
+			want := fmt.Sprintf("audit log line %d is longer than 4 MiB", valid+1)
+			if e, ok := tkerr.As(err); !ok || e.Code != tkerr.AuditUnavailable || !strings.Contains(e.Message, want) {
+				t.Fatalf("Verify = %d, %v; want audit_unavailable: %s", n, err, want)
+			}
+			if n != valid {
+				t.Errorf("Verify counted %d valid lines, want the %d before the long one", n, valid)
+			}
+		})
 	}
 }
 

@@ -449,6 +449,22 @@ func TestDocsCheck(t *testing.T) {
 	}
 }
 
+// A reference file that exists but cannot be read is not a missing one: the message says so,
+// and the exit is the usage error, for both references. (A directory stands in for an
+// unreadable file: reading it fails on every platform, and no mode bits are needed.)
+func TestDocsCheckOfAFileThatCannotBeRead(t *testing.T) {
+	dir := t.TempDir()
+	for _, args := range [][]string{{"docs", "--check", dir}, {"docs", "--scopes", "--check", dir}} {
+		h := newHarness(t, nil)
+		code := h.run(args...)
+		e := h.err.String()
+		if code != 2 || !strings.Contains(e, "it cannot be read") || strings.Contains(e, "does not exist") ||
+			!strings.Contains(e, "generate it with `tailkeeper docs") {
+			t.Errorf("%v: exit %d, stderr %q; want exit 2 saying the file cannot be read", args, code, e)
+		}
+	}
+}
+
 func TestRenderEscapesEveryString(t *testing.T) {
 	type row struct {
 		Name string `json:"name" tk:"col"`
@@ -979,6 +995,12 @@ func flagViolations(fset *token.FileSet, file *ast.File) (problems []string, set
 				if isFlag(n.Type, "FlagSet") {
 					made++
 				}
+			case *ast.ValueSpec:
+				// var fs flag.FlagSet: a zero value, which prints to os.Stderr until SetOutput says
+				// otherwise. With a value (var fs = flag.FlagSet{}) the composite literal counts it.
+				if len(n.Values) == 0 && isFlag(n.Type, "FlagSet") {
+					made += len(n.Names)
+				}
 			case *ast.CallExpr:
 				if id, ok := n.Fun.(*ast.Ident); ok && id.Name == "new" && len(n.Args) == 1 && isFlag(n.Args[0], "FlagSet") {
 					made++
@@ -1085,23 +1107,32 @@ func TestFlagGuardDetector(t *testing.T) {
 		src  string
 		want int // problems; 0 means the source is clean
 	}{
-		"paired":       {head + `func f() { fs := flag.NewFlagSet("x", flag.ContinueOnError); fs.SetOutput(flagOutput{}) }`, 0},
-		"types":        {head + `func g(fs *flag.FlagSet) error { var v flag.Value; _ = v; return flag.ErrHelp }`, 0},
-		"no flag":      {"package p\nfunc f() {}", 0},
-		"unpaired":     {head + `func f() { _ = flag.NewFlagSet("x", flag.ContinueOnError) }`, 1},
-		"raw writer":   {head + `func f() { fs := flag.NewFlagSet("x", flag.ContinueOnError); fs.SetOutput(os.Stderr) }`, 2},
-		"override":     {head + `func f() { fs := flag.NewFlagSet("x", flag.ContinueOnError); fs.SetOutput(flagOutput{}); fs.SetOutput(os.Stderr) }`, 1},
-		"alias":        {"package p\nimport fl \"flag\"\nfunc f() { fl.NewFlagSet(\"x\", fl.ContinueOnError) }", 1},
-		"package var":  {head + `var fs = flag.NewFlagSet("x", flag.ContinueOnError)`, 1},
-		"func literal": {head + `var h = func() { flag.NewFlagSet("x", flag.ContinueOnError) }`, 1},
-		"address of":   {head + `func f() { _ = &flag.FlagSet{} }`, 1},
-		"new":          {head + `func f() { _ = new(flag.FlagSet) }`, 1},
-		"CommandLine":  {head + `func f() { _ = flag.CommandLine }`, 1},
-		"Parse":        {head + `func f() { flag.Parse() }`, 1},
-		"Usage":        {head + `func f() { flag.Usage = nil }`, 1},
-		"String":       {head + `func f() { _ = flag.String("x", "", "") }`, 1},
-		"ExitOnError":  {head + `func f() { fs := flag.NewFlagSet("x", flag.ExitOnError); fs.SetOutput(flagOutput{}) }`, 1},
-		"dot import":   {"package p\nimport . \"flag\"\nfunc f() {}", 1},
+		"paired":        {head + `func f() { fs := flag.NewFlagSet("x", flag.ContinueOnError); fs.SetOutput(flagOutput{}) }`, 0},
+		"types":         {head + `func g(fs *flag.FlagSet) error { var v flag.Value; _ = v; return flag.ErrHelp }`, 0},
+		"no flag":       {"package p\nfunc f() {}", 0},
+		"unpaired":      {head + `func f() { _ = flag.NewFlagSet("x", flag.ContinueOnError) }`, 1},
+		"raw writer":    {head + `func f() { fs := flag.NewFlagSet("x", flag.ContinueOnError); fs.SetOutput(os.Stderr) }`, 2},
+		"override":      {head + `func f() { fs := flag.NewFlagSet("x", flag.ContinueOnError); fs.SetOutput(flagOutput{}); fs.SetOutput(os.Stderr) }`, 1},
+		"alias":         {"package p\nimport fl \"flag\"\nfunc f() { fl.NewFlagSet(\"x\", fl.ContinueOnError) }", 1},
+		"package var":   {head + `var fs = flag.NewFlagSet("x", flag.ContinueOnError)`, 1},
+		"func literal":  {head + `var h = func() { flag.NewFlagSet("x", flag.ContinueOnError) }`, 1},
+		"address of":    {head + `func f() { _ = &flag.FlagSet{} }`, 1},
+		"new":           {head + `func f() { _ = new(flag.FlagSet) }`, 1},
+		"zero value":    {head + `func f() { var fs flag.FlagSet; fs.SetOutput(flagOutput{}) }`, 0},
+		"zero unpaired": {head + `func f() { var fs flag.FlagSet; _ = fs.Parse(nil) }`, 1},
+		"zero two":      {head + `func f() { var a, b flag.FlagSet; a.SetOutput(flagOutput{}); _, _ = a, b }`, 1},
+		"zero package":  {head + `var fs flag.FlagSet`, 1},
+		"zero valued":   {head + `func f() { var fs flag.FlagSet = flag.FlagSet{}; fs.SetOutput(flagOutput{}) }`, 0}, // counted once, by the literal
+		"pointer var":   {head + `func f() { var fs *flag.FlagSet; _ = fs }`, 0},
+		// Strict on purpose: without type information a SetOutput on a logger cannot be told from
+		// one on a flag set, so any writer but flagOutput{...} is refused.
+		"other receiver": {head + `func f(l *log.Logger) { l.SetOutput(os.Stderr) }`, 1},
+		"CommandLine":    {head + `func f() { _ = flag.CommandLine }`, 1},
+		"Parse":          {head + `func f() { flag.Parse() }`, 1},
+		"Usage":          {head + `func f() { flag.Usage = nil }`, 1},
+		"String":         {head + `func f() { _ = flag.String("x", "", "") }`, 1},
+		"ExitOnError":    {head + `func f() { fs := flag.NewFlagSet("x", flag.ExitOnError); fs.SetOutput(flagOutput{}) }`, 1},
+		"dot import":     {"package p\nimport . \"flag\"\nfunc f() {}", 1},
 	} {
 		fset := token.NewFileSet()
 		file, err := parser.ParseFile(fset, "x.go", c.src, 0)

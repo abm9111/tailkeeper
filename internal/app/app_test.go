@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"io/fs"
+	"math"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -255,6 +256,36 @@ func TestRecordKeepsOnlyReadMetadata(t *testing.T) {
 		if strings.Contains(string(data), bad) {
 			t.Errorf("audit contains %q: %s", bad, data)
 		}
+	}
+}
+
+// The fallback answers every refusal of Append except audit_unavailable, not only the credential
+// shape of the test above. A NaN duration passes the field filter and cannot be encoded, so Append
+// refuses it with the internal code; the read is still recorded, as a line that says it was
+// withheld and keeps neither the value nor any other field.
+func TestRecordWithholdsALineThatCannotBeEncoded(t *testing.T) {
+	f := apitest.New(t)
+	env := map[string]string{creds.EnvClientID: apitest.ClientID, creds.EnvClientSecret: apitest.ClientSecret}
+	d := dirs(t, envConfig)
+	a, err := Build(context.Background(), Options{Dirs: d, Stat: noCLI, Getenv: func(k string) string { return env[k] },
+		API: api.Options{BaseURL: f.URL(), Sleep: func(context.Context, time.Duration) error { return nil }}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := a.Record(map[string]any{"tool": "devices_list", "ms": math.NaN(), "bytes": 7}); err != nil {
+		t.Fatalf("a line that cannot be encoded must still be recorded, withheld: %v", err)
+	}
+	data, err := os.ReadFile(filepath.Join(d.Logs, "audit.jsonl"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	lines := strings.Split(strings.TrimSpace(string(data)), "\n")
+	if len(lines) != 1 || !strings.Contains(lines[0], `"status":"line_withheld"`) || !strings.Contains(lines[0], `"tool":"devices_list"`) ||
+		!strings.Contains(lines[0], `"tailnet":"T1234CNTRL"`) {
+		t.Fatalf("audit = %s, want one line_withheld line for devices_list", data)
+	}
+	if strings.Contains(lines[0], `"ms"`) || strings.Contains(lines[0], `"bytes"`) {
+		t.Errorf("the withheld line kept a field of the refused one: %s", lines[0])
 	}
 }
 

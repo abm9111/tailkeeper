@@ -3,6 +3,8 @@ package cli
 import (
 	"bytes"
 	"encoding/json"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -42,5 +44,25 @@ func TestWriteScopesShowsOptionalUses(t *testing.T) {
 	opt, _ := got.Scopes[1]["optionalTools"].([]any)
 	if len(opt) != 1 || opt[0].(map[string]any)["tool"] != "a_get" || opt[0].(map[string]any)["reason"] != "resolve a pseudonym" {
 		t.Errorf("u:read optionalTools = %v", got.Scopes[1]["optionalTools"])
+	}
+}
+
+// The committed references are what the registry generates, so a tool or a scope changed
+// without regenerating them (make docs) fails go test as well as make docs-check, on every
+// platform the tests run on. The files are read with Unix line ends, whatever the checkout
+// did to them.
+func TestCommittedReferencesMatchTheRegistry(t *testing.T) {
+	root := moduleRoot(t)
+	for file, generated := range map[string]string{
+		"docs/tools.md":  docsgen.Markdown(newRegistry()),
+		"docs/scopes.md": docsgen.ScopesMarkdown(newRegistry()),
+	} {
+		b, err := os.ReadFile(filepath.Join(root, filepath.FromSlash(file)))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got := strings.ReplaceAll(string(b), "\r\n", "\n"); got != generated {
+			t.Errorf("%s is not what the registry generates (%d bytes against %d): run make docs", file, len(got), len(generated))
+		}
 	}
 }
