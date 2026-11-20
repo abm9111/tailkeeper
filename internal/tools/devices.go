@@ -1,6 +1,7 @@
 package tools
 
 import (
+	"cmp"
 	"context"
 	"encoding/json"
 	"io"
@@ -416,8 +417,8 @@ func sorted(ss []string) []string {
 
 // checkDeviceRef refuses a device reference that is empty or longer than a
 // hostname, which no device answers to; the length counts for an ID too, since no
-// real ID comes near it. A node ID or numeric ID within it passes: those are used
-// as given, and the rest is looked up by name.
+// real ID comes near it. A node ID within it passes and is used as given; a numeric
+// ID or a name is looked up in the device list.
 func checkDeviceRef(ref string) error {
 	ref = strings.TrimSpace(ref)
 	if ref == "" || len(ref) > 253 {
@@ -432,13 +433,14 @@ func (in DeviceRef) Check() error { return checkDeviceRef(in.Device) }
 // Check refuses a device reference that cannot name a device, before anything is sent.
 func (in DeviceRoutesInput) Check() error { return checkDeviceRef(in.Device) }
 
-// resolveDevice turns a node ID, numeric ID or exact hostname into an API device ID.
+// resolveDevice turns a node ID, numeric ID or exact hostname into a node ID. Only a
+// node ID is used as it is; a numeric ID or a hostname is looked up in the device list.
 func resolveDevice(ctx context.Context, env *registry.Env, ref string) (string, error) {
 	ref = strings.TrimSpace(ref)
 	if err := checkDeviceRef(ref); err != nil {
 		return "", err
 	}
-	if nodeIDRE.MatchString(ref) || legacyIDRE.MatchString(ref) {
+	if nodeIDRE.MatchString(ref) {
 		return ref, nil
 	}
 	path, err := tailnetPath(env, "/devices")
@@ -450,6 +452,9 @@ func resolveDevice(ctx context.Context, env *registry.Env, ref string) (string, 
 	}
 	if err := get(ctx, env, path, url.Values{"fields": {"default"}}, &resp); err != nil {
 		return "", err
+	}
+	if id, ok := byNumericID(resp.Devices, ref); ok {
+		return id, nil
 	}
 	var matches []string
 	for _, d := range resp.Devices {
@@ -466,6 +471,24 @@ func resolveDevice(ctx context.Context, env *registry.Env, ref string) (string, 
 		return matches[0], nil
 	}
 	return "", validationf(strconv.Itoa(len(matches)) + " devices match " + strconv.Quote(ref) + "; use the node ID")
+}
+
+// byNumericID returns the node ID of the device whose numeric ID is ref. A reference of
+// three or more digits is read from the device list, not sent as it is: a hostname can be
+// all digits (1234), and the tools promise a node ID in nodeId. A device whose numeric ID
+// matches comes first; otherwise the reference is matched as a name. A matching device
+// that reports no node ID is asked for by the digits, as before, rather than letting
+// another device's hostname take the reference.
+func byNumericID(devices []apiDevice, ref string) (string, bool) {
+	if !legacyIDRE.MatchString(ref) {
+		return "", false
+	}
+	for _, d := range devices {
+		if d.ID == ref {
+			return cmp.Or(d.NodeID, ref), true
+		}
+	}
+	return "", false
 }
 
 func deviceGet(ctx context.Context, env *registry.Env, in DeviceRef) (Device, error) {
