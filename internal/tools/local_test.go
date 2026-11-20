@@ -405,6 +405,30 @@ func TestNoCLIIsReportedPerCall(t *testing.T) {
 	}
 }
 
+// local_netcheck and local_dns_query run status before their own command; the two runs are one
+// call against the rate bucket.
+func TestLocalNetcheckAndDNSQuerySpendOneTokenEach(t *testing.T) {
+	cli := newFakeCLI(t)
+	cli.on("status --json --peers=false", 0, statusFixture(false), "")
+	cli.on("netcheck --format=json", 0, `{"UDP":true,"PreferredDERP":1,"RegionLatency":{}}`, "")
+	cli.on("dns query --json web.example.ts.net A", 0, `{"Name":"web.example.ts.net.","QueryType":"A","ResponseCode":"RCodeSuccess"}`, "")
+	env := cli.env()
+	env.Local.PerMinute = 2
+	reg := newRegistry(t)
+	if _, err := call(t, reg, env, "local_netcheck", `{}`); err != nil {
+		t.Fatalf("netcheck: %v", err)
+	}
+	if _, err := call(t, reg, env, "local_dns_query", `{"name":"web.example.ts.net"}`); err != nil {
+		t.Fatalf("dns query after one netcheck: %v", err)
+	}
+	if n := len(cli.calls()); n != 4 {
+		t.Fatalf("%d CLI runs, want 4 (two per call)", n)
+	}
+	if _, err := call(t, reg, env, "local_netcheck", `{}`); code(err) != tkerr.LocalRateLimited {
+		t.Fatalf("third call: err = %v, want local_rate_limited", err)
+	}
+}
+
 func TestLocalNetcheckAndDNSQueryRequireRunning(t *testing.T) {
 	for state, want := range map[string]tkerr.Code{
 		"NeedsLogin":       tkerr.LocalNeedsLogin,
