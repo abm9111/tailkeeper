@@ -180,6 +180,7 @@ func (r *Runner) Run(ctx context.Context, timeout time.Duration, args ...string)
 	cmd.Stdout, cmd.Stderr = stdout, stderr
 	cmd.WaitDelay = waitDelay
 	configureProcessGroup(cmd)
+	closeInheritedOnExec()
 	start := time.Now()
 	err := cmd.Run()
 	res := Result{Stdout: stdout.Bytes(), Stderr: stderr.String(), Duration: time.Since(start)}
