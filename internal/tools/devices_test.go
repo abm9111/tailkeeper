@@ -304,10 +304,11 @@ func TestADigitReferenceResolvesToANodeIDByIDThenByHostname(t *testing.T) {
 
 func TestDeviceRoutesHAForAnExitOnlyDeviceReadsNoDeviceList(t *testing.T) {
 	f, reg, env := apiEnv(t)
-	f.JSON("GET", "/api/v2/device/1001/routes", 200, `{"advertisedRoutes":["0.0.0.0/0","::/0"],"enabledRoutes":["0.0.0.0/0","::/0"]}`)
+	f.JSON("GET", "/api/v2/device/nAAA1CNTRL/routes", 200, `{"advertisedRoutes":["0.0.0.0/0","::/0"],"enabledRoutes":["0.0.0.0/0","::/0"]}`)
 	// No route for the device list: a request for it would fail the call.
+	// The device is named by node ID, which resolves without the list.
 	var out tools.DeviceRoutesOutput
-	mustCall(t, reg, env, "device_routes", `{"device":"1001","includeHa":true}`, &out)
+	mustCall(t, reg, env, "device_routes", `{"device":"nAAA1CNTRL","includeHa":true}`, &out)
 	if len(out.HAPeers) != 0 {
 		t.Errorf("HA peers = %+v", out.HAPeers)
 	}
