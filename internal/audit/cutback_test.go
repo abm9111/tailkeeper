@@ -9,6 +9,8 @@ import (
 	"github.com/abm9111/tailkeeper/internal/tkerr"
 )
 
+var errDiskFull = errors.New("no space left on device")
+
 // halfWrite writes the first half of the line through f, as a full disk might, and then
 // fails.
 func halfWrite(f *os.File, b []byte) (int, error) {
@@ -16,7 +18,7 @@ func halfWrite(f *os.File, b []byte) (int, error) {
 	if err != nil {
 		return n, err
 	}
-	return n, errors.New("no space left on device")
+	return n, errDiskFull
 }
 
 func sizeOf(t *testing.T, path string) int64 {
@@ -48,6 +50,9 @@ func requireCutBack(t *testing.T, l *Log, err error, before int64) {
 	t.Helper()
 	if e := tkerr.From(err); err == nil || e.Code != tkerr.AuditUnavailable || !strings.HasPrefix(e.Message, "cannot write ") || strings.Contains(e.Message, "cutting") {
 		t.Fatalf("Append with a failed write = %v, want audit_unavailable saying only that the write failed", err)
+	}
+	if !errors.Is(err, errDiskFull) {
+		t.Errorf("Append's error %v does not wrap the write error", err)
 	}
 	if after := sizeOf(t, l.Path()); after != before {
 		t.Fatalf("the log is %d bytes after the failed write, want the %d it had: half a line was left behind", after, before)
@@ -106,6 +111,9 @@ func TestAppendSaysWhenTheCutBackFails(t *testing.T) {
 			t.Errorf("the message %q does not say %q", e.Message, want)
 		}
 	}
+	if !errors.Is(err, errDiskFull) {
+		t.Errorf("Append's error %v does not wrap the write error", err)
+	}
 	if !strings.Contains(e.Hint, "audit verify") {
 		t.Errorf("the hint %q does not point at audit verify", e.Hint)
 	}
@@ -114,5 +122,46 @@ func TestAppendSaysWhenTheCutBackFails(t *testing.T) {
 	}
 	if err := l.Append("read", map[string]any{"tool": "dns_get"}); err == nil || !strings.Contains(tkerr.From(err).Message, "does not end with a newline") {
 		t.Errorf("the next Append = %v, want the refusal of a log that does not end with a newline", err)
+	}
+}
+
+// TestAppendLeavesAnotherWritersLineAlone: on Windows two processes can append at once.
+// When another writer appended after this one read the log, the cut-back would remove
+// that writer's line as well, so it truncates nothing and the error says the log may end
+// in part of a line.
+func TestAppendLeavesAnotherWritersLineAlone(t *testing.T) {
+	l := openLog(t)
+	if err := l.Append("read", map[string]any{"tool": "devices_list"}); err != nil {
+		t.Fatal(err)
+	}
+	other := []byte("a line another writer appended\n")
+	l.write = func(f *os.File, b []byte) (int, error) {
+		n, err := halfWrite(f, b)
+		o, oerr := os.OpenFile(l.Path(), os.O_WRONLY|os.O_APPEND, 0)
+		if oerr != nil {
+			t.Fatal(oerr)
+		}
+		defer func() { _ = o.Close() }()
+		if _, oerr := o.Write(other); oerr != nil {
+			t.Fatal(oerr)
+		}
+		return n, err
+	}
+	before := sizeOf(t, l.Path())
+	err := l.Append("read", map[string]any{"tool": "device_get"})
+	l.write = nil
+	// tkerr keeps a cause's text out of Error(); the reason is in the wrapped cause.
+	if e := tkerr.From(err); err == nil || !strings.Contains(e.Message, "cutting it back") {
+		t.Fatalf("Append = %v, want the cut-back reported as failed", err)
+	}
+	if cause := errors.Unwrap(err); cause == nil || !strings.Contains(cause.Error(), "another writer") {
+		t.Fatalf("the cause %v does not say another writer appended", cause)
+	}
+	b, rerr := os.ReadFile(l.Path())
+	if rerr != nil {
+		t.Fatal(rerr)
+	}
+	if int64(len(b)) <= before || !strings.HasSuffix(string(b), string(other)) {
+		t.Errorf("the log lost the other writer's line: it ends %q", b[max(0, len(b)-60):])
 	}
 }
