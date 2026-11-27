@@ -2,7 +2,7 @@
 
 The macOS MCPB, shipped from 0.7.0, is a universal bundle containing amd64 and arm64 executable slices. Its manifest uses MCPB schema version `0.3`, declares `darwin`, and starts `server/tailkeeper` with `mcp`. The manifest's package `version` is the release version without the leading `v`; the release binary reports that version with the `v`. The OS declaration is not a CPU selection field. Two slices in a file do not establish runtime acceptance on both CPUs.
 
-**Narrow ARM64 host acceptance has been observed for an unsigned local snapshot.** It establishes that Claude Desktop 4.23118.0 on macOS 27.2 build 26B123 ARM64 recognized, installed, ran, and removed this package in a disposable VM. It does not establish acceptance of a signed published release, Intel runtime behavior, or Windows behavior. Use the [direct-binary route](../../README.md#install) when host acceptance is not established for your platform and package.
+**Narrow ARM64 host acceptance has been observed for an unsigned local snapshot.** It establishes that Claude Desktop 4.23118.0 on macOS 27.2 build 26B123 ARM64 recognized, installed, ran, and removed this package in a disposable VM. **A signed release bundle, v0.7.0, has since been verified, installed and run once** on the owner's own ARM64 Mac, which was not an isolated host ([below](#observed-signed-release-acceptance-v070)). Neither record establishes Intel runtime behavior or Windows behavior. Use the [direct-binary route](../../README.md#install) when host acceptance is not established for your platform and package.
 
 ## Verify before opening
 
@@ -31,7 +31,23 @@ The following is a bounded host acceptance record for one unsigned local snapsho
 
 The tested UI route was **Settings > Desktop app > Extensions > Manage**. For installation, opening the `.mcpb` in Finder displayed the confirmation dialog described above. For removal, use the extension's `…` menu and confirm Uninstall. The same package and refusal were checked after reinstall. Do not treat this local snapshot trial as satisfying the signed checksum and provenance requirements above.
 
-This trial supplied no credentials and made no live Tailscale reads. The locked-provider phase launched Claude with a minimal environment in which credential, reexec, and privacy inputs were absent; the wrapper later observed the expected reexec marker. This does not establish general host environment inheritance. The refusal wrapper never executes its appended server arguments. No Intel runtime or signed-release acceptance is established. Successful credential-dependent calls remain supported by the injected fake-API harness, not inferred from this host trial.
+This trial supplied no credentials and made no live Tailscale reads. The locked-provider phase launched Claude with a minimal environment in which credential, reexec, and privacy inputs were absent; the wrapper later observed the expected reexec marker. This does not establish general host environment inheritance. The refusal wrapper never executes its appended server arguments. This trial established no Intel runtime and no signed-release acceptance (the signed v0.7.0 bundle is recorded below). Successful credential-dependent calls remain supported by the injected fake-API harness, not inferred from this host trial.
+
+## Observed signed release acceptance (v0.7.0)
+
+A bounded record of one install of the published v0.7.0 bundle on 27 Nov 2026. It is not a general host guarantee.
+
+| Item | Observed result |
+| --- | --- |
+| Package | `tailkeeper_0.7.0_darwin_universal.mcpb` from the v0.7.0 release; SHA-256 `3ce349a7c4aafe1f5bf1405799cf7f6a8cea9fe7240c58eb90923431eb2930e6` |
+| Release verification | As [Verify a release](../../README.md#verify-a-release) says: `cosign verify-blob` over `checksums.txt` printed `Verified OK`; the bundle's line of `checksums.txt` checked `OK`; `gh attestation verify` exited 0 for the bundle and for `checksums.txt`. That command printed nothing on success in this shell, so it was confirmed with `--format json` (an attestation whose subjects include the bundle) and with a tampered copy, which failed with exit 1. |
+| Host | Claude Desktop 6.28899.6; macOS 27.2.1 build 26B131; ARM64; the owner's own Mac with their existing configuration, not a disposable VM |
+| Install | Opening the bundle with Claude Desktop showed the install dialog, which warned that installing grants the extension access to everything on the computer and that the developer information is not verified by Anthropic. The owner installed it, and the extension showed Enabled. |
+| Tool call | `tailkeeper_info` returned version `v0.7.0`, OS `darwin`, architecture `arm64`, and empty `reportSchemas`, `catalogSchemas` and `assessmentCapabilities`. |
+| Audit | `audit tail -n 5` showed the `tailkeeper_info` call, requester kind `mcp`, status `ok`; `audit verify` reported the chain intact. |
+| Not covered | Uninstall and reinstall, a call that needs the credential, Intel, an isolated host. |
+
+The host's model read the three empty lists as meaning that `security_scan` had nothing to run, although `security_scan` ships in this release: the lists name only published schemas, and the report schema is not yet published (the field text in 0.7.0 still says they stay empty until an assessor ships).
 
 ## Future host trials
 

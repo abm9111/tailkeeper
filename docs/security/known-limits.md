@@ -4,6 +4,11 @@ This is a concise guide, not a security assurance or a complete support matrix.
 See [coverage](coverage.md), [threat model](../threat-model.md) and
 [security policy](../../SECURITY.md) for details.
 
+- The catalog built into 0.7.0 expires on 2027-01-28. From 2027-01-14 `doctor`
+  warns on its `advisory catalog` row; from 2027-01-28 that row fails (exit 8)
+  and a scan no longer clears a device: what it would have found not affected
+  is `unknown` (`catalog_expired`). A release with renewed catalog dates is due
+  before 2027-01-14.
 - The assessor is partial. The embedded catalog has one reviewed rule,
   CVE-2022-41925, and four pending rules, TS-2026-014 through TS-2026-017.
   Pending rules yield unknown; there is no live catalog sync or promise to cover
@@ -31,7 +36,8 @@ See [coverage](coverage.md), [threat model](../threat-model.md) and
   unsupported on Windows. A Windows build check is not runtime acceptance.
 - The only isolated MCPB acceptance recorded is an unsigned `de4f25e` snapshot
   on macOS ARM64 with Claude Desktop 4.23118.0 and macOS 27.2 build 26B123.
-  It does not establish Intel runtime, a signed/published release, generic
+  The signed v0.7.0 bundle was installed and run once, on the owner's own ARM64
+  Mac rather than an isolated host. Neither establishes Intel runtime, generic
   Linux/Windows runtime or arbitrary host support. See [MCPB](../install/mcpb.md)
   and its existing signed-release verification requirements.
 - Synthetic-only Go demos use Unix-only tests and cannot run on Windows. A
