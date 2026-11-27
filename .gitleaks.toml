@@ -1,7 +1,8 @@
 # gitleaks reads this file when it scans this repository without --config. It keeps every
 # default rule and adds the credential this project handles, which neither scanner knew:
-# gitleaks 8.30 has no Tailscale rule, and trufflehog 3.100 matches tskey-api- keys only, so
-# an OAuth client secret (tskey-client-) or an auth key (tskey-auth-) passed both.
+# gitleaks 8.30 has no Tailscale rule, and trufflehog 3.100 found tskey-api-, -scim- and
+# -webhook- keys but missed an OAuth client secret (tskey-client-), an auth key (tskey-auth-)
+# and an untyped key (tskey-k...CNTRL-...), so the two kinds tailkeeper uses passed both.
 # TestTheTreeHoldsNoTailscaleKey in internal/workflows reads the regex below and applies it
 # to the files a commit could take, so `make verify` covers this rule as well.
 title = "tailkeeper"
@@ -11,8 +12,9 @@ useDefault = true
 
 [[rules]]
 id = "tailscale-key"
-description = "A Tailscale API key, auth key, OAuth client secret, SCIM, webhook or app key"
-regex = '''tskey-(?:api|auth|client|scim|webhook|app)-[A-Za-z0-9]{6,}-[A-Za-z0-9]{16,}'''
+description = "A Tailscale API key, auth key, OAuth client secret, SCIM, webhook or app key, or an untyped key"
+# The kind is optional: keys issued before the kinds existed read tskey-k<id>CNTRL-<secret>.
+regex = '''tskey-(?:(?:api|auth|client|scim|webhook|app)-)?[A-Za-z0-9]{6,}-[A-Za-z0-9]{16,}'''
 keywords = ["tskey-"]
 
 # The one Tailscale-shaped string in the history: a synthetic fixture of

@@ -31,7 +31,7 @@ The following is a bounded host acceptance record for one unsigned local snapsho
 
 The tested UI route was **Settings > Desktop app > Extensions > Manage**. For installation, opening the `.mcpb` in Finder displayed the confirmation dialog described above. For removal, use the extension's `…` menu and confirm Uninstall. The same package and refusal were checked after reinstall. Do not treat this local snapshot trial as satisfying the signed checksum and provenance requirements above.
 
-This trial supplied no credentials and made no live Tailscale reads. The locked-provider phase launched Claude with a minimal environment in which credential, reexec, and privacy inputs were absent; the wrapper later observed the expected reexec marker. This does not establish general host environment inheritance. The refusal wrapper never executes its appended server arguments. No Intel runtime or signed-release acceptance is established. Successful credential-dependent calls remain supported by the injected fake-API harness, not inferred from this host trial.
+This trial supplied no credentials and made no live Tailscale reads. The locked-provider phase launched Claude with a minimal environment in which credential, reexec, and privacy inputs were absent; the wrapper later observed the expected reexec marker. This does not establish general host environment inheritance. The refusal wrapper never executes its appended server arguments. This trial established no Intel runtime and no signed-release acceptance (the signed v0.7.0 bundle is recorded below). Successful credential-dependent calls remain supported by the injected fake-API harness, not inferred from this host trial.
 
 ## Observed signed release acceptance (v0.7.0)
 
