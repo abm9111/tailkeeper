@@ -66,9 +66,13 @@ type Log struct {
 	lockWait atomic.Int64 // nanoseconds; 0: defaultLockWait
 
 	// Seams for tests: opened runs after openLocked opens the log, before it locks;
-	// rename replaces os.Rename in Rotate.
-	opened func()
-	rename func(oldpath, newpath string) error
+	// rename replaces os.Rename in Rotate; write, truncate and truncatePath replace
+	// (*os.File).Write, (*os.File).Truncate and os.Truncate in Append.
+	opened       func()
+	rename       func(oldpath, newpath string) error
+	write        func(f *os.File, b []byte) (int, error)
+	truncate     func(f *os.File, size int64) error
+	truncatePath func(path string, size int64) error
 }
 
 // Open creates the directory (0700) and file (0600) if needed. It also sets the log's
@@ -123,7 +127,7 @@ func (l *Log) wait() time.Duration {
 // written and synced; Append still returns an error, and the caller reports the read as
 // not audited. That is the safe direction: a read may be reported as unaudited although
 // its line is in the log. Only a failed write is undone (the file is truncated to its
-// old size).
+// old size); when that undo fails too, the error says the log may end in part of a line.
 func (l *Log) Append(event string, fields map[string]any) (err error) {
 	for k := range fields {
 		if reserved[k] {
@@ -151,13 +155,57 @@ func (l *Log) Append(event string, fields map[string]any) (err error) {
 	if err != nil {
 		return err
 	}
-	if _, err := f.Write(append(line, '\n')); err != nil {
+	write := l.write
+	if write == nil {
+		write = (*os.File).Write
+	}
+	if n, err := write(f, append(line, '\n')); err != nil {
 		// Never leave half a line behind: the next Append would refuse the log.
-		_ = f.Truncate(size)
+		if terr := l.cutBack(f, size, size+int64(n)); terr != nil {
+			return tkerr.Wrap(tkerr.AuditUnavailable, errors.Join(err, terr),
+				"cannot write "+l.path+", and cutting it back to its last whole line failed: the log may end in part of a line, and later appends refuse it",
+				"run `tailkeeper audit verify`; do not delete the log")
+		}
 		return unavailable(err, "cannot write "+l.path)
 	}
 	if err := f.Sync(); err != nil {
 		return unavailable(err, "cannot sync "+l.path)
+	}
+	return nil
+}
+
+// cutBack truncates the log to size after a failed write that left it at written bytes.
+// It truncates nothing when the log is not exactly written bytes long: then another
+// writer appended after this one read the log (Windows has no file lock between
+// processes), and cutting back would remove that writer's line too.
+//
+// f was opened with O_APPEND, and on Windows such a handle has append access but not
+// write access, so truncating through it fails; the path is then truncated instead,
+// which opens it for writing, once it is checked to still name f.
+func (l *Log) cutBack(f *os.File, size, written int64) error {
+	truncate, truncatePath := l.truncate, l.truncatePath
+	if truncate == nil {
+		truncate = (*os.File).Truncate
+	}
+	if truncatePath == nil {
+		truncatePath = os.Truncate
+	}
+	fi, err := f.Stat()
+	if err != nil {
+		return err
+	}
+	if fi.Size() != written {
+		return fmt.Errorf("the log is %d bytes, not the %d this write left: another writer appended to it", fi.Size(), written)
+	}
+	err = truncate(f, size)
+	if err == nil {
+		return nil
+	}
+	if !current(f, l.path) {
+		return errors.Join(err, errors.New("the log's path no longer names the file that was written"))
+	}
+	if perr := truncatePath(l.path, size); perr != nil {
+		return errors.Join(err, perr)
 	}
 	return nil
 }
