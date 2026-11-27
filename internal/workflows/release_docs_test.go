@@ -623,14 +623,14 @@ func TestTheReleasedBaselinesAreTheZeroSixContract(t *testing.T) {
 	}
 }
 
-func TestTheReadmePinsTheZeroSixRelease(t *testing.T) {
+func TestTheReadmePinsTheZeroSevenRelease(t *testing.T) {
 	doc := readme(t)
 	sec := aclSection(t, doc, "## Verify a release")
-	if !strings.Contains(sec, "VERSION=v0.6.0") {
-		t.Fatal("the verify block does not pin VERSION=v0.6.0")
+	if !strings.Contains(sec, "VERSION=v0.7.0") {
+		t.Fatal("the verify block does not pin VERSION=v0.7.0")
 	}
-	if strings.Contains(sec, "VERSION=v0.5.0") {
-		t.Fatal("the verify block still pins v0.5.0")
+	if strings.Contains(sec, "VERSION=v0.6.0") {
+		t.Fatal("the verify block still pins v0.6.0")
 	}
 }
 
