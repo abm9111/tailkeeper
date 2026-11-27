@@ -4,11 +4,12 @@ This is a concise guide, not a security assurance or a complete support matrix.
 See [coverage](coverage.md), [threat model](../threat-model.md) and
 [security policy](../../SECURITY.md) for details.
 
-- The catalog built into 0.7.0 expires on 2027-01-28. From 2027-01-14 `doctor`
-  warns on its `advisory catalog` row; from 2027-01-28 that row fails (exit 8)
-  and a scan no longer clears a device: what it would have found not affected
-  is `unknown` (`catalog_expired`). A release with renewed catalog dates is due
-  before 2027-01-14.
+- The catalog built into 0.7.0 expires on 2027-01-28: from 2027-01-14 `doctor`
+  warns on its `advisory catalog` row, and from 2027-01-28 that row fails
+  (exit 8) and a scan no longer clears a device: what it would have found not
+  affected is `unknown` (`catalog_expired`). A release carrying the renewed
+  catalog, which expires on 2027-02-25 (warning from 2027-02-11), is due before
+  2027-01-14.
 - The assessor is partial. The embedded catalog has one reviewed rule,
   CVE-2022-41925, and four pending rules, TS-2026-014 through TS-2026-017.
   Pending rules yield unknown; there is no live catalog sync or promise to cover

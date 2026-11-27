@@ -41,9 +41,9 @@ const (
 	ts2026SuffixTG = "-t0123456ab-gfedcba987"
 )
 
-// ts2026Now is after the catalogs were issued (2026-10-30T00:00:00Z) and long before they
+// ts2026Now is after the catalogs were issued (2026-11-27T18:22:00Z) and long before they
 // expire, so the catalog and the rules are fresh.
-var ts2026Now = time.Date(2026, 10, 31, 12, 0, 0, 0, time.UTC)
+var ts2026Now = time.Date(2026, 11, 28, 12, 0, 0, 0, time.UTC)
 
 func readTS2026(t *testing.T, rule ts2026Rule) security.Catalog {
 	t.Helper()
@@ -114,7 +114,7 @@ func matchTS2026(t *testing.T, c security.Catalog, s security.Snapshot) []securi
 // The shipped files say what the bulletins say and no more: fixed in 1.104.4 with no lower
 // bound and no backport, no CVE, pending, severity unknown because the bulletins gave none.
 func TestShippedTS2026RulesAreAsReviewed(t *testing.T) {
-	issued := time.Date(2026, 10, 30, 0, 0, 0, 0, time.UTC)
+	issued := time.Date(2026, 11, 27, 18, 22, 0, 0, time.UTC)
 	expires := issued.AddDate(0, 0, 90)
 	published := time.Date(2026, 10, 26, 0, 0, 0, 0, time.UTC)
 	readme, err := os.ReadFile("../../data/advisories/README.md")
@@ -125,11 +125,11 @@ func TestShippedTS2026RulesAreAsReviewed(t *testing.T) {
 		t.Run(rule.id, func(t *testing.T) {
 			catalog := readTS2026(t, rule)
 			rec := catalog.Records[0]
-			if catalog.Revision != 1 || !catalog.IssuedAt.Equal(issued) || !catalog.ExpiresAt.Equal(expires) {
-				t.Errorf("catalog revision %d, issued %s, expires %s: want 1, %s, %s", catalog.Revision, catalog.IssuedAt, catalog.ExpiresAt, issued, expires)
+			if catalog.Revision != 2 || !catalog.IssuedAt.Equal(issued) || !catalog.ExpiresAt.Equal(expires) {
+				t.Errorf("catalog revision %d, issued %s, expires %s: want 2, %s, %s", catalog.Revision, catalog.IssuedAt, catalog.ExpiresAt, issued, expires)
 			}
-			if rec.ID != rule.id || rec.Revision != "1" || strings.HasPrefix(rec.ID, "CVE-") {
-				t.Errorf("id %q, revision %q: want %s, 1, and no CVE", rec.ID, rec.Revision, rule.id)
+			if rec.ID != rule.id || rec.Revision != "2" || strings.HasPrefix(rec.ID, "CVE-") {
+				t.Errorf("id %q, revision %q: want %s, 2, and no CVE", rec.ID, rec.Revision, rule.id)
 			}
 			if rec.Component != "client" || rec.VersionRole != security.VersionRunningDaemon || rec.OS != "" {
 				t.Errorf("component %q, role %q, os %q: want client, running_daemon and no os", rec.Component, rec.VersionRole, rec.OS)

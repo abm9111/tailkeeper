@@ -23,7 +23,9 @@ func TestReviewedCVE202241925Controls(t *testing.T) {
 	if len(catalog.Records) != 1 || catalog.Records[0].ID != "CVE-2022-41925" || catalog.Records[0].Severity != security.SeverityLow {
 		t.Fatal("reviewed rule identity or source severity changed")
 	}
-	now := time.Date(2026, 10, 30, 16, 13, 0, 0, time.UTC)
+	// A minute after the check the file records, so the catalog and the review are fresh and a
+	// re-review that moves the dates needs no edit here.
+	now := catalog.IssuedAt.Add(time.Minute)
 	cases := []struct {
 		name    string
 		version string
