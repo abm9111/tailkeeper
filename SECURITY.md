@@ -44,7 +44,7 @@ Key- and JWT-shaped text in a result is always the tripwire's, so it is withheld
 
 ## Known limits, not vulnerabilities
 
-These are known limits of this source tree; the credential-file boundary above is unreleased. `tailkeeper doctor` reports some of them:
+These are known limits of this source tree. `tailkeeper doctor` reports some of them:
 
 - Personal mode runs as your user: code that runs as you, including an agent with an unsandboxed shell, can rewrite tailkeeper's configuration and audit log.
 - Configuration and credential files use no-follow opening and compare captured/opened identity and metadata. Credential files also enforce Unix owner/private-mode checks on the opened descriptor, use bounded reads and compare metadata after reading. Only the immediate directory is checked, and it is looked up by name after the open (a `stat` of the parent path), not through the descriptor: the file's own owner and mode are judged on the open descriptor, but a process running as you or as root that swaps an ancestor directory between the open and that lookup can have the directory judged differently from the one the file was opened in. That narrows a swap race; it does not close it, and such a process could rewrite the file anyway, as the first limit says. Same-user/root modification remains outside personal-mode protection. General configuration reads retain their existing pathname-based policy checks and limits.

@@ -11,7 +11,7 @@ To identify the installed Tailkeeper build without loading configuration or cred
 run `tailkeeper self info --json`. The MCP equivalent is `tailkeeper_info`; it uses no credential per call, although
 an MCP session can load its configured providers when it starts.
 It distinguishes this binary from `local version`, which reports Tailscale versions.
-Empty assessment schema/capability lists mean that assessment is not implemented.
+The schema and capability lists name only published schemas; they are empty in 0.7.0 because the security report schema is not yet published, although `security scan` ships.
 See [security coverage](docs/security/coverage.md) for evidence and deployment limits.
 
 ## Quick start
@@ -49,7 +49,7 @@ Tailkeeper lets you inspect your Tailscale network from the command line or an M
 
 Download the archive for your platform (macOS and Linux on amd64 and arm64, Windows on amd64) from the [latest release](https://github.com/abm9111/tailkeeper/releases/latest), verify it (next section), then put `tailkeeper` on your `PATH`, for example in `~/.local/bin`.
 
-The planned universal macOS MCP bundle and its verification and host-acceptance status are described in [docs/install/mcpb.md](docs/install/mcpb.md). Supported-host installation remains pending; the direct-binary instructions here remain available.
+From 0.7.0 each release also ships a universal macOS MCP bundle (`tailkeeper_<version>_darwin_universal.mcpb`), listed in `checksums.txt` with its own SBOM; its verification and host-acceptance status are described in [docs/install/mcpb.md](docs/install/mcpb.md). Supported-host installation remains pending; the direct-binary instructions here remain available.
 
 On Windows the archive is a `.zip`, and the Windows build differs: it has no `exec` provider (start tailkeeper under your secret manager's run command and use the `env` provider), it does not check the owner or permissions of the configuration and credential files (`tailkeeper doctor` warns), and it cannot rotate the audit log. The audit log has no lock between processes there, so two tailkeeper processes writing at the same moment can break its chain. [docs/windows.md](docs/windows.md) lists every difference and the tests that do not run on Windows.
 
@@ -62,7 +62,7 @@ From a clone, `make install` runs the gate (`make verify`), then installs the bi
 Every release is built by `.github/workflows/release.yml` from a signed tag. `checksums.txt` lists the SHA-256 of every archive and SBOM. A [cosign](https://docs.sigstore.dev/) keyless signature over it (`checksums.txt.sigstore.json`) proves that file came from that workflow, and a GitHub build-provenance attestation covers each file it lists; a second attestation step covers `checksums.txt` itself, which cannot list its own hash. Download the archive, `checksums.txt` and `checksums.txt.sigstore.json`, then run these lines in order and stop at the first one that fails (a shell does not stop for you when you paste them, so a later line can succeed after an earlier one failed):
 
 ```
-VERSION=v0.6.0
+VERSION=v0.7.0
 ARCHIVE=tailkeeper_${VERSION#v}_darwin_arm64.tar.gz   # the archive you downloaded
 IDENTITY="https://github.com/abm9111/tailkeeper/.github/workflows/release.yml@refs/tags/$VERSION"
 
@@ -122,7 +122,7 @@ tailkeeper refuses a key it does not know, a key written twice and a key whose l
 
 ### Credential providers
 
-`credentials.read.provider` says where the read credential comes from. Every provider reads the same variables: `TAILKEEPER_READ_CLIENT_ID` and `TAILKEEPER_READ_CLIENT_SECRET` for an OAuth client (recommended), or `TAILKEEPER_READ_API_KEY` for an API access token (`doctor` warns: such a token carries its owner's full permissions); never both. A value may be `file:/absolute/path`, which is read and trimmed (a relative path, `file:secrets/key`, is refused with an error that asks for an absolute one, as the `file` provider's `path` and the `oidc` provider's `tokenFile` already are; a reference with spaces, a tab or a line end before or after it, ` file:/path`, is refused with an error that asks for them to be removed, because read as it stands it would be a token that spells a path; a plain value is trimmed); in this unreleased foundations change, that file uses the checked private-file reader, refuses symlinks/replacement and is limited to 1 MiB. On Unix use mode 0600 in a directory owned by you or root and not writable by others. Shared-readable container mounts accepted by 0.6.0 must migrate to private regular files or an exec provider. Windows owner/ACL limits are described in `SECURITY.md`. `TAILKEEPER_PRIVACY_KEY` sits beside them. tailkeeper never reads `TS_*` or `TAILSCALE_*` variables.
+`credentials.read.provider` says where the read credential comes from. Every provider reads the same variables: `TAILKEEPER_READ_CLIENT_ID` and `TAILKEEPER_READ_CLIENT_SECRET` for an OAuth client (recommended), or `TAILKEEPER_READ_API_KEY` for an API access token (`doctor` warns: such a token carries its owner's full permissions); never both. A value may be `file:/absolute/path`, which is read and trimmed (a relative path, `file:secrets/key`, is refused with an error that asks for an absolute one, as the `file` provider's `path` and the `oidc` provider's `tokenFile` already are; a reference with spaces, a tab or a line end before or after it, ` file:/path`, is refused with an error that asks for them to be removed, because read as it stands it would be a token that spells a path; a plain value is trimmed); since 0.7.0, that file is read by the checked private-file reader, which refuses a symlink or a replaced file and reads at most 1 MiB. On Unix use mode 0600 in a directory owned by you or root and not writable by others. Shared-readable container mounts accepted by 0.6.0 must migrate to private regular files or an exec provider. Windows owner/ACL limits are described in `SECURITY.md`. `TAILKEEPER_PRIVACY_KEY` sits beside them. tailkeeper never reads `TS_*` or `TAILSCALE_*` variables.
 
 | Provider | Fields | Where the secret comes from |
 |---|---|---|

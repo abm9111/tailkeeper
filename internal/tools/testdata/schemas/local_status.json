@@ -31,7 +31,11 @@
         "x-tailkeeper-untrusted": true
       },
       "magicDnsEnabled": {
-        "type": "boolean"
+        "description": "present only when the local status names the tailnet",
+        "type": [
+          "null",
+          "boolean"
+        ]
       },
       "magicDnsSuffix": {
         "type": "string",
@@ -41,7 +45,11 @@
         "type": "boolean"
       },
       "peerCount": {
-        "type": "integer"
+        "description": "present only when peers were requested",
+        "type": [
+          "null",
+          "integer"
+        ]
       },
       "peerScope": {
         "description": "network_map: peers are those in this node's network map; devices it may not reach are absent",
@@ -226,9 +234,7 @@
       "backendState",
       "needsLogin",
       "version",
-      "magicDnsEnabled",
-      "health",
-      "peerCount"
+      "health"
     ],
     "type": "object"
   },

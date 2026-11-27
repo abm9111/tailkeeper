@@ -8,7 +8,10 @@
       },
       "count": {
         "description": "1-10 (default 3)",
-        "type": "integer"
+        "type": [
+          "null",
+          "integer"
+        ]
       },
       "mode": {
         "description": "disco (default), tsmp, icmp or peerapi",
@@ -20,7 +23,10 @@
       },
       "timeoutSeconds": {
         "description": "per ping, 1-8 (default 5)",
-        "type": "integer"
+        "type": [
+          "null",
+          "integer"
+        ]
       }
     },
     "required": [

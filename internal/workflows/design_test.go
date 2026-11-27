@@ -250,7 +250,7 @@ var designRules = []designRule{
 		want: []string{
 			"### Probes first (read-only)", "| A-1 |", "| A-10 |", "| H-1 |", "`make probe-acl`", "TAILKEEPER_LIVE_POLICY_SOURCE",
 			"7. Whether validate (policy mode) runs `sshTests`. Settled by probe A-10 (0.6.0): it does, so SSH tests ship.",
-			"13. Whether preview evaluates grants, `via` and posture. With `acl_preview` (0.7.0).",
+			"13. Whether preview evaluates grants, `via` and posture. With `acl_preview` (0.8.0).",
 			"(with apply, after M2)", "**ACL engine, read side (0.6.0).**",
 			"about 48 validate POSTs and up to 10 GETs, one request every 2 seconds", "a 429 stops the run and marks the rest not run",
 			"built with `-tags probe`",
@@ -268,7 +268,7 @@ var designRules = []designRule{
 	},
 	{
 		section: "## 24. Roadmap",
-		want:    []string{"**0.6.0, the policy core (read side):**", "**0.7.0:**", "**After M2:**", "a docs-page drift check", "a composite setup action", "the full Terraform recipe", "`acl_history` (the log holds the policy texts, observed 20 Oct 2026);", "SSH tests (they ran on 20 Oct 2026);"},
+		want:    []string{"**0.6.0, the policy core (read side):**", "**0.8.0:**", "**After M2:**", "a docs-page drift check", "a composite setup action", "the full Terraform recipe", "`acl_history` (the log holds the policy texts, observed 20 Oct 2026);", "SSH tests (they ran on 20 Oct 2026);"},
 		absent:  []string{"| M3 ACL engine | ACL validate, preview, diff, audit catalogue (and"},
 	},
 	{

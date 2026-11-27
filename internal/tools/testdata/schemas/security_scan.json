@@ -7,7 +7,7 @@
         "type": "string"
       },
       "threshold": {
-        "description": "the lowest source severity that makes an affected or potentially affected finding count toward exit code 8 (and atThreshold): low (default), medium, high or critical. A finding whose rule gives no severity counts at every threshold",
+        "description": "lowest rule severity that counts toward exit 8 and atThreshold: low (default), medium, high or critical; a rule with no severity counts at every threshold",
         "type": "string"
       }
     },
@@ -21,7 +21,7 @@
     "properties": {
       "atThreshold": {
         "additionalProperties": false,
-        "description": "affected and potentially affected findings at or above the threshold, over all of them (not only the listed): any makes the exit code 8",
+        "description": "affected and potentially affected findings at or above the threshold, over all findings, not the listed: any gives exit 8",
         "properties": {
           "affected": {
             "type": "integer"
@@ -45,7 +45,7 @@
             "type": "integer"
           },
           "digest": {
-            "description": "SHA-256 over the sorted name:digest lines of the files; it changes with any byte of any file",
+            "description": "SHA-256 over the files' name:digest lines; changes with any byte of any file",
             "type": "string"
           },
           "expiresAt": {
@@ -66,7 +66,7 @@
             "type": "integer"
           },
           "rules": {
-            "description": "rules in the catalog",
+            "description": "rules built into this binary: complete and exit 0 are relative to these, and say nothing of advisories the catalog does not hold",
             "type": "integer"
           },
           "withdrawn": {
@@ -157,7 +157,7 @@
               "type": "string"
             },
             "explanation": {
-              "description": "why a row is partial: fixed words, error codes and counts",
+              "description": "why a row is partial or not requested: fixed words, error codes and counts",
               "type": "string"
             },
             "source": {
@@ -165,7 +165,7 @@
               "type": "string"
             },
             "status": {
-              "description": "complete or partial",
+              "description": "complete or partial; not_requested for a dimension not asked for (intent, with no intent set configured), which blocks nothing",
               "type": "string"
             }
           },
@@ -195,7 +195,7 @@
               "type": "string"
             },
             "device": {
-              "description": "the first four characters of the device's node ID, then an ellipsis",
+              "description": "the node ID cut to four characters at most, then an ellipsis",
               "type": "string",
               "x-tailkeeper-untrusted": true
             },
@@ -296,6 +296,32 @@
         "description": "when the findings were made: RFC 3339, in UTC",
         "type": "string"
       },
+      "intent": {
+        "additionalProperties": false,
+        "description": "the intent set, by digest; none of its text is in a result",
+        "properties": {
+          "digest": {
+            "description": "keyed digest of the intent file (sha256: with personalData show); none while masked with no privacy key",
+            "type": "string"
+          },
+          "expectations": {
+            "description": "tests the file holds; none is judged yet",
+            "type": "integer"
+          },
+          "revision": {
+            "description": "the first twelve digits of the digest; none without it",
+            "type": "string"
+          },
+          "source": {
+            "description": "none, configured or cli",
+            "type": "string"
+          }
+        },
+        "required": [
+          "source"
+        ],
+        "type": "object"
+      },
       "observedAt": {
         "description": "when the sources were read: RFC 3339, in UTC",
         "type": "string"
@@ -305,7 +331,7 @@
         "type": "string"
       },
       "status": {
-        "description": "complete or partial: complete only if every requested coverage (versions, features, catalog, intent) is complete. In this version intent is never evaluated, so a scan is partial; read coverage for every other gap",
+        "description": "complete or partial. complete: every requested coverage is complete, relative to the shipped catalog (the rules built into this binary, counted in catalog.rules), which is not a statement that the fleet is safe. Pending rules, a failed source or a stale review keep it partial: read coverage",
         "type": "string"
       },
       "threshold": {
@@ -317,7 +343,7 @@
         "type": "integer"
       },
       "truncated": {
-        "description": "findings lists fewer than totalFindings. The order puts affected first, then potentially affected, unknown and not affected, so what is cut is last; there is no way to page to the rest",
+        "description": "findings lists fewer than totalFindings; affected come first, so the cut is the last; no way to page to the rest",
         "type": "boolean"
       }
     },
@@ -332,6 +358,7 @@
       "counts",
       "atThreshold",
       "catalog",
+      "intent",
       "coverage",
       "findings"
     ],

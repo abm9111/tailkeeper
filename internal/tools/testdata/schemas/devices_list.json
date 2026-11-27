@@ -24,9 +24,17 @@
         "description": "exact hostname (server-side); while personal data is masked, refused if it contains an email address or a public IP address",
         "type": "string"
       },
+      "limit": {
+        "description": "page size, at most 512; 0 returns the kept rows",
+        "type": "integer"
+      },
       "nameContains": {
         "description": "case-insensitive substring of name or hostname as the result shows them, where an email or public address is masked while personal data is masked (client-side)",
         "type": "string"
+      },
+      "offset": {
+        "description": "rows to skip",
+        "type": "integer"
       },
       "online": {
         "description": "filter on connectedToControl (server-side)",
@@ -300,6 +308,12 @@
       "fields": {
         "type": "string"
       },
+      "limit": {
+        "type": "integer"
+      },
+      "offset": {
+        "type": "integer"
+      },
       "serverFilters": {
         "items": {
           "type": "string"
@@ -308,11 +322,23 @@
           "null",
           "array"
         ]
+      },
+      "total": {
+        "description": "matching rows",
+        "type": "integer"
+      },
+      "truncated": {
+        "description": "true when more rows match than this page returns",
+        "type": "boolean"
       }
     },
     "required": [
       "devices",
       "count",
+      "total",
+      "truncated",
+      "limit",
+      "offset",
       "fields",
       "serverFilters",
       "clientFilters"
