@@ -1,0 +1,24 @@
+# gitleaks reads this file when it scans this repository without --config. It keeps every
+# default rule and adds the credential this project handles, which neither scanner knew:
+# gitleaks 8.30 has no Tailscale rule, and trufflehog 3.100 matches tskey-api- keys only, so
+# an OAuth client secret (tskey-client-) or an auth key (tskey-auth-) passed both.
+# TestTheTreeHoldsNoTailscaleKey in internal/workflows reads the regex below and applies it
+# to the files a commit could take, so `make verify` covers this rule as well.
+title = "tailkeeper"
+
+[extend]
+useDefault = true
+
+[[rules]]
+id = "tailscale-key"
+description = "A Tailscale API key, auth key, OAuth client secret, SCIM, webhook or app key"
+regex = '''tskey-(?:api|auth|client|scim|webhook|app)-[A-Za-z0-9]{6,}-[A-Za-z0-9]{16,}'''
+keywords = ["tskey-"]
+
+# The one Tailscale-shaped string in the history: a synthetic fixture of
+# internal/cli/security_scan_test.go (commits 0aec95c and 4a5f645, removed in a6c8e04), never
+# issued by Tailscale. Tests now build such strings with strings.Repeat.
+[[rules.allowlists]]
+description = "synthetic test fixture in the history"
+# The group keeps this line from matching the rule (and TestTheTreeHoldsNoTailscaleKey) itself.
+regexes = ['''^tskey-api-kABCDEFG1CNTRL-(?:0123456789abcdefghij)$''']
