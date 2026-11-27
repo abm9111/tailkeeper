@@ -47,7 +47,7 @@ A bounded record of one install of the published v0.7.0 bundle on 27 Nov 2026. I
 | Audit | `audit tail -n 5` showed the `tailkeeper_info` call, requester kind `mcp`, status `ok`; `audit verify` reported the chain intact. |
 | Not covered | Uninstall and reinstall, a call that needs the credential, Intel, an isolated host. |
 
-The host's model read the three empty lists as meaning that `security_scan` had nothing to run, although `security_scan` ships in this release: the lists name only published schemas, and the report schema is not yet published (the field text in 0.7.0 still says they stay empty until an assessor ships; from 0.7.1 it says `security_scan` runs regardless).
+The host's model read the three empty lists as meaning that `security_scan` had nothing to run, although `security_scan` ships in this release: the lists name only published schemas, and the report schema is not yet published (the field text in 0.7.0 still says they stay empty until an assessor ships; the next release says instead that they never gate `security_scan`).
 
 ## Future host trials
 

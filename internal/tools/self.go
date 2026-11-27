@@ -13,17 +13,17 @@ type SelfInput struct{}
 
 // SelfOutput identifies Tailkeeper, separately from Tailscale's local versions.
 // The lists name what this build exposes publicly: only published schemas, whatever schema
-// versions exist inside it, so they can be empty while security_scan ships and runs (a host's
-// model read the empty lists of 0.7.0 as "nothing to scan"). The text form prints each list,
-// none when it is empty.
+// versions exist inside it, so they can be empty while security_scan ships; nothing reads them
+// to decide whether it runs (in the 0.7.0 trial a host's model took the empty lists to mean
+// that security_scan had nothing to run). The text form prints each list, none when it is empty.
 type SelfOutput struct {
 	Name                   string   `json:"name" jsonschema:"The product this build identifies."`
 	Version                string   `json:"version" jsonschema:"Tailkeeper build version; dev is an unreleased build."`
 	OS                     string   `json:"os" jsonschema:"Operating system this binary targets."`
 	Arch                   string   `json:"arch" jsonschema:"Processor architecture this binary targets."`
-	ReportSchemas          []string `json:"reportSchemas" jsonschema:"Schema versions this build exposes publicly; security_scan runs regardless." tk:"none"`
-	CatalogSchemas         []string `json:"catalogSchemas" jsonschema:"Schema versions this build exposes publicly; security_scan runs regardless." tk:"none"`
-	AssessmentCapabilities []string `json:"assessmentCapabilities" jsonschema:"Assessment capabilities this build exposes publicly; security_scan runs regardless." tk:"none"`
+	ReportSchemas          []string `json:"reportSchemas" jsonschema:"Schema versions this build exposes publicly; it never gates security_scan." tk:"none"`
+	CatalogSchemas         []string `json:"catalogSchemas" jsonschema:"Schema versions this build exposes publicly; it never gates security_scan." tk:"none"`
+	AssessmentCapabilities []string `json:"assessmentCapabilities" jsonschema:"Assessment capabilities this build exposes publicly; it never gates security_scan." tk:"none"`
 }
 
 func selfTools() []registry.Tool {
