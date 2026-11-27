@@ -11,7 +11,7 @@
         "type": "string"
       },
       "assessmentCapabilities": {
-        "description": "Assessment capabilities this build exposes publicly; empty until an assessor ships.",
+        "description": "Assessment capabilities this build exposes publicly; security_scan runs regardless.",
         "items": {
           "type": "string"
         },
@@ -21,7 +21,7 @@
         ]
       },
       "catalogSchemas": {
-        "description": "Schema versions this build exposes publicly; empty until an assessor ships.",
+        "description": "Schema versions this build exposes publicly; security_scan runs regardless.",
         "items": {
           "type": "string"
         },
@@ -39,7 +39,7 @@
         "type": "string"
       },
       "reportSchemas": {
-        "description": "Schema versions this build exposes publicly; empty until an assessor ships.",
+        "description": "Schema versions this build exposes publicly; security_scan runs regardless.",
         "items": {
           "type": "string"
         },

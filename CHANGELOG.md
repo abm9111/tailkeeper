@@ -5,6 +5,7 @@ What each release of tailkeeper changed. Versions follow semantic versioning; un
 ## 0.7.1 — unreleased
 
 - The built-in advisory catalog is renewed: it now expires on 2027-02-25, so `doctor` warns on its `advisory catalog` row from 2027-02-11 instead of 2027-01-14, and fails (exit 8) from 2027-02-25 instead of 2027-01-28. A live re-check of the Tailscale bulletins on 2026-11-27 found TS-2022-005 (CVE-2022-41925) and TS-2026-014 to TS-2026-017 unchanged, so no rule changes: the dates and revisions move (catalog revision 3), and the four TS-2026 rules stay pending. TS-2026-018 (2026-11-12, the Kubernetes operator's dedicated API server proxy) is not a client rule and is not modelled. The catalog digest that `security scan` reports changes.
+- `tailkeeper_info` no longer says its three lists stay empty "until an assessor ships": each now says `security_scan` runs regardless. The lists name only published schemas, so they are empty while `security_scan` ships, and Claude Desktop read the 0.7.0 text as meaning there was nothing to scan. The new text has the same length, and a description change is compatible with the released schema.
 - The MCP definition byte budget (`toolListBudget`) stays at 112,051 bytes.
 
 ## 0.7.0 — 2026-11-27
