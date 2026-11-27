@@ -11,7 +11,7 @@ To identify the installed Tailkeeper build without loading configuration or cred
 run `tailkeeper self info --json`. The MCP equivalent is `tailkeeper_info`; it uses no credential per call, although
 an MCP session can load its configured providers when it starts.
 It distinguishes this binary from `local version`, which reports Tailscale versions.
-Empty assessment schema/capability lists mean that assessment is not implemented.
+The schema and capability lists name only published schemas; they are empty in 0.7.0 because the security report schema is not yet published, although `security scan` ships.
 See [security coverage](docs/security/coverage.md) for evidence and deployment limits.
 
 ## Quick start
@@ -49,7 +49,7 @@ Tailkeeper lets you inspect your Tailscale network from the command line or an M
 
 Download the archive for your platform (macOS and Linux on amd64 and arm64, Windows on amd64) from the [latest release](https://github.com/abm9111/tailkeeper/releases/latest), verify it (next section), then put `tailkeeper` on your `PATH`, for example in `~/.local/bin`.
 
-The planned universal macOS MCP bundle and its verification and host-acceptance status are described in [docs/install/mcpb.md](docs/install/mcpb.md). Supported-host installation remains pending; the direct-binary instructions here remain available.
+From 0.7.0 each release also ships a universal macOS MCP bundle (`tailkeeper_<version>_darwin_universal.mcpb`), listed in `checksums.txt` with its own SBOM; its verification and host-acceptance status are described in [docs/install/mcpb.md](docs/install/mcpb.md). Supported-host installation remains pending; the direct-binary instructions here remain available.
 
 On Windows the archive is a `.zip`, and the Windows build differs: it has no `exec` provider (start tailkeeper under your secret manager's run command and use the `env` provider), it does not check the owner or permissions of the configuration and credential files (`tailkeeper doctor` warns), and it cannot rotate the audit log. The audit log has no lock between processes there, so two tailkeeper processes writing at the same moment can break its chain. [docs/windows.md](docs/windows.md) lists every difference and the tests that do not run on Windows.
 

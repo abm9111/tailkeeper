@@ -29,7 +29,7 @@ A path is printed as it was typed, a space included, in the text layout and in M
 
 On Windows the name is refused before the file is opened. Refused: a UNC path; a path whose prefix is `\\?\`, `\\.\` or `\??\` (a `/` counts as a `\`, including a mix of the two); a device name (`CON`, `PRN`, `AUX`, `NUL`, `CONIN$`, `CONOUT$`, `COM` or `LPT` with a digit 0 to 9, and `COM` or `LPT` with a superscript 1, 2 or 3), in any directory, with any extension, in any case; an alternate data stream (a colon after the drive letter). Other platforms do not apply that name check.
 
-The same name check applies to a credential file: the `file` provider's path, a `file:` reference, an OIDC `tokenFile` and the file that holds the privacy key, all read through the checked private-file reader, and to the configuration file when it is read. On Windows such a read is refused with `config_unsafe`, before the file is opened, when its path is a UNC path, a `\\?\`, `\\.\` or `\??\` path, a device name or an alternate data stream. (Before this check only a file given to a command was held to it.)
+The same name check applies to a credential file: the `file` provider's path, a `file:` reference, an OIDC `tokenFile` and the file that holds the privacy key, all read through the checked private-file reader, and to the configuration file when it is read. On Windows such a read is refused with `config_unsafe`, before the file is opened (the configuration file before it is read: its path is first looked up and its identity taken), when its path is a UNC path, a `\\?\`, `\\.\` or `\??\` path, a device name or an alternate data stream. (Before this check only a file given to a command was held to it.)
 
 ## Tests that do not run on Windows
 

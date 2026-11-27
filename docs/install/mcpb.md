@@ -1,6 +1,6 @@
 # macOS MCP bundle: verification and acceptance
 
-The planned macOS MCPB is a universal bundle containing amd64 and arm64 executable slices. Its manifest uses MCPB schema version `0.3`, declares `darwin`, and starts `server/tailkeeper` with `mcp`. The manifest's package `version` is the release version without the leading `v`; the release binary reports that version with the `v`. The OS declaration is not a CPU selection field. Two slices in a file do not establish runtime acceptance on both CPUs.
+The macOS MCPB, shipped from 0.7.0, is a universal bundle containing amd64 and arm64 executable slices. Its manifest uses MCPB schema version `0.3`, declares `darwin`, and starts `server/tailkeeper` with `mcp`. The manifest's package `version` is the release version without the leading `v`; the release binary reports that version with the `v`. The OS declaration is not a CPU selection field. Two slices in a file do not establish runtime acceptance on both CPUs.
 
 **Narrow ARM64 host acceptance has been observed for an unsigned local snapshot.** It establishes that Claude Desktop 4.23118.0 on macOS 27.2 build 26B123 ARM64 recognized, installed, ran, and removed this package in a disposable VM. It does not establish acceptance of a signed published release, Intel runtime behavior, or Windows behavior. Use the [direct-binary route](../../README.md#install) when host acceptance is not established for your platform and package.
 
