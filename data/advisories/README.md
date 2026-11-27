@@ -47,7 +47,7 @@ Not modelled: TS-2026-018 (2026-11-12) concerns the Tailscale Kubernetes operato
 
 ## Re-review
 
-`TestShippedAdvisoriesAreNotNearExpiry` in `internal/advisory` reads every shipped `data/advisories/*.json` against the real clock and fails when the catalog `expires_at` or a record `review_expires_at` is past or within 14 days. With the dates above it starts to fail on 2027-02-11. To fix it, re-check the official bulletin, then update the dates and revisions in the JSON and in this file together.
+`TestShippedAdvisoriesAreNotNearExpiry` in `internal/advisory` reads every shipped `data/advisories/*.json` against the real clock and fails when the catalog `expires_at` or a record `review_expires_at` is past or within 14 days. With the dates above it starts to fail on 2027-02-11. To fix it, re-check the official bulletin, then update the dates and revisions in the JSON and in this file together, and the pins of `TestShippedTS2026RulesAreAsReviewed` in `internal/advisory/ts2026_test.go` (`ts2026Now`, the issue time and the revisions); state the new expiry and warning dates in `CHANGELOG.md` and `docs/security/known-limits.md`, which no test ties to the JSON.
 
 ## Semantics
 
