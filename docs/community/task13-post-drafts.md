@@ -4,7 +4,7 @@ These drafts are for review. No outreach or publication has been performed.
 
 ## Advisory applicability
 
-I made a reproducible synthetic example of an old reported client matching a reviewed advisory rule. The scan returns a finding while keeping the assessment partial: four newer rules need features no source observes, so they can only say potentially affected. A version match does not establish exploitation. Run the advisory test or all three examples using the command in [synthetic security demos](../security/demos.md).
+I made a reproducible synthetic example of an old reported client matching a reviewed advisory rule. The scan returns a finding while keeping the assessment partial: four newer rules cannot decide it (three need features no source observes, and the device reports no Tailscale SSH state), so they can only say potentially affected. A version match does not establish exploitation. Run the advisory test or all three examples using the command in [synthetic security demos](../security/demos.md).
 
 ## Excessive access
 

@@ -21,7 +21,8 @@ func TestPublicDemoAdvisoryApplicability(t *testing.T) {
 		t.Fatal(err)
 	}
 	// The old device is affected by the CVE rule and potentially affected by the four approved
-	// TS-2026 rules (their features are not observed); the current device is cleared by all five.
+	// TS-2026 rules (three need features no source observes, and the device reports no SSH
+	// state); the current device is cleared by all five.
 	if code != 8 || out.Status != "partial" || out.AtThreshold.Affected != 1 || out.AtThreshold.PotentiallyAffected != 4 || out.Counts.Unknown != 0 ||
 		out.Catalog.Approved != 5 || out.Catalog.Pending != 0 || !strings.Contains(h.err.String(), "findings_present") {
 		t.Fatalf("unexpected assessment: exit %d", code)
@@ -47,7 +48,7 @@ func TestPublicDemoAdvisoryApplicability(t *testing.T) {
 		t.Fatalf("affected rows %d, potentially affected TS-2026 rows %d", affected, potential)
 	}
 
-	fmt.Println("ADVISORY: exit 8; 1 affected and 4 potentially affected at threshold; assessment partial; 4 approved rules need features no source observes; reported version is evidence, not proof of exploitation.")
+	fmt.Println("ADVISORY: exit 8; 1 affected and 4 potentially affected at threshold; assessment partial; 4 approved rules lack the feature facts they need; reported version is evidence, not proof of exploitation.")
 }
 
 func TestPublicDemoExcessiveAccess(t *testing.T) {
