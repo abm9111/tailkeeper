@@ -2,7 +2,7 @@
 
 What each release of tailkeeper changed. Versions follow semantic versioning; until 1.0, a minor release may change the CLI or the MCP tool list.
 
-## 0.7.2 — unreleased
+## 0.7.2 — 2026-11-28
 
 - The four advisory rules TS-2026-014 to TS-2026-017 (the Tailscale bulletins of 2026-10-26: SSH forwarding to Unix sockets as root, SSH session memory exhaustion, Serve Unix-socket backends reaching privileged sockets, and Serve HTTP/2 capability headers across mounts) are approved by the owner, on 2026-11-28, after a live re-check of the bulletins and a comparison of each rule with its bulletin. They shipped `pending` in 0.7.0 and 0.7.1, so every device was `unknown` (`review_pending`) for them; now `security scan` and `security_scan` give verdicts, and `doctor` counts five approved rules and no pending one. The client, as the running daemon, is affected below 1.104.4 (no lower bound, no backport, no CVE, no severity in the bulletins):
   - A running daemon at 1.104.4 or later is `not_affected`. A running daemon below it is `affected` when every feature the rule requires is known on, `not_affected` when one is known off, and otherwise `potentially_affected` (`feature_unknown`). A version that only the API reports, for a device not shown connected to control, is `potentially_affected` (`runtime_unobserved`) below 1.104.4 and `unknown` (`runtime_unobserved`) at or above it. The mitigation text is attached to `affected` and `potentially_affected` findings.
