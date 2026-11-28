@@ -2,7 +2,7 @@
 GO          ?= go
 VERSION     ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo dev)
 LDFLAGS     := -s -w -X github.com/abm9111/tailkeeper/internal/version.Version=$(VERSION)
-STATICCHECK := honnef.co/go/tools/cmd/staticcheck@v0.8.1
+STATICCHECK := honnef.co/go/tools/cmd/staticcheck@v0.8.2
 GOVULNCHECK := golang.org/x/vuln/cmd/govulncheck@v1.8.0
 GOLANGCI    := github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v2.14.0
 ACTIONLINT  := github.com/rhysd/actionlint/cmd/actionlint@v1.7.12
@@ -223,11 +223,10 @@ vet:
 fmt-check:
 	@out="$$(gofmt -l .)" || exit 1; if [ -n "$$out" ]; then echo "gofmt needed:"; echo "$$out"; exit 1; fi
 
-# staticcheck v0.8.1 cannot read go1.27.4 export data. Lint results do not depend
-# on the patch release, so it runs under go1.27.1; builds and govulncheck use the
-# toolchain pinned in go.mod.
+# staticcheck runs under the toolchain pinned in go.mod, like the build and govulncheck.
+# (v0.8.1 could not read go1.27.4 export data and ran under go1.27.1; v0.8.2 can.)
 lint:
-	GOTOOLCHAIN=go1.27.1 $(GO) run $(STATICCHECK) ./...
+	$(GO) run $(STATICCHECK) ./...
 
 # gosec, errcheck, errorlint, bodyclose, misspell, ineffassign and unused
 # (.golangci.yml). staticcheck stays in `lint`.

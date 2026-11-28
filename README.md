@@ -62,7 +62,7 @@ From a clone, `make install` runs the gate (`make verify`), then installs the bi
 Every release is built by `.github/workflows/release.yml` from a signed tag. `checksums.txt` lists the SHA-256 of every archive and SBOM. A [cosign](https://docs.sigstore.dev/) keyless signature over it (`checksums.txt.sigstore.json`) proves that file came from that workflow, and a GitHub build-provenance attestation covers each file it lists; a second attestation step covers `checksums.txt` itself, which cannot list its own hash. Download the archive, `checksums.txt` and `checksums.txt.sigstore.json`, then run these lines in order and stop at the first one that fails (a shell does not stop for you when you paste them, so a later line can succeed after an earlier one failed):
 
 ```
-VERSION=v0.7.0
+VERSION=v0.7.1
 ARCHIVE=tailkeeper_${VERSION#v}_darwin_arm64.tar.gz   # the archive you downloaded
 IDENTITY="https://github.com/abm9111/tailkeeper/.github/workflows/release.yml@refs/tags/$VERSION"
 
