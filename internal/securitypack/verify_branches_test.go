@@ -311,6 +311,28 @@ func TestIntentAndAccessBoundsRefuseEachKindOfExcess(t *testing.T) {
 	if accessWithinBounds(context.Background(), bad) {
 		t.Fatal("overlong limit accepted")
 	}
+	bad = input
+	bad.Witnesses = make([]security.AccessWitness, security.MaxAccessPairs+1)
+	if accessWithinBounds(context.Background(), bad) {
+		t.Fatal("more witnesses than access pairs accepted")
+	}
+	bad = input
+	bad.Owners = make([]security.AccessOwner, security.MaxObservations+1)
+	if accessWithinBounds(context.Background(), bad) {
+		t.Fatal("too many owners accepted")
+	}
+	bad = input
+	bad.Owners = []security.AccessOwner{{Source: long}}
+	if accessWithinBounds(context.Background(), bad) {
+		t.Fatal("overlong owner source accepted")
+	}
+	bad = input
+	bad.Owners = []security.AccessOwner{{Source: "group", Tags: []string{long}}}
+	if accessWithinBounds(context.Background(), bad) {
+		t.Fatal("overlong owner tag accepted")
+	}
+	// The node-count checks on candidate rules and limits need more than MaxPackNodes
+	// entries (hundreds of megabytes); they are left untested here.
 }
 
 func TestSelectCompatibleStopsAtEachCheck(t *testing.T) {

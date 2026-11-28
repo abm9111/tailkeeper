@@ -64,6 +64,9 @@ func TestNormalizedOmittedRefusesOutOfRangeCounts(t *testing.T) {
 	if got, err := normalizedOmitted(limit-2, 5, 3); err != nil || got != limit {
 		t.Fatalf("inclusive bound: %d %v", got, err)
 	}
+	if got, err := normalizedOmitted(limit, 3, 3); err != nil || got != limit {
+		t.Fatalf("an omission at the bound itself: %d %v", got, err)
+	}
 	for _, tc := range []struct {
 		name                 string
 		omitted, count, keep int

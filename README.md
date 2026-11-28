@@ -11,7 +11,7 @@ To identify the installed Tailkeeper build without loading configuration or cred
 run `tailkeeper self info --json`. The MCP equivalent is `tailkeeper_info`; it uses no credential per call, although
 an MCP session can load its configured providers when it starts.
 It distinguishes this binary from `local version`, which reports Tailscale versions.
-The schema and capability lists name only published schemas; they are empty in 0.7.0 because the security report schema is not yet published, although `security scan` ships.
+The schema and capability lists name only published schemas; they are empty in 0.7.0 and 0.7.1 because the security report schema is not yet published, although `security scan` ships.
 See [security coverage](docs/security/coverage.md) for evidence and deployment limits.
 
 ## Quick start
