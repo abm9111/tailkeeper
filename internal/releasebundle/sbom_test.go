@@ -580,6 +580,11 @@ func fakeArchiveSyft(mode string) int {
 		binary += ".exe"
 	}
 	name := filepath.Join(filepath.Dir(cwd), "tmp", "syft-archive-contents-123", binary)
+	if strings.Contains(mode, "nogo") {
+		// A well-formed document whose only component is the binary: no Go module is listed.
+		fmt.Printf(`{"metadata":{},"components":[{"type":"file","name":%q,"hashes":[{"alg":"SHA-256","content":%q}]}]}`, name, hex.EncodeToString(hash[:]))
+		return 0
+	}
 	fmt.Printf(`{"metadata":{},"components":[{"type":"file","name":%q,"hashes":[{"alg":"SHA-256","content":%q}]},{"type":"library","name":"example","purl":"pkg:golang/example@v1"}]}`, name, hex.EncodeToString(hash[:]))
 	return 0
 }

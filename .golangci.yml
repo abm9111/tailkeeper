@@ -1,5 +1,5 @@
-# golangci-lint v2 configuration. staticcheck runs separately (`make lint`, under
-# go1.27.1; see the Makefile), so it is not enabled here.
+# golangci-lint v2 configuration. staticcheck runs separately (`make lint`; see the
+# Makefile), so it is not enabled here.
 version: "2"
 
 run:
