@@ -71,11 +71,11 @@ func TestSelfInfoDescribesItselfAndItsLists(t *testing.T) {
 			t.Errorf("the description lacks %q: %s", want, tool.Meta.Summary)
 		}
 	}
-	const schemas = "Schema versions this build exposes publicly; empty until an assessor ships."
+	const schemas = "Schema versions this build exposes publicly; it never gates security_scan."
 	for name, want := range map[string]string{
 		"reportSchemas":          schemas,
 		"catalogSchemas":         schemas,
-		"assessmentCapabilities": "Assessment capabilities this build exposes publicly; empty until an assessor ships.",
+		"assessmentCapabilities": "Assessment capabilities this build exposes publicly; it never gates security_scan.",
 	} {
 		p, ok := tool.OutputSchema.Properties[name]
 		if !ok || p.Description != want {
