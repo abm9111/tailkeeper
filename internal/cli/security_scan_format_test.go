@@ -148,10 +148,10 @@ func TestSecurityScanFormatsAgree(t *testing.T) {
 		code      int
 		truncated bool
 	}{
-		"findings, cut at 100":       {many, nil, 8, true},
-		"a finding, not cut":         {fleet(at), nil, 8, false},
-		"nothing found, incomplete":  {[]map[string]any{scanDevice(at, "nNEW01CNTRL", "1.102.5-t0123456ab", nil)}, nil, 1, false},
-		"a threshold above the find": {fleet(at), []string{"--threshold", "high"}, 1, false},
+		"findings, cut at 100":      {many, nil, 8, true},
+		"a finding, not cut":        {fleet(at), nil, 8, false},
+		"nothing found, incomplete": {[]map[string]any{scanDevice(at, "nNEW01CNTRL", currentRelease, nil)}, nil, 1, false},
+		"a threshold above the CVE": {fleet(at), []string{"--threshold", "high"}, 8, false},
 	}
 	for name, c := range cases {
 		run := func(extra ...string) (int, string, string) {
@@ -227,9 +227,13 @@ func TestSecurityScanMarkdownLayout(t *testing.T) {
 	}
 	md := h.out.String()
 	for _, want := range []string{
-		"**fleet scan: partial; 1 affected, 0 potentially affected, 8 unknown, 1 not affected (10 findings, 10 listed)**\n\nFacts:\n\n- threshold low: 1 affected and 0 potentially affected at or above it\n",
-		"- catalog: revision ", "- coverage intent: not\\_requested - intent not requested: no intent set is configured\n", "\nFindings:\n\n- error: CVE-2022-41925 · nOLD… · affected · severity low · ",
-		"- notice: CVE-2022-41925 · nNEW… · not\\_affected · severity low · ",
+		"**fleet scan: partial; 1 affected, 4 potentially affected, 0 unknown, 5 not affected (10 findings, 10 listed)**\n\nFacts:\n\n- threshold low: 1 affected and 4 potentially affected at or above it\n",
+		"- catalog: revision ", "5 approved, 0 pending, 0 withdrawn",
+		"- coverage catalog: partial - potentially affected findings: 4 (feature\\_unknown 4)\n",
+		"no source gives the features serve\\_tls\\_multi\\_mount, serve\\_unix\\_backend, ssh\\_forwarding\\_allowed",
+		"- coverage intent: not\\_requested - intent not requested: no intent set is configured\n", "\nFindings:\n\n- error: CVE-2022-41925 · nOLD… · affected · severity low · ",
+		"- warning: TS-2026-014 · nOLD… · potentially\\_affected · severity unknown · reason feature\\_unknown · ",
+		"- notice: CVE-2022-41925 · nNEW… · not\\_affected · severity low · ", "- notice: TS-2026-017 · nNEW… · not\\_affected · severity unknown · ",
 	} {
 		if !strings.Contains(md, want) {
 			t.Errorf("the Markdown lacks %q:\n%.1500s", want, md)

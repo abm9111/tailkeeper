@@ -61,10 +61,17 @@ func scanHarness(t *testing.T, at time.Time, devs ...map[string]any) *harness {
 	return h
 }
 
+// currentRelease is a stable release past the newest fix of any shipped rule (1.104.4, the fix
+// of TS-2026-014 to TS-2026-017), so that a connected device that runs it is cleared by every
+// shipped rule. 1.102.5 was current while the TS-2026 rules were pending; it is now in range
+// of all four.
+const currentRelease = "1.104.5-t0123456ab"
+
 // fleet is a fleet in which one device is affected (the shipped rule, connected, an old client)
-// and one is not.
+// and one is not: the old device is also potentially affected by the four TS-2026 rules,
+// whose features no source observes, and the current one is cleared by all five rules.
 func fleet(at time.Time) []map[string]any {
-	return []map[string]any{scanDevice(at, "nOLD01CNTRL", "1.28.2-t0123456ab", nil), scanDevice(at, "nNEW01CNTRL", "1.102.5-t0123456ab", nil)}
+	return []map[string]any{scanDevice(at, "nOLD01CNTRL", "1.28.2-t0123456ab", nil), scanDevice(at, "nNEW01CNTRL", currentRelease, nil)}
 }
 
 func decode(t *testing.T, b []byte) map[string]any {
@@ -94,18 +101,20 @@ func TestSecurityScanExitCodes(t *testing.T) {
 			t.Errorf("stderr blames a --fail-on the command does not have: %q", h.err)
 		}
 	})
-	t.Run("a threshold above the finding is 1, not 8", func(t *testing.T) {
+	t.Run("a threshold above the CVE's severity is still 8: the TS-2026 rules have none", func(t *testing.T) {
 		h := scanHarness(t, at, fleet(at)...)
-		// The shipped rule's severity is low.
-		if code := h.run("--json", "security", "scan", "fleet", "--threshold", "medium"); code != 1 {
-			t.Fatalf("exit %d, want 1: %s %s", code, h.out, h.err)
+		// The CVE rule's severity is low, so its affected finding is below every higher threshold.
+		// The four TS-2026 rules carry no severity, and an unknown severity is above every
+		// threshold, so the old device's four potentially affected findings count at critical.
+		if code := h.run("--json", "security", "scan", "fleet", "--threshold", "critical"); code != 8 {
+			t.Fatalf("exit %d, want 8: %s %s", code, h.out, h.err)
 		}
-		if got := decode(t, h.out.Bytes())["atThreshold"].(map[string]any); got["affected"] != float64(0) || got["potentiallyAffected"] != float64(0) {
-			t.Errorf("at threshold %v", got)
+		if got := decode(t, h.out.Bytes())["atThreshold"].(map[string]any); got["affected"] != float64(0) || got["potentiallyAffected"] != float64(4) {
+			t.Errorf("at threshold %v, want 0 affected and 4 potentially affected", got)
 		}
 	})
 	t.Run("nothing found and not everything covered is 1", func(t *testing.T) {
-		h := scanHarness(t, at, scanDevice(at, "nNEW01CNTRL", "1.102.5-t0123456ab", nil))
+		h := scanHarness(t, at, scanDevice(at, "nNEW01CNTRL", currentRelease, nil))
 		if code := h.run("security", "scan", "fleet"); code != 1 {
 			t.Fatalf("exit %d, want 1: %s %s", code, h.out, h.err)
 		}
@@ -115,18 +124,30 @@ func TestSecurityScanExitCodes(t *testing.T) {
 			t.Errorf("--quiet: exit %d, %d bytes", code, h.out.Len())
 		}
 	})
-	t.Run("the shipped catalog's pending rules keep a clean fleet from exiting 0", func(t *testing.T) {
-		// Everything else is whole except what the stand-in lacks (the local sources fail):
-		// the catalog row is partial by itself, because four rules are pending.
-		h := scanHarness(t, at, scanDevice(at, "nNEW01CNTRL", "1.102.5-t0123456ab", nil))
+	t.Run("the shipped catalog keeps a clean fleet from exiting 0: three features have no source", func(t *testing.T) {
+		// A current, connected device is cleared by all five shipped rules, and no rule is
+		// pending, so the catalog row has nothing to say. What keeps the scan partial, besides
+		// the local sources this harness lacks, is the features row: the four TS-2026 rules
+		// require features that no source gives. The unix test of a whole fleet shows that
+		// cause alone.
+		h := scanHarness(t, at, scanDevice(at, "nNEW01CNTRL", currentRelease, nil))
 		if code := h.run("--json", "security", "scan", "fleet"); code != 1 {
 			t.Fatalf("exit %d: %s", code, h.out)
 		}
-		rows := decode(t, h.out.Bytes())["coverage"].([]any)
-		for _, r := range rows {
-			if m := r.(map[string]any); m["dimension"] == "catalog" && !strings.Contains(fmt.Sprint(m["explanation"]), "pending rules: 4") {
-				t.Errorf("the catalog row does not name the pending rules: %v", m)
-			}
+		out := decode(t, h.out.Bytes())
+		seen := map[string]string{}
+		for _, r := range out["coverage"].([]any) {
+			m := r.(map[string]any)
+			seen[fmt.Sprint(m["dimension"])] = fmt.Sprint(m["status"]) + ": " + fmt.Sprint(m["explanation"])
+		}
+		if want := "no source gives the features serve_tls_multi_mount, serve_unix_backend, ssh_forwarding_allowed"; !strings.Contains(seen["features"], want) {
+			t.Errorf("the features row does not name the features no source gives: %q", seen["features"])
+		}
+		if !strings.HasPrefix(seen["catalog"], "complete") {
+			t.Errorf("the catalog row of a cleared device: %q, want complete: no rule is pending", seen["catalog"])
+		}
+		if out["catalog"].(map[string]any)["pending"] != float64(0) {
+			t.Errorf("the shipped catalog has pending rules: %v", out["catalog"])
 		}
 	})
 }

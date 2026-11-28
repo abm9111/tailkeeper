@@ -4,17 +4,30 @@ This is a concise guide, not a security assurance or a complete support matrix.
 See [coverage](coverage.md), [threat model](../threat-model.md) and
 [security policy](../../SECURITY.md) for details.
 
-- The catalog built into 0.7.1 expires on 2027-02-25 at 18:22 UTC: from the
-  same time on 2027-02-11 `doctor` warns on its `advisory catalog` row, and from
-  2027-02-25 18:22 UTC that row fails
+- The catalog built into 0.7.2 expires on 2027-02-26 at 08:35 UTC: from the
+  same time on 2027-02-12 `doctor` warns on its `advisory catalog` row, and from
+  2027-02-26 08:35 UTC that row fails
   (exit 8) and a scan no longer clears a device: what it would have found not
-  affected is `unknown` (`catalog_expired`). The catalog built into 0.7.0
-  expires sooner, at 00:00 UTC on 2027-01-28 (warning from 2027-01-14):
-  upgrade before then.
+  affected is `unknown` (`catalog_expired`). The catalog built into 0.7.1
+  expires on 2027-02-25 at 18:22 UTC (warning from the same time on
+  2027-02-11), and the one built into 0.7.0 expires sooner, at 00:00 UTC on
+  2027-01-28 (warning from 2027-01-14): upgrade before then.
 - The assessor is partial. The embedded catalog has one reviewed rule,
-  CVE-2022-41925, and four pending rules, TS-2026-014 through TS-2026-017.
-  Pending rules yield unknown; there is no live catalog sync or promise to cover
-  every CVE. A positive finding is not proof of exploitation.
+  CVE-2022-41925, and four rules the owner approved on 2026-11-28,
+  TS-2026-014 through TS-2026-017 (fixed in 1.104.4; the bulletins give no
+  severity). Of the features those four need, only Tailscale SSH is observed. A
+  device whose running daemon is below 1.104.4 is therefore potentially
+  affected (`feature_unknown`) by TS-2026-016 and TS-2026-017 whatever it runs,
+  and by TS-2026-014 unless Tailscale SSH is known off; a device with only an
+  API-reported version below 1.104.4 is potentially affected
+  (`runtime_unobserved`). These rules carry no severity, so such a finding
+  counts at every `--threshold` and `security scan` exits 8, and a scan by this
+  catalog is never complete: its features row names the three features no
+  source gives. TS-2026-016 and TS-2026-017 are broader than their bulletins
+  (they do not check a local operator's write access, or that the capability
+  requirements of the mounts differ), so a finding for them may not be a real
+  exposure. There is no live catalog sync or promise to cover every CVE. A
+  positive finding is not proof of exploitation.
 - API versions are reported evidence. Only current connection and freshness
   conditions allow them to speak for a running daemon. Upgrading the local CLI
   alone does not prove the daemon was fixed. Missing, stale, offline, unsupported

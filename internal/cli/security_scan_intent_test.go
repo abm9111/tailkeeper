@@ -98,7 +98,7 @@ func intentOf(t *testing.T, out map[string]any) map[string]any {
 
 func TestScanInvariantsFlagThroughTheCommandLine(t *testing.T) {
 	at := scanAt(t)
-	clean := scanDevice(at, "nNEW01CNTRL", "1.102.5-t0123456ab", nil)
+	clean := scanDevice(at, "nNEW01CNTRL", currentRelease, nil)
 
 	t.Run("a named file is the intent: requested, named by digest, partial", func(t *testing.T) {
 		h := withKey(scanHarness(t, at, clean))

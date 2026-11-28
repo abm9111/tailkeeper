@@ -9,6 +9,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/abm9111/tailkeeper/internal/advisory"
 	"github.com/abm9111/tailkeeper/internal/config"
 	"github.com/abm9111/tailkeeper/internal/local"
 	"github.com/abm9111/tailkeeper/internal/registry"
@@ -42,17 +43,82 @@ func approvedCatalog(at time.Time) func() (security.Catalog, error) {
 // working local node, so that every source is whole.
 func scanWithApprovedRules(t *testing.T, at time.Time, devs ...map[string]any) *harness {
 	t.Helper()
+	return scanWithCatalog(t, at, approvedCatalog(at), standInTailscale, devs...)
+}
+
+// scanWithCatalog is a harness that scans by the catalog given and has a working local node,
+// the stand-in script, so that every source is whole.
+func scanWithCatalog(t *testing.T, at time.Time, catalog func() (security.Catalog, error), script string, devs ...map[string]any) *harness {
+	t.Helper()
 	h := scanHarness(t, at, devs...)
 	dir := t.TempDir()
 	bin := filepath.Join(dir, "tailscale")
-	if err := os.WriteFile(bin, []byte(standInTailscale), 0o755); err != nil { //nolint:gosec // an executable stand-in in a temporary directory
+	if err := os.WriteFile(bin, []byte(script), 0o755); err != nil { //nolint:gosec // an executable stand-in in a temporary directory
 		t.Fatal(err)
 	}
 	h.app.Env.Local, h.app.Env.LocalErr = &local.Runner{Bin: local.Binary{Path: bin, Variant: local.VariantConfigured}, Home: dir, PerMinute: 1000}, nil
 	reg := registry.New()
-	reg.MustAdd(tools.SecurityScanTool(approvedCatalog(at)))
+	reg.MustAdd(tools.SecurityScanTool(catalog))
 	h.r.Registry = func() *registry.Registry { return reg }
 	return h
+}
+
+// A finding below the threshold does not make the exit 8: with a threshold above the severity
+// of the only rule (the shipped rules cannot show this any more, since four of them carry no
+// severity and an unknown severity is above every threshold), a scan that is partial because a
+// source failed exits 1, and the finding is counted but not at the threshold.
+func TestAThresholdAboveEveryFindingExitsOneWhenThePartialScanFoundNothingAtIt(t *testing.T) {
+	at := scanAt(t)
+	h := scanWithApprovedRules(t, at, scanDevice(at, "nSELF1CNTRL", "1.102.5-t0123456ab", nil), scanDevice(at, "nOLD01CNTRL", "1.28.2-t0123456ab", nil))
+	h.app.Env.Local, h.app.Env.LocalErr = nil, tkerr.New(tkerr.LocalBinaryMissing, "no tailscale CLI found", "")
+	if code := h.run("--json", "security", "scan", "fleet", "--threshold", "critical"); code != 1 {
+		t.Fatalf("exit %d, want 1: %s %s", code, h.out, h.err)
+	}
+	out := decode(t, h.out.Bytes())
+	if out["counts"].(map[string]any)["affected"] != float64(1) {
+		t.Fatalf("the premise: the old device is affected (below the threshold): %v", out["counts"])
+	}
+	if got := out["atThreshold"].(map[string]any); got["affected"] != float64(0) || got["potentiallyAffected"] != float64(0) {
+		t.Errorf("at threshold %v, want nothing", got)
+	}
+}
+
+// The shipped catalog requires features that no source observes (ssh_forwarding_allowed,
+// serve_unix_backend and serve_tls_multi_mount, for TS-2026-014, -016 and -017), so a scan by
+// it is never complete, whatever the fleet: not when every source is whole, every device runs
+// a release past every fix and every rule is approved and fresh, and no intent is requested.
+// The features row is then the only cause, and the scan is partial and exits 1 with nothing at
+// its threshold; a complete scan and exit 0 need a source for those features first.
+func TestAScanByTheShippedCatalogOfACleanWholeFleetIsPartialForWantOfThreeFeatures(t *testing.T) {
+	at := scanAt(t)
+	// The same stand-in node as the other tests, running a release past the shipped fixes.
+	script := strings.ReplaceAll(standInTailscale, "1.102.5", "1.104.5")
+	h := scanWithCatalog(t, at, advisory.Shipped, script,
+		scanDevice(at, "nSELF1CNTRL", currentRelease, map[string]any{"sshEnabled": false}),
+		scanDevice(at, "nNEW01CNTRL", currentRelease, map[string]any{"sshEnabled": false}))
+	if code := h.run("--json", "security", "scan", "fleet"); code != 1 {
+		t.Fatalf("exit %d, want 1: %s %s", code, h.out, h.err)
+	}
+	out := decode(t, h.out.Bytes())
+	if out["status"] != "partial" || out["totalFindings"] != float64(10) || out["counts"].(map[string]any)["notAffected"] != float64(10) {
+		t.Fatalf("the premise: two devices, five rules, every finding not affected, and the scan partial: %v", out)
+	}
+	rows := map[string]map[string]any{}
+	for _, r := range out["coverage"].([]any) {
+		m := r.(map[string]any)
+		rows[m["dimension"].(string)] = m
+	}
+	for _, d := range []string{"versions", "catalog"} {
+		if rows[d]["status"] != "complete" {
+			t.Errorf("the %s row: %v, want complete (the premise: only the features are missing)", d, rows[d])
+		}
+	}
+	if rows["features"]["status"] != "partial" || rows["features"]["explanation"] != "no source gives the features serve_tls_multi_mount, serve_unix_backend, ssh_forwarding_allowed" {
+		t.Errorf("the features row: %v", rows["features"])
+	}
+	if c := out["catalog"].(map[string]any); c["approved"] != float64(5) || c["pending"] != float64(0) {
+		t.Errorf("the shipped catalog: %v, want five rules, all approved", c)
+	}
 }
 
 // With no intent set configured and every rule approved, a scan whose every source is whole

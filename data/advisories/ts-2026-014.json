@@ -1,21 +1,21 @@
 {
   "schema_version": 1,
-  "revision": 2,
-  "issued_at": "2026-11-27T18:22:00Z",
-  "expires_at": "2027-02-25T18:22:00Z",
+  "revision": 3,
+  "issued_at": "2026-11-28T08:35:00Z",
+  "expires_at": "2027-02-26T08:35:00Z",
   "records": [
     {
       "id": "TS-2026-014",
-      "revision": "2",
+      "revision": "3",
       "component": "client",
       "version_role": "running_daemon",
       "source": "https://tailscale.com/security-bulletins#ts-2026-014",
       "severity": "unknown",
       "published_at": "2026-10-26T00:00:00Z",
-      "reviewed_at": "2026-11-27T18:22:00Z",
-      "source_checked_at": "2026-11-27T18:22:00Z",
-      "review_expires_at": "2027-02-25T18:22:00Z",
-      "review_state": "pending",
+      "reviewed_at": "2026-11-28T08:35:00Z",
+      "source_checked_at": "2026-11-28T08:35:00Z",
+      "review_expires_at": "2027-02-26T08:35:00Z",
+      "review_state": "approved",
       "ranges": [
         {
           "fixed": "1.104.4"
@@ -25,7 +25,7 @@
         "tailscale_ssh",
         "ssh_forwarding_allowed"
       ],
-      "mitigation": "Update Tailscale to 1.104.4 or later; the vendor bulletin lists that release as the fix."
+      "mitigation": "Update Tailscale to 1.104.4 or later; the vendor bulletin lists that release as the fix. Until then, setting TS_SSH_DISABLE_FORWARDING=1 in the tailscaled service environment and restarting it disables SSH forwarding without disabling Tailscale SSH."
     }
   ]
 }

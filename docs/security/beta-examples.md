@@ -15,9 +15,10 @@ or support of a production artifact. Read the assertions in
 [public_demo_unix_test.go](../../internal/cli/public_demo_unix_test.go) and the
 [demo description](demos.md):
 
-1. **Advisory:** an old reported stable client matches the reviewed rule;
-   four pending rules are unknown. Scan exit 8 for a threshold finding outranks
-   partial coverage. The reported version is evidence, not proof of exploitation.
+1. **Advisory:** an old reported stable client matches the reviewed rule and
+   is potentially affected by four approved rules: three need features no
+   source observes, and the device reports no Tailscale SSH state. Scan exit 8 for a threshold finding outranks partial coverage. The
+   reported version is evidence, not proof of exploitation.
 2. **Access:** the fake validator witnesses a deny expectation allowed, exit 8.
    A broad matching rule is a candidate, not proven cause; conditional blast
    radius establishes neither a listening service nor exploitation.
