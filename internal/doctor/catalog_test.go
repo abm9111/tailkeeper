@@ -107,8 +107,10 @@ func TestDoctorCatalogSummaryStatesTheCatalog(t *testing.T) {
 	if strings.Contains(row.Detail, sum.Digest[:9]) {
 		t.Errorf("the row shows more than eight digits of the digest: %q", row.Detail)
 	}
-	if sum.Rules == 0 || sum.Pending == 0 {
-		t.Fatalf("the premise: the shipped catalog has rules and some pending: %+v", sum)
+	// The shipped rules are all approved, so the pending count is zero here; the table of
+	// TestDoctorCatalogRowStates gives a summary with pending rules to show that count.
+	if sum.Rules == 0 || sum.Approved == 0 || sum.Approved+sum.Pending+sum.Withdrawn != sum.Rules {
+		t.Fatalf("the premise: the shipped catalog has rules, some approved, and every rule in one state: %+v", sum)
 	}
 }
 

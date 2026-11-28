@@ -125,8 +125,9 @@ elapsed time where observed. Ask them to:
 1. Install the verified artifact on the chosen host and state one access
    expectation *before* seeing the result. Record artifact and setup as above.
 2. Assess one reviewed advisory, explain the evidence for its applicability and
-   what remains unknown. Explain that pending rules and unavailable facts are
-   not clean findings.
+   what remains unknown. Explain that potentially affected and unknown findings
+   (a feature or a running daemon nobody observed) and unavailable facts are not
+   clean findings.
 3. Evaluate the stated expectation with CLI `security explain` where available;
    explain its verdict and why a candidate rule is not established causation.
 4. Export and replay a private before-pack and verify an independently performed

@@ -1,21 +1,21 @@
 {
   "schema_version": 1,
-  "revision": 2,
-  "issued_at": "2026-11-27T18:22:00Z",
-  "expires_at": "2027-02-25T18:22:00Z",
+  "revision": 3,
+  "issued_at": "2026-11-28T08:35:00Z",
+  "expires_at": "2027-02-26T08:35:00Z",
   "records": [
     {
       "id": "TS-2026-017",
-      "revision": "2",
+      "revision": "3",
       "component": "client",
       "version_role": "running_daemon",
       "source": "https://tailscale.com/security-bulletins#ts-2026-017",
       "severity": "unknown",
       "published_at": "2026-10-26T00:00:00Z",
-      "reviewed_at": "2026-11-27T18:22:00Z",
-      "source_checked_at": "2026-11-27T18:22:00Z",
-      "review_expires_at": "2027-02-25T18:22:00Z",
-      "review_state": "pending",
+      "reviewed_at": "2026-11-28T08:35:00Z",
+      "source_checked_at": "2026-11-28T08:35:00Z",
+      "review_expires_at": "2027-02-26T08:35:00Z",
+      "review_state": "approved",
       "ranges": [
         {
           "fixed": "1.104.4"

@@ -20,10 +20,13 @@ func TestPublicDemoAdvisoryApplicability(t *testing.T) {
 	if err := json.Unmarshal(h.out.Bytes(), &out); err != nil {
 		t.Fatal(err)
 	}
-	if code != 8 || out.Status != "partial" || out.AtThreshold.Affected != 1 || out.Counts.Unknown != 8 || out.Catalog.Pending != 4 || !strings.Contains(h.err.String(), "findings_present") {
+	// The old device is affected by the CVE rule and potentially affected by the four approved
+	// TS-2026 rules (their features are not observed); the current device is cleared by all five.
+	if code != 8 || out.Status != "partial" || out.AtThreshold.Affected != 1 || out.AtThreshold.PotentiallyAffected != 4 || out.Counts.Unknown != 0 ||
+		out.Catalog.Approved != 5 || out.Catalog.Pending != 0 || !strings.Contains(h.err.String(), "findings_present") {
 		t.Fatalf("unexpected assessment: exit %d", code)
 	}
-	affected, pending := 0, 0
+	affected, potential := 0, 0
 	for _, finding := range out.Findings {
 		if finding.Rule == "CVE-2022-41925" && finding.Applicability == "affected" {
 			affected++
@@ -36,15 +39,15 @@ func TestPublicDemoAdvisoryApplicability(t *testing.T) {
 				}
 			}
 		}
-		if finding.Reason == "review_pending" && finding.Applicability == "unknown" {
-			pending++
+		if strings.HasPrefix(finding.Rule, "TS-2026-") && finding.Reason == "feature_unknown" && finding.Applicability == "potentially_affected" && len(finding.Verification) == 1 {
+			potential++
 		}
 	}
-	if affected != 1 || pending != 8 {
-		t.Fatalf("affected rows %d, pending unknown rows %d", affected, pending)
+	if affected != 1 || potential != 4 {
+		t.Fatalf("affected rows %d, potentially affected TS-2026 rows %d", affected, potential)
 	}
 
-	fmt.Println("ADVISORY: exit 8; 1 affected at threshold; assessment partial; 4 rules pending; reported version is evidence, not proof of exploitation.")
+	fmt.Println("ADVISORY: exit 8; 1 affected and 4 potentially affected at threshold; assessment partial; 4 approved rules need features no source observes; reported version is evidence, not proof of exploitation.")
 }
 
 func TestPublicDemoExcessiveAccess(t *testing.T) {

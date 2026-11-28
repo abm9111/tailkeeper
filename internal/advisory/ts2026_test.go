@@ -13,10 +13,10 @@ import (
 	"github.com/abm9111/tailkeeper/internal/security"
 )
 
-// The bulletins TS-2026-014 to TS-2026-017 ship as pending rules, one file each. The tests
-// read the shipped files, so a rule cannot change without a test saying so. Matching is
-// tried on a copy whose review state is approved: the shipped rules stay pending until the
-// owner confirms the bulletin text, and a pending rule can only give unknown.
+// The bulletins TS-2026-014 to TS-2026-017 ship as approved rules, one file each: the owner
+// confirmed the bulletin text on 2026-11-28 after a live re-check (data/advisories/README.md).
+// The tests read the shipped files, so a rule cannot change without a test saying so, and
+// match devices against them as shipped.
 
 type ts2026Rule struct {
 	id       string
@@ -41,9 +41,9 @@ const (
 	ts2026SuffixTG = "-t0123456ab-gfedcba987"
 )
 
-// ts2026Now is after the catalogs were issued (2026-11-27T18:22:00Z) and long before they
+// ts2026Now is after the catalogs were issued (2026-11-28T08:35:00Z) and long before they
 // expire, so the catalog and the rules are fresh.
-var ts2026Now = time.Date(2026, 11, 28, 12, 0, 0, 0, time.UTC)
+var ts2026Now = time.Date(2026, 11, 29, 12, 0, 0, 0, time.UTC)
 
 func readTS2026(t *testing.T, rule ts2026Rule) security.Catalog {
 	t.Helper()
@@ -59,15 +59,6 @@ func readTS2026(t *testing.T, rule ts2026Rule) security.Catalog {
 		t.Fatalf("%s: want one record, got %d", rule.file, len(catalog.Records))
 	}
 	return catalog
-}
-
-// approvedCopy returns a copy of the catalog whose record is approved. The records are
-// copied, so the catalog it was made from stays pending.
-func approvedCopy(c security.Catalog) security.Catalog {
-	out := c
-	out.Records = append([]security.AdvisoryRecord(nil), c.Records...)
-	out.Records[0].ReviewState = security.ReviewApproved
-	return out
 }
 
 // ts2026Fact is one feature fact of a device and the origin that reported it.
@@ -111,10 +102,23 @@ func matchTS2026(t *testing.T, c security.Catalog, s security.Snapshot) []securi
 	return findings
 }
 
+// ts2026Update is what three of the shipped rules say to do. The bulletin of TS-2026-014 also
+// gives a way to disable forwarding without disabling Tailscale SSH, and that rule says it
+// after the same sentence (ts2026Mitigation); the other three bulletins give none.
+const ts2026Update = "Update Tailscale to 1.104.4 or later; the vendor bulletin lists that release as the fix."
+
+var ts2026Mitigation = map[string]string{
+	"TS-2026-014": ts2026Update + " Until then, setting TS_SSH_DISABLE_FORWARDING=1 in the tailscaled service environment and restarting it disables SSH forwarding without disabling Tailscale SSH.",
+	"TS-2026-015": ts2026Update,
+	"TS-2026-016": ts2026Update,
+	"TS-2026-017": ts2026Update,
+}
+
 // The shipped files say what the bulletins say and no more: fixed in 1.104.4 with no lower
-// bound and no backport, no CVE, pending, severity unknown because the bulletins gave none.
+// bound and no backport, no CVE, approved by the owner, severity unknown because the
+// bulletins gave none.
 func TestShippedTS2026RulesAreAsReviewed(t *testing.T) {
-	issued := time.Date(2026, 11, 27, 18, 22, 0, 0, time.UTC)
+	issued := time.Date(2026, 11, 28, 8, 35, 0, 0, time.UTC)
 	expires := issued.AddDate(0, 0, 90)
 	published := time.Date(2026, 10, 26, 0, 0, 0, 0, time.UTC)
 	readme, err := os.ReadFile("../../data/advisories/README.md")
@@ -125,11 +129,11 @@ func TestShippedTS2026RulesAreAsReviewed(t *testing.T) {
 		t.Run(rule.id, func(t *testing.T) {
 			catalog := readTS2026(t, rule)
 			rec := catalog.Records[0]
-			if catalog.Revision != 2 || !catalog.IssuedAt.Equal(issued) || !catalog.ExpiresAt.Equal(expires) {
-				t.Errorf("catalog revision %d, issued %s, expires %s: want 2, %s, %s", catalog.Revision, catalog.IssuedAt, catalog.ExpiresAt, issued, expires)
+			if catalog.Revision != 3 || !catalog.IssuedAt.Equal(issued) || !catalog.ExpiresAt.Equal(expires) {
+				t.Errorf("catalog revision %d, issued %s, expires %s: want 3, %s, %s", catalog.Revision, catalog.IssuedAt, catalog.ExpiresAt, issued, expires)
 			}
-			if rec.ID != rule.id || rec.Revision != "2" || strings.HasPrefix(rec.ID, "CVE-") {
-				t.Errorf("id %q, revision %q: want %s, 2, and no CVE", rec.ID, rec.Revision, rule.id)
+			if rec.ID != rule.id || rec.Revision != "3" || strings.HasPrefix(rec.ID, "CVE-") {
+				t.Errorf("id %q, revision %q: want %s, 3, and no CVE", rec.ID, rec.Revision, rule.id)
 			}
 			if rec.Component != "client" || rec.VersionRole != security.VersionRunningDaemon || rec.OS != "" {
 				t.Errorf("component %q, role %q, os %q: want client, running_daemon and no os", rec.Component, rec.VersionRole, rec.OS)
@@ -140,8 +144,11 @@ func TestShippedTS2026RulesAreAsReviewed(t *testing.T) {
 			if rec.Severity != security.SeverityUnknown {
 				t.Errorf("severity %q: the bulletins gave none, so it is unknown", rec.Severity)
 			}
-			if rec.ReviewState != security.ReviewPending {
-				t.Errorf("review state %q: the rule stays pending until the owner confirms the bulletin", rec.ReviewState)
+			if rec.ReviewState != security.ReviewApproved {
+				t.Errorf("review state %q: the owner approved the rule on 2026-11-28", rec.ReviewState)
+			}
+			if rec.Mitigation != ts2026Mitigation[rule.id] {
+				t.Errorf("mitigation %q, want %q", rec.Mitigation, ts2026Mitigation[rule.id])
 			}
 			// The only range is "fixed in 1.104.4": introduced stays open, and there is no 1.102.x fix.
 			if want := []security.VersionRange{{Fixed: "1.104.4"}}; !slices.Equal(rec.Ranges, want) {
@@ -163,18 +170,24 @@ func TestShippedTS2026RulesAreAsReviewed(t *testing.T) {
 			}
 		})
 	}
-	if !strings.Contains(string(readme), "pending") {
-		t.Error("data/advisories/README.md does not say that the rules are pending")
+	// The README says what the files say: the owner approved the rules, on that day, after that
+	// check; and it no longer describes them as waiting for the owner.
+	for _, want := range []string{"approved by the owner on 2026-11-28", "TS_SSH_DISABLE_FORWARDING=1"} {
+		if !strings.Contains(string(readme), want) {
+			t.Errorf("data/advisories/README.md does not state %q", want)
+		}
+	}
+	for _, stale := range []string{"still pending", "stay `pending`", "Every rule is `pending`"} {
+		if strings.Contains(string(readme), stale) {
+			t.Errorf("data/advisories/README.md still says %q", stale)
+		}
 	}
 }
 
-// A pending rule never leaks an unconfirmed advisory: whatever the device's version and
-// features, the finding is unknown and carries no mitigation. Here every rule meets a
-// device that runs 1.104.2 as its daemon (and, to show the rule is not read at all, a
-// 1.104.4 one) with all, none and one of the four features known, so the evidence is
-// enough to decide the device and the reason is review-pending. A device the evidence
-// cannot judge keeps the reason it earned: see the test after this one.
-func TestShippedTS2026RulesAreUnknownWhilePending(t *testing.T) {
+// combinedTS2026 is the four shipped rules in one catalog, in the order of ts2026Rules, and
+// every feature they require, each once.
+func combinedTS2026(t *testing.T) (security.Catalog, []string) {
+	t.Helper()
 	var combined security.Catalog
 	var allFeatures []string
 	for i, rule := range ts2026Rules {
@@ -193,17 +206,47 @@ func TestShippedTS2026RulesAreUnknownWhilePending(t *testing.T) {
 	if len(combined.Records) != len(ts2026Rules) {
 		t.Fatalf("want %d records, got %d", len(ts2026Rules), len(combined.Records))
 	}
+	return combined, allFeatures
+}
+
+// The shipped rules are approved, so they give a verdict: a device whose daemon is below the
+// fix is affected when every feature the rule requires is known on, potentially affected
+// (feature_unknown) when one is not known, and not affected when one is known off or the
+// daemon is at or past the fix. The collector observes only tailscale_ssh, so a real scan
+// meets the third case for TS-2026-014, -016 and -017 whatever the device runs. The
+// mitigation text goes to an affected or potentially affected finding and to no other, and
+// only TS-2026-014 carries the way to disable SSH forwarding.
+func TestShippedTS2026RulesGiveTheApprovedVerdicts(t *testing.T) {
+	combined, allFeatures := combinedTS2026(t)
+	const (
+		aff  = security.ApplicabilityAffected
+		pot  = security.ApplicabilityPotential
+		not  = security.ApplicabilityNotAffected
+		fu   = security.ReasonFeatureUnknown
+		none = security.UnknownReason("")
+	)
+	type verdict struct {
+		applicability security.Applicability
+		reason        security.UnknownReason
+	}
+	// want is the verdict of each rule in the order of ts2026Rules: 014, 015, 016, 017.
 	cases := []struct {
 		name    string
 		version string
 		facts   []ts2026Fact
+		want    [4]verdict
 	}{
-		{"1.104.2, every feature on", "1.104.2", localFacts(allFeatures, true)},
-		{"1.104.2, every feature unknown", "1.104.2", nil},
-		{"1.104.2, every feature off", "1.104.2", localFacts(allFeatures, false)},
-		{"1.104.2, one feature on", "1.104.2", localFacts(allFeatures[:1], true)},
-		{"1.104.2 with a build suffix, every feature on", "1.104.2" + ts2026SuffixTG, localFacts(allFeatures, true)},
-		{"1.104.4, every feature on", "1.104.4", localFacts(allFeatures, true)},
+		{"1.104.2, every feature on", "1.104.2", localFacts(allFeatures, true), [4]verdict{{aff, none}, {aff, none}, {aff, none}, {aff, none}}},
+		{"1.104.2, every feature unknown", "1.104.2", nil, [4]verdict{{pot, fu}, {pot, fu}, {pot, fu}, {pot, fu}}},
+		{"1.104.2, every feature off", "1.104.2", localFacts(allFeatures, false), [4]verdict{{not, none}, {not, none}, {not, none}, {not, none}}},
+		// tailscale_ssh alone: what the collector can give. It decides TS-2026-015 and leaves the
+		// rest with a feature nobody observes.
+		{"1.104.2, only tailscale_ssh on", "1.104.2", []ts2026Fact{{security.FeatureTailscaleSSH, true, security.OriginLocal}}, [4]verdict{{pot, fu}, {aff, none}, {pot, fu}, {pot, fu}}},
+		{"1.104.2, only tailscale_ssh off", "1.104.2", []ts2026Fact{{security.FeatureTailscaleSSH, false, security.OriginLocal}}, [4]verdict{{not, none}, {not, none}, {pot, fu}, {pot, fu}}},
+		{"1.104.2 with a build suffix, every feature on", "1.104.2" + ts2026SuffixTG, localFacts(allFeatures, true), [4]verdict{{aff, none}, {aff, none}, {aff, none}, {aff, none}}},
+		{"1.104.4, every feature on", "1.104.4", localFacts(allFeatures, true), [4]verdict{{not, none}, {not, none}, {not, none}, {not, none}}},
+		{"1.104.4, every feature unknown", "1.104.4", nil, [4]verdict{{not, none}, {not, none}, {not, none}, {not, none}}},
+		{"1.106.0, every feature unknown", "1.106.0", nil, [4]verdict{{not, none}, {not, none}, {not, none}, {not, none}}},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -212,23 +255,46 @@ func TestShippedTS2026RulesAreUnknownWhilePending(t *testing.T) {
 				t.Fatalf("want %d findings, got %d: %+v", len(ts2026Rules), len(findings), findings)
 			}
 			for i, f := range findings {
-				if f.RuleID != ts2026Rules[i].id || f.Applicability != security.ApplicabilityUnknown || f.Reason != security.ReasonReviewPending {
-					t.Errorf("%s: %s with reason %q, want unknown with %q", f.RuleID, f.Applicability, f.Reason, security.ReasonReviewPending)
-				}
-				if len(f.Verification) != 0 || len(f.Remediation) != 0 {
-					t.Errorf("%s: a pending rule carries mitigation text: %+v", f.RuleID, f)
+				rule := ts2026Rules[i]
+				if f.RuleID != rule.id || f.Applicability != tc.want[i].applicability || f.Reason != tc.want[i].reason {
+					t.Errorf("%s: %s with reason %q, want %s with reason %q", f.RuleID, f.Applicability, f.Reason, tc.want[i].applicability, tc.want[i].reason)
 				}
 				if f.SourceSeverity != security.SeverityUnknown {
 					t.Errorf("%s: source severity %q, want unknown", f.RuleID, f.SourceSeverity)
 				}
+				speaks := f.Applicability == security.ApplicabilityAffected || f.Applicability == security.ApplicabilityPotential
+				switch {
+				case !speaks && (len(f.Verification) != 0 || len(f.Remediation) != 0):
+					t.Errorf("%s: a %s finding carries mitigation text: %+v", f.RuleID, f.Applicability, f)
+				case speaks && (len(f.Verification) != 1 || f.Verification[0] != ts2026Mitigation[rule.id] || len(f.Remediation) != 0):
+					t.Errorf("%s: a %s finding carries %q, want %q", f.RuleID, f.Applicability, f.Verification, ts2026Mitigation[rule.id])
+				}
+				if speaks && strings.Contains(f.Verification[0], "TS_SSH_DISABLE_FORWARDING") != (rule.id == "TS-2026-014") {
+					t.Errorf("%s: the SSH forwarding workaround is TS-2026-014's alone: %q", f.RuleID, f.Verification[0])
+				}
 			}
 		})
 	}
+
+	// The verdicts are the approved state's doing: the same files with a rule pending give
+	// unknown for every device, so the cases above cannot pass on a rule that is not read.
+	t.Run("the same rules pending give unknown only", func(t *testing.T) {
+		pending := combined
+		pending.Records = slices.Clone(combined.Records)
+		for i := range pending.Records {
+			pending.Records[i].ReviewState = security.ReviewPending
+		}
+		for _, f := range matchTS2026(t, pending, ts2026Snapshot("1.104.2", localFacts(allFeatures, true))) {
+			if f.Applicability != security.ApplicabilityUnknown || f.Reason != security.ReasonReviewPending || len(f.Verification) != 0 {
+				t.Errorf("%s pending: %s with reason %q: the control cannot tell approved from pending", f.RuleID, f.Applicability, f.Reason)
+			}
+		}
+	})
 }
 
-// Each approved copy, on the stable releases and the suffix forms Tailscale builds carry,
-// and on every state of its features.
-func TestApprovedTS2026RuleCopies(t *testing.T) {
+// Each shipped rule, on the stable releases and the suffix forms Tailscale builds carry, and
+// on every state of its features.
+func TestShippedTS2026RulesMatchEveryStateOfTheirFeatures(t *testing.T) {
 	type tc struct {
 		name    string
 		version string
@@ -238,9 +304,9 @@ func TestApprovedTS2026RuleCopies(t *testing.T) {
 	}
 	for _, rule := range ts2026Rules {
 		t.Run(rule.id, func(t *testing.T) {
-			catalog := approvedCopy(readTS2026(t, rule))
+			catalog := readTS2026(t, rule)
 			if catalog.Records[0].ReviewState != security.ReviewApproved {
-				t.Fatal("the copy is not approved")
+				t.Fatal("the shipped rule is not approved")
 			}
 			on := localFacts(rule.features, true)
 			var cases []tc
@@ -335,22 +401,15 @@ func TestApprovedTS2026RuleCopies(t *testing.T) {
 	}
 }
 
-// What a pending rule guarantees is that it never gives affected, potentially affected or
-// not affected: every finding is unknown and carries no mitigation. The reason is
-// review-pending only for a device the evidence could decide; an unknown keeps the reason it
-// had earned already, and the documents say so. Three devices of a fleet meet all four
-// shipped rules: one the API reports as fixed (the daemon is not observed), one with no
-// version at all, and one the API reports as behind (which the rule would flag).
-func TestAPendingShippedRuleKeepsTheReasonTheEvidenceEarned(t *testing.T) {
-	var combined security.Catalog
-	for i, rule := range ts2026Rules {
-		catalog := readTS2026(t, rule)
-		if i == 0 {
-			combined = catalog
-		} else {
-			combined.Records = append(combined.Records, catalog.Records...)
-		}
-	}
+// Three devices of a fleet meet all four shipped rules, as the API reports them: one at a
+// release past the fix, one with no version at all and one behind it. The API's report is no
+// observation of the running daemon (there is no connected_to_control fact here, so it cannot
+// stand for it), so the device behind the fix is only potentially affected
+// (runtime_unobserved), the ones at or past it are unknown for the same reason and not
+// cleared, and the device with no version keeps no_version. Only a finding that warns carries
+// the mitigation text.
+func TestShippedTS2026RulesOnAPIReportedVersionsOnlyWarn(t *testing.T) {
+	combined, _ := combinedTS2026(t)
 	evidence := func(asset string) security.EvidenceRef {
 		return security.EvidenceRef{Context: ts2026Context, Asset: asset, Scope: security.ScopeFleet, Origin: security.OriginAPI, AcquiredAt: ts2026Now, Freshness: security.FreshnessFresh}
 	}
@@ -358,27 +417,33 @@ func TestAPendingShippedRuleKeepsTheReasonTheEvidenceEarned(t *testing.T) {
 		return security.VersionFact{Name: "client", Role: security.VersionAPIReported, Channel: security.ChannelStable, Value: &release, Evidence: evidence(asset)}
 	}
 	snapshot := security.Snapshot{Context: ts2026Context, Scope: security.ScopeFleet, ObservedAt: ts2026Now,
-		Versions:  []security.VersionFact{reported("fixed", "1.104.5"), reported("behind", "1.104.2")},
+		Versions:  []security.VersionFact{reported("past", "1.104.5"), reported("atfix", "1.104.4"), reported("behind", "1.104.2")},
 		Platforms: []security.PlatformFact{{OS: "linux", Evidence: evidence("noversion")}}}
-	want := map[string]security.UnknownReason{"fixed": security.ReasonRuntimeUnobserved, "noversion": security.ReasonNoVersion, "behind": security.ReasonReviewPending}
+	type verdict struct {
+		applicability security.Applicability
+		reason        security.UnknownReason
+	}
+	want := map[string]verdict{
+		"past":      {security.ApplicabilityUnknown, security.ReasonRuntimeUnobserved},
+		"atfix":     {security.ApplicabilityUnknown, security.ReasonRuntimeUnobserved},
+		"behind":    {security.ApplicabilityPotential, security.ReasonRuntimeUnobserved},
+		"noversion": {security.ApplicabilityUnknown, security.ReasonNoVersion},
+	}
 	findings := matchTS2026(t, combined, snapshot)
 	if len(findings) != len(ts2026Rules)*len(want) {
 		t.Fatalf("want %d findings, got %d", len(ts2026Rules)*len(want), len(findings))
 	}
 	for _, f := range findings {
-		if f.Applicability != security.ApplicabilityUnknown || f.Reason != want[f.Asset] || len(f.Verification) != 0 || len(f.Remediation) != 0 {
-			t.Errorf("%s for %s: %s with reason %q and %d lines of mitigation, want unknown with %q", f.RuleID, f.Asset, f.Applicability, f.Reason,
-				len(f.Verification)+len(f.Remediation), want[f.Asset])
+		w := want[f.Asset]
+		if f.Applicability != w.applicability || f.Reason != w.reason {
+			t.Errorf("%s for %s: %s with reason %q, want %s with %q", f.RuleID, f.Asset, f.Applicability, f.Reason, w.applicability, w.reason)
 		}
-	}
-	// Approved, the same snapshot does speak: the reasons above are the pending state's doing.
-	spoke := false
-	for _, rule := range ts2026Rules {
-		for _, f := range matchTS2026(t, approvedCopy(readTS2026(t, rule)), snapshot) {
-			spoke = spoke || f.Applicability != security.ApplicabilityUnknown
+		if f.Applicability == security.ApplicabilityPotential {
+			if len(f.Verification) != 1 || f.Verification[0] != ts2026Mitigation[f.RuleID] || len(f.Remediation) != 0 {
+				t.Errorf("%s for %s: mitigation %q, want %q", f.RuleID, f.Asset, f.Verification, ts2026Mitigation[f.RuleID])
+			}
+		} else if len(f.Verification) != 0 || len(f.Remediation) != 0 {
+			t.Errorf("%s for %s: an unknown finding carries mitigation text: %+v", f.RuleID, f.Asset, f)
 		}
-	}
-	if !spoke {
-		t.Error("the approved copies give only unknown for these devices, so the pending result proves nothing")
 	}
 }

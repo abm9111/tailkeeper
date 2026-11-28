@@ -273,28 +273,61 @@ func TestShippedEmbedsEveryFileOfTheDirectory(t *testing.T) {
 	}
 }
 
-// Pending rules stay pending in the merge: the matcher gives their devices unknown only.
-func TestShippedKeepsPendingRulesPending(t *testing.T) {
+// The merge gives every rule the review state its own file gives it, and the shipped files
+// give all five rules the state approved: the owner approved TS-2026-014 to TS-2026-017 on
+// 2026-11-28 (data/advisories/README.md). A rule that moves back to pending, or is withdrawn,
+// changes what a scan can say about every device, so it is a decision for a test to name.
+func TestShippedKeepsEveryFilesReviewState(t *testing.T) {
 	c, err := Shipped()
 	if err != nil {
 		t.Fatal(err)
 	}
-	pending, approved := 0, 0
-	for _, r := range c.Records {
-		switch r.ReviewState {
-		case security.ReviewPending:
-			pending++
-			if !strings.HasPrefix(r.ID, "TS-2026-") {
-				t.Errorf("%s is pending", r.ID)
-			}
-		case security.ReviewApproved:
-			approved++
-		default:
-			t.Errorf("%s is %s", r.ID, r.ReviewState)
+	own := map[string]security.ReviewState{}
+	for _, f := range diskFiles(t) {
+		file, err := Decode(f.Data)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, r := range file.Records {
+			own[r.ID] = r.ReviewState
 		}
 	}
-	if pending != 4 || approved != 1 {
-		t.Errorf("pending %d approved %d, want 4 and 1", pending, approved)
+	if len(own) != 5 || len(c.Records) != 5 {
+		t.Fatalf("the files hold %d rules and the catalog %d, want 5 and 5", len(own), len(c.Records))
+	}
+	for _, r := range c.Records {
+		if r.ReviewState != own[r.ID] {
+			t.Errorf("%s is %s in the merged catalog and %s in its own file", r.ID, r.ReviewState, own[r.ID])
+		}
+		if r.ReviewState != security.ReviewApproved {
+			t.Errorf("%s is %s, want approved", r.ID, r.ReviewState)
+		}
+	}
+}
+
+// The merge does not approve what a file leaves pending, nor revive what it withdraws: it
+// carries each record's state through as the file wrote it. This holds for a synthetic set,
+// since the shipped one has no pending rule to show it.
+func TestMergeKeepsPendingAndWithdrawnRulesAsTheirFilesWriteThem(t *testing.T) {
+	approved := fileOf("RULE-A", 1, "2026-01-01T00:00:00Z", "2027-01-01T00:00:00Z")
+	state := func(id string, review string) Source {
+		data := strings.Replace(string(fileOf(id, 1, "2026-01-01T00:00:00Z", "2027-01-01T00:00:00Z")), `"review_state":"approved"`, `"review_state":"`+review+`"`, 1)
+		if !strings.Contains(data, review) {
+			t.Fatalf("the synthetic file does not carry the state %s", review)
+		}
+		return Source{Name: strings.ToLower(id) + ".json", Data: []byte(data)}
+	}
+	c, err := Merge(srcs(Source{Name: "rule-a.json", Data: approved}, state("RULE-P", "pending"), state("RULE-W", "withdrawn")))
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := map[string]security.ReviewState{}
+	for _, r := range c.Records {
+		got[r.ID] = r.ReviewState
+	}
+	want := map[string]security.ReviewState{"RULE-A": security.ReviewApproved, "RULE-P": security.ReviewPending, "RULE-W": security.ReviewWithdrawn}
+	if !reflect.DeepEqual(got, want) {
+		t.Errorf("merged states %v, want %v", got, want)
 	}
 }
 

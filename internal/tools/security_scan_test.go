@@ -121,9 +121,11 @@ func useCatalog(t *testing.T, at time.Time, rules ...security.AdvisoryRecord) {
 	t.Cleanup(tools.SetScanCatalog(func() (security.Catalog, error) { return c, nil }))
 }
 
-// The shipped rule against a fleet: devices that are affected by the local daemon and by the
+// The shipped rules against a fleet: devices that are affected by the local daemon and by the
 // API, a device that is not, and the devices that can never be cleared (offline, or not
-// observed). N9: no device the API reports as offline is ever not_affected.
+// observed). N9: no device the API reports as offline is ever not_affected. The four TS-2026
+// rules are approved, so they speak too: the collector observes tailscale_ssh and nothing
+// else of what they require, which is why most of their findings are potentially affected.
 func TestAffectedLocalAndAPIFleetKnownPositive(t *testing.T) {
 	at := scanClock(t)
 	r := withCLI(scanRig(t, at))
@@ -137,11 +139,17 @@ func TestAffectedLocalAndAPIFleetKnownPositive(t *testing.T) {
 	)
 	out := r.scan(t, `{"scope":"fleet"}`)
 
+	// Five devices and five rules. CVE-2022-41925 (fixed in 1.32.3): this node and nOLD are
+	// affected, nOFF01 is potentially affected, nNEW is cleared and nOFF02 is unknown (its
+	// version is past the fix, but the daemon was not observed). The TS-2026 rules (fixed in
+	// 1.104.4) are in range for all five devices; see the table below for what each says.
 	counts := out.Counts
-	if counts.Affected != 2 || counts.PotentiallyAffected != 1 || counts.NotAffected != 1 || counts.Unknown != 21 || out.TotalFindings != 25 {
-		t.Errorf("counts %+v total %d, want 2 affected, 1 potentially affected, 1 not affected, 21 unknown of 25", counts, out.TotalFindings)
+	if counts.Affected != 2 || counts.PotentiallyAffected != 19 || counts.NotAffected != 3 || counts.Unknown != 1 || out.TotalFindings != 25 {
+		t.Errorf("counts %+v total %d, want 2 affected, 19 potentially affected, 3 not affected, 1 unknown of 25", counts, out.TotalFindings)
 	}
-	if out.AtThreshold.Affected != 2 || out.AtThreshold.PotentiallyAffected != 1 {
+	// The TS-2026 rules carry no severity, which is above every threshold, so every
+	// potentially affected finding counts at the default threshold.
+	if out.AtThreshold.Affected != 2 || out.AtThreshold.PotentiallyAffected != 19 {
 		t.Errorf("at threshold: %+v", out.AtThreshold)
 	}
 	if out.ExitCode() != 8 {
@@ -165,27 +173,68 @@ func TestAffectedLocalAndAPIFleetKnownPositive(t *testing.T) {
 			t.Fatalf("finding %d (%s) after %d (%s)", i, out.Findings[i].Applicability, i-1, out.Findings[i-1].Applicability)
 		}
 	}
-	// N9: an offline device is never cleared, whatever its version says.
+	// N9: an offline device is never cleared, whatever its version says. Only the connected
+	// current device may be cleared of the CVE, and this node of the two SSH rules, because
+	// its own preferences say Tailscale SSH is off.
 	for _, f := range findingsOf(out, "not_affected") {
-		if f.Device != "nNEW…" {
-			t.Errorf("%s is not_affected: only the connected current device may be", f.Device)
+		switch {
+		case f.Device == "nNEW…" && f.Rule == "CVE-2022-41925":
+		case f.Device == "nSEL…" && (f.Rule == "TS-2026-014" || f.Rule == "TS-2026-015"):
+		default:
+			t.Errorf("%s is not_affected for %s: only the connected current device (for the CVE) and this node (for the SSH rules) may be", f.Device, f.Rule)
 		}
 	}
-	// A pending rule never speaks: every finding of the four TS-2026 rules is unknown.
+	// What each TS-2026 rule says of each device: "applicability reason". The two offline
+	// devices share the shown name nOFF…, so their eight findings are counted together. No
+	// source says whether SSH forwarding is allowed or Serve is used, so TS-2026-014 (unless
+	// SSH is known off), -016 and -017 are potentially affected for every device in range
+	// whose daemon is observed; TS-2026-015 needs SSH alone. An offline device's version is a
+	// report and the daemon is unobserved (runtime_unobserved), so it can only warn.
+	const unseen, feature = "potentially_affected runtime_unobserved", "potentially_affected feature_unknown"
+	byDevice := map[string]map[string]int{}
 	for _, f := range out.Findings {
-		if strings.HasPrefix(f.Rule, "TS-2026-") && f.Applicability != "unknown" {
-			t.Errorf("pending rule %s gave %s", f.Rule, f.Applicability)
+		if !strings.HasPrefix(f.Rule, "TS-2026-") {
+			continue
+		}
+		if byDevice[f.Device] == nil {
+			byDevice[f.Device] = map[string]int{}
+		}
+		byDevice[f.Device][strings.TrimSpace(f.Applicability+" "+f.Reason)]++
+		// Mitigation text goes to a finding that warns and to no other, and the way to turn
+		// off SSH forwarding is TS-2026-014's alone.
+		warns := f.Applicability == "affected" || f.Applicability == "potentially_affected"
+		if warns != (len(f.Verification) == 1) || (!warns && len(f.Verification) != 0) {
+			t.Errorf("%s for %s: %s with %d lines of mitigation", f.Rule, f.Device, f.Applicability, len(f.Verification))
+		}
+		if warns && strings.Contains(f.Verification[0], "TS_SSH_DISABLE_FORWARDING") != (f.Rule == "TS-2026-014") {
+			t.Errorf("%s for %s: mitigation %q", f.Rule, f.Device, f.Verification[0])
 		}
 	}
-	// The report says it is partial and why: the pending rules, the unevaluated intent.
+	wantTS := map[string]map[string]int{
+		"nSEL…": {"not_affected": 2, feature: 2},
+		"nOLD…": {feature: 4},
+		"nNEW…": {feature: 4},
+		"nOFF…": {unseen: 8},
+	}
+	if !reflect.DeepEqual(byDevice, wantTS) {
+		t.Errorf("TS-2026 findings by device %v, want %v", byDevice, wantTS)
+	}
+	// The report is partial, and says why: no source gives three of the features the approved
+	// rules require, so the features row cannot be complete whatever the devices run, and the
+	// potentially affected findings keep the catalog row partial. No rule is pending.
 	if out.Status != "partial" {
 		t.Errorf("status %s", out.Status)
 	}
-	if c, ok := coverageRow(out, "catalog"); !ok || c.Status != "partial" || !strings.Contains(c.Explanation, "pending rules: 4") {
+	if out.Catalog.Rules != 5 || out.Catalog.Approved != 5 || out.Catalog.Pending != 0 {
+		t.Errorf("catalog %+v, want five rules, all approved", out.Catalog)
+	}
+	if f, ok := coverageRow(out, "features"); !ok || f.Status != "partial" || !strings.Contains(f.Explanation, "no source gives the features serve_tls_multi_mount, serve_unix_backend, ssh_forwarding_allowed") {
+		t.Errorf("features row: %+v", f)
+	}
+	if c, ok := coverageRow(out, "catalog"); !ok || c.Status != "partial" || strings.Contains(c.Explanation, "pending rules") || !strings.Contains(c.Explanation, "potentially affected findings: 19") {
 		t.Errorf("catalog row: %+v", c)
 	}
-	// Intent is not requested (no intent set is configured): the row says so and blocks nothing,
-	// so what keeps this report partial is the pending rules and nothing about intent.
+	// Intent is not requested (no intent set is configured): the row says so and blocks nothing.
 	if c, ok := coverageRow(out, "intent"); !ok || c.Status != "not_requested" || !strings.Contains(c.Explanation, "not requested") {
 		t.Errorf("intent row: %+v", c)
 	}

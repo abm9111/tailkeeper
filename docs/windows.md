@@ -327,6 +327,8 @@ The extracted MCPB process tests carry `//go:build darwin` and execute only on m
 - `TestABadPathNeverStartsTheWrapperForThePolicyCommands` (`internal/cli`): the stand-in wrapper is a POSIX shell script.
 - `TestAScanWithEveryRequestedCoverageCompleteExitsZero` (`internal/cli`): the stand-in `tailscale` command is a POSIX shell script.
 - `TestAScanGivenAnIntentIsPartialThroughTheCommandLine` (`internal/cli`): the stand-in `tailscale` command is a POSIX shell script.
+- `TestAThresholdAboveEveryFindingExitsOneWhenThePartialScanFoundNothingAtIt` (`internal/cli`): the stand-in `tailscale` command is a POSIX shell script.
+- `TestAScanByTheShippedCatalogOfACleanWholeFleetIsPartialForWantOfThreeFeatures` (`internal/cli`): the stand-in `tailscale` command is a POSIX shell script.
 - `TestHelperProcess` (`internal/cli`): the process the stand-in wrapper starts; it runs only for the three tests that start it with the test tool.
 - `TestHelperACLProcess` (`internal/cli`): the process the stand-in wrapper starts for the policy commands; it runs only for the three tests that start it with them.
 <!-- windows-excluded:end -->
